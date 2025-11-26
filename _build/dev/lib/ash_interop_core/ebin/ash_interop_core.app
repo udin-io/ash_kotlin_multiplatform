@@ -1,0 +1,10 @@
+{application,ash_interop_core,
+             [{modules,['Elixir.AshInteropCore',
+                        'Elixir.AshInteropCore.FieldFormatter',
+                        'Elixir.AshInteropCore.Helpers',
+                        'Elixir.AshInteropCore.TypeSystem.Introspection']},
+              {optional_applications,[]},
+              {applications,[kernel,stdlib,elixir,logger,ash,spark]},
+              {description,"Shared core library for Ash interoperability with multiple languages.\nProvides type introspection, discovery, and RPC pipeline utilities.\n"},
+              {registered,[]},
+              {vsn,"0.1.0"}]}.
