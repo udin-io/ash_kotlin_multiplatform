@@ -1,10 +1,10 @@
-# AshKotlin
+# AshKotlinMultiplatform
 
 Generate type-safe Kotlin Multiplatform clients from your Ash resources.
 
 ## Features
 
-- **Automatic Kotlin generation** from Elixir Ash resources
+- **Automatic Kotlin Multiplatform generation** from Elixir Ash resources
 - **End-to-end type safety** between backend (Elixir) and frontend (Kotlin)
 - **Type-safe RPC client generation** using Ktor and coroutines
 - **kotlinx.serialization** integration for JSON handling
@@ -13,12 +13,12 @@ Generate type-safe Kotlin Multiplatform clients from your Ash resources.
 
 ## Installation
 
-Add `ash_kotlin` to your dependencies in `mix.exs`:
+Add `ash_kotlin_multiplatform` to your dependencies in `mix.exs`:
 
 ```elixir
 def deps do
   [
-    {:ash_kotlin, "~> 0.1.0"}
+    {:ash_kotlin_multiplatform, "~> 0.1.0"}
   ]
 end
 ```
@@ -31,9 +31,9 @@ end
 defmodule MyApp.Todo do
   use Ash.Resource,
     domain: MyApp.Domain,
-    extensions: [AshKotlin.Resource]
+    extensions: [AshKotlinMultiplatform.Resource]
 
-  kotlin do
+  kotlin_multiplatform do
     type_name "Todo"
   end
 
@@ -53,7 +53,7 @@ end
 
 ```elixir
 defmodule MyApp.Domain do
-  use Ash.Domain, extensions: [AshKotlin.Rpc]
+  use Ash.Domain, extensions: [AshKotlinMultiplatform.Rpc]
 
   kotlin_rpc do
     resource MyApp.Todo do
@@ -74,7 +74,7 @@ end
 ### 3. Generate Kotlin Code
 
 ```bash
-mix ash_kotlin.codegen
+mix ash_kotlin_multiplatform.codegen
 ```
 
 ## Generated Code Example
@@ -110,7 +110,7 @@ object TodoRpc {
 ## Configuration
 
 ```elixir
-config :ash_kotlin,
+config :ash_kotlin_multiplatform,
   output_file: "lib/generated/AshRpc.kt",
   package_name: "com.myapp.ash",
   generate_phoenix_channel_client: true,

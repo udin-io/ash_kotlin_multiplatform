@@ -183,7 +183,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
 
   defp get_resource_type_name(resource) do
     # Try to get from DSL configuration first
-    case AshKotlinMultiplatform.Resource.Info.kotlin_type_name(resource) do
+    case AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name(resource) do
       nil ->
         # Fall back to module name
         resource

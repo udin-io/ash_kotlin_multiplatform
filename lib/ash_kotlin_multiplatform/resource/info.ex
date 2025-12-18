@@ -7,26 +7,28 @@ defmodule AshKotlinMultiplatform.Resource.Info do
   Introspection helpers for AshKotlinMultiplatform.Resource DSL.
   """
 
-  use Spark.InfoGenerator, extension: AshKotlinMultiplatform.Resource, sections: [:kotlin]
+  use Spark.InfoGenerator,
+    extension: AshKotlinMultiplatform.Resource,
+    sections: [:kotlin_multiplatform]
 
   @doc """
-  Returns the Kotlin type name for a resource.
+  Returns the Kotlin Multiplatform type name for a resource.
   """
-  def kotlin_type_name(resource) do
-    Spark.Dsl.Extension.get_opt(resource, [:kotlin], :type_name)
+  def kotlin_multiplatform_type_name(resource) do
+    Spark.Dsl.Extension.get_opt(resource, [:kotlin_multiplatform], :type_name)
   end
 
   @doc """
   Returns the field name mappings for a resource.
   """
-  def kotlin_field_names(resource) do
-    Spark.Dsl.Extension.get_opt(resource, [:kotlin], :field_names, [])
+  def kotlin_multiplatform_field_names(resource) do
+    Spark.Dsl.Extension.get_opt(resource, [:kotlin_multiplatform], :field_names, [])
   end
 
   @doc """
   Returns the argument name mappings for a resource.
   """
-  def kotlin_argument_names(resource) do
-    Spark.Dsl.Extension.get_opt(resource, [:kotlin], :argument_names, [])
+  def kotlin_multiplatform_argument_names(resource) do
+    Spark.Dsl.Extension.get_opt(resource, [:kotlin_multiplatform], :argument_names, [])
   end
 end

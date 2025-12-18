@@ -17,7 +17,7 @@ defmodule AshKotlinMultiplatform.Resource do
       domain: MyApp.Domain,
       extensions: [AshKotlinMultiplatform.Resource]
 
-    kotlin do
+    kotlin_multiplatform do
       type_name "Todo"
       field_names [address_line_1: :addressLine1]
     end
@@ -25,9 +25,9 @@ defmodule AshKotlinMultiplatform.Resource do
   ```
   """
 
-  @kotlin %Spark.Dsl.Section{
-    name: :kotlin,
-    describe: "Define Kotlin settings for this resource",
+  @kotlin_multiplatform %Spark.Dsl.Section{
+    name: :kotlin_multiplatform,
+    describe: "Define Kotlin Multiplatform settings for this resource",
     schema: [
       type_name: [
         type: :string,
@@ -50,5 +50,5 @@ defmodule AshKotlinMultiplatform.Resource do
   }
 
   use Spark.Dsl.Extension,
-    sections: [@kotlin]
+    sections: [@kotlin_multiplatform]
 end

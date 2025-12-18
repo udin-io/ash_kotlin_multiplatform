@@ -17,7 +17,7 @@ defmodule AshKotlinMultiplatform do
   1. Add AshKotlinMultiplatform to your dependencies
   2. Add `AshKotlinMultiplatform.Resource` extension to your resources
   3. Add `AshKotlinMultiplatform.Rpc` extension to your domain
-  4. Run `mix ash_kotlin.codegen`
+  4. Run `mix ash_kotlin_multiplatform.codegen`
 
   ## DSL Extensions
 

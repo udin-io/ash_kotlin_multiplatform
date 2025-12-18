@@ -8,7 +8,7 @@ defmodule AshKotlinMultiplatform.Test.Todo do
     domain: AshKotlinMultiplatform.Test.Domain,
     extensions: [AshKotlinMultiplatform.Resource]
 
-  kotlin do
+  kotlin_multiplatform do
     type_name "Todo"
   end
 

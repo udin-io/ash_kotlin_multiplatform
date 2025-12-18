@@ -80,7 +80,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.ResultTypes do
   end
 
   defp get_kotlin_type_name(resource) do
-    case AshKotlinMultiplatform.Resource.Info.kotlin_type_name(resource) do
+    case AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name(resource) do
       nil ->
         resource
         |> Module.split()
