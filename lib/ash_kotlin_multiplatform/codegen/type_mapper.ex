@@ -186,7 +186,7 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
       # Check for NewType
       Ash.Type.NewType.new_type?(type) ->
         {unwrapped_type, unwrapped_constraints} =
-          Introspection.unwrap_new_type(type, constraints, :kotlin_field_names)
+          Introspection.unwrap_new_type(type, constraints, &has_interop_field_names?/1)
 
         do_get_kotlin_type(unwrapped_type, unwrapped_constraints)
 
@@ -201,7 +201,34 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
     end
   end
 
+  # Fallback for non-atom types
   defp map_type(_, _constraints), do: "Any"
+
+  @doc """
+  Checks if a module has interop_field_names/0 callback.
+  """
+  def has_interop_field_names?(nil), do: false
+
+  def has_interop_field_names?(module) when is_atom(module) do
+    Code.ensure_loaded?(module) && function_exported?(module, :interop_field_names, 0)
+  end
+
+  def has_interop_field_names?(_), do: false
+
+  @doc """
+  Gets the interop_field_names as a map, or empty map if not available.
+  """
+  def get_interop_field_names_map(nil), do: %{}
+
+  def get_interop_field_names_map(module) when is_atom(module) do
+    if Code.ensure_loaded?(module) && function_exported?(module, :interop_field_names, 0) do
+      module.interop_field_names() |> Map.new()
+    else
+      %{}
+    end
+  end
+
+  def get_interop_field_names_map(_), do: %{}
 
   @doc """
   Generates a Kotlin class name from an Elixir module.
