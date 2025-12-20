@@ -164,4 +164,26 @@ defmodule AshKotlinMultiplatform do
   def warn_on_non_rpc_references? do
     Application.get_env(:ash_kotlin_multiplatform, :warn_on_non_rpc_references, true)
   end
+
+  @doc """
+  Returns whether to generate filter types.
+
+  Filter types enable type-safe filtering from Kotlin clients.
+
+  Defaults to false.
+  """
+  def generate_filter_types? do
+    Application.get_env(:ash_kotlin_multiplatform, :generate_filter_types, false)
+  end
+
+  @doc """
+  Returns whether to generate validation annotations.
+
+  When enabled, generates javax.validation annotations on input types.
+
+  Defaults to false.
+  """
+  def generate_validation_annotations? do
+    Application.get_env(:ash_kotlin_multiplatform, :generate_validation_annotations, false)
+  end
 end

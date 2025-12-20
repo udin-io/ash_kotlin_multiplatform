@@ -18,7 +18,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
   """
 
   alias AshKotlinMultiplatform.Rpc.Info
-  alias AshKotlinMultiplatform.Codegen.ResourceSchemas
+  alias AshKotlinMultiplatform.Codegen.{FilterTypes, ResourceSchemas, TypedQueries}
   alias AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.{InputTypes, ResultTypes}
   alias AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel
   alias AshIntrospection.Helpers
@@ -55,10 +55,21 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
       # Generate action-specific result types
       action_result_types = ResultTypes.generate_result_types(rpc_configs)
 
+      # Generate filter types if enabled
+      filter_types =
+        if Keyword.get(opts, :with_filters, AshKotlinMultiplatform.generate_filter_types?()) do
+          FilterTypes.generate_all_filter_types(otp_app)
+        else
+          ""
+        end
+
+      # Generate typed queries if any exist
+      typed_queries = TypedQueries.generate_from_config(otp_app)
+
       kotlin_code =
         [
           generate_header(package_name),
-          generate_imports(),
+          generate_imports(opts),
           generate_type_aliases(),
           generate_error_types(),
           # Resource data classes
@@ -75,6 +86,10 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
           non_empty_or_nil(action_result_types, "// Action Result Types"),
           # Input types for actions
           non_empty_or_nil(input_types, "// Action Input Types"),
+          # Filter types (if enabled)
+          non_empty_or_nil(filter_types, "// Filter Types"),
+          # Typed queries (if any)
+          non_empty_or_nil(typed_queries, "// Typed Queries"),
           # Config types
           generate_config_types(otp_app),
           # RPC functions (functional style)
@@ -126,7 +141,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
     """
   end
 
-  defp generate_imports do
+  defp generate_imports(opts) do
     datetime_imports =
       case AshKotlinMultiplatform.datetime_library() do
         :kotlinx_datetime -> "import kotlinx.datetime.*"
@@ -144,6 +159,15 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
         ""
       end
 
+    validation_imports =
+      if Keyword.get(opts, :with_validation, false) do
+        """
+        import javax.validation.constraints.*
+        """
+      else
+        ""
+      end
+
     """
     import kotlinx.serialization.*
     import kotlinx.serialization.json.*
@@ -152,7 +176,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
     import io.ktor.client.call.*
     import io.ktor.client.request.*
     import io.ktor.http.*
-    #{websocket_imports}
+    #{websocket_imports}#{validation_imports}
     """
   end
 

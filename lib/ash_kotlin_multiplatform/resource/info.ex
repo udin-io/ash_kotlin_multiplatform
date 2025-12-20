@@ -31,4 +31,38 @@ defmodule AshKotlinMultiplatform.Resource.Info do
   def kotlin_multiplatform_argument_names(resource) do
     Spark.Dsl.Extension.get_opt(resource, [:kotlin_multiplatform], :argument_names, [])
   end
+
+  @doc """
+  Alias for kotlin_multiplatform_field_names/1 for compatibility with shared modules.
+  """
+  def kotlin_field_names(resource) do
+    kotlin_multiplatform_field_names(resource)
+  end
+
+  @doc """
+  Gets the original (internal) field name from a client field name.
+
+  Looks up the field_names mapping and returns the internal field name
+  if a mapping exists, otherwise returns nil.
+  """
+  def get_original_field_name(resource, client_field_name) do
+    field_names = kotlin_multiplatform_field_names(resource)
+
+    # Build reverse map: client_name -> internal_name
+    Enum.find_value(field_names, fn {internal_name, client_name} ->
+      if to_string(client_name) == to_string(client_field_name) do
+        internal_name
+      end
+    end)
+  end
+
+  @doc """
+  Checks if a resource is configured for Kotlin Multiplatform interop.
+  """
+  def is_kotlin_resource?(resource) do
+    extensions = Spark.extensions(resource)
+    AshKotlinMultiplatform.Resource in extensions
+  rescue
+    _ -> false
+  end
 end
