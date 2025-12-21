@@ -10,6 +10,8 @@ defmodule AshKotlinMultiplatform.MixProject do
   @description """
   Generate type-safe Kotlin Multiplatform clients directly from your Ash resources and actions,
   ensuring end-to-end type safety between your backend and frontend.
+
+  **Alpha Software** - This library is under active development. The API may change between versions.
   """
 
   def project do
@@ -21,9 +23,11 @@ defmodule AshKotlinMultiplatform.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       package: package(),
       deps: deps(),
+      docs: docs(),
       description: @description,
-      source_url: "https://github.com/ash-project/ash_interop",
-      homepage_url: "https://github.com/ash-project/ash_interop",
+      name: "AshKotlinMultiplatform",
+      source_url: "https://github.com/ash-project/ash_kotlin_multiplatform",
+      homepage_url: "https://github.com/ash-project/ash_kotlin_multiplatform",
       consolidate_protocols: Mix.env() != :test
     ]
   end
@@ -43,9 +47,9 @@ defmodule AshKotlinMultiplatform.MixProject do
         "Peter Shoukry"
       ],
       licenses: ["MIT"],
-      files: ~w(lib .formatter.exs mix.exs README* CHANGELOG* LICENSES),
+      files: ~w(lib .formatter.exs mix.exs README* CHANGELOG* LICENSE*),
       links: %{
-        "GitHub" => "https://github.com/ash-project/ash_interop",
+        "GitHub" => "https://github.com/ash-project/ash_kotlin_multiplatform",
         "Discord" => "https://discord.gg/HTHRaaVPUc",
         "Website" => "https://ash-hq.org",
         "Forum" => "https://elixirforum.com/c/elixir-framework-forums/ash-framework-forum"
@@ -53,9 +57,50 @@ defmodule AshKotlinMultiplatform.MixProject do
     ]
   end
 
+  defp docs do
+    [
+      main: "readme",
+      source_ref: "v#{@version}",
+      extras: [
+        {"README.md", title: "Home"},
+        {"CHANGELOG.md", title: "Changelog"},
+        {"LICENSE", title: "License"}
+      ],
+      groups_for_modules: [
+        "DSL Extensions": [
+          AshKotlinMultiplatform.Resource,
+          AshKotlinMultiplatform.Rpc
+        ],
+        "Code Generation": [
+          AshKotlinMultiplatform.Rpc.Codegen,
+          AshKotlinMultiplatform.Codegen.TypeMapper,
+          AshKotlinMultiplatform.Codegen.TypeDiscovery,
+          AshKotlinMultiplatform.Codegen.ResourceSchemas
+        ],
+        "RPC Pipeline": [
+          AshKotlinMultiplatform.Rpc.Pipeline,
+          AshKotlinMultiplatform.Rpc.Hooks
+        ]
+      ],
+      before_closing_head_tag: fn _type ->
+        """
+        <style>
+          .warning {
+            background-color: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 4px;
+            padding: 1rem;
+            margin: 1rem 0;
+          }
+        </style>
+        """
+      end
+    ]
+  end
+
   defp deps do
     [
-      {:ash_introspection, path: "../ash_introspection"},
+      {:ash_introspection, "~> 0.2.0"},
       {:ash, "~> 3.7"},
       {:ash_phoenix, "~> 2.0"},
       {:spark, "~> 2.0"},
