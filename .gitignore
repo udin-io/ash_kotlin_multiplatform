@@ -28,3 +28,6 @@ ash_kotlin_multiplatform-*.tar
 
 # Generated Kotlin files (if output to project directory)
 *.kt.generated
+
+# Claude Code
+.claude
