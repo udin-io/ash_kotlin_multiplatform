@@ -46,10 +46,31 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
     import io.ktor.client.*
     import io.ktor.client.call.*
     import io.ktor.client.request.*
+    import io.ktor.client.plugins.contentnegotiation.*
+    import io.ktor.serialization.kotlinx.json.*
     import io.ktor.http.*
     #{websocket_imports}#{validation_imports}
     """
     |> String.trim()
+  end
+
+  @doc """
+  Generates a helper function to create a configured HttpClient.
+  """
+  def generate_http_client_factory do
+    """
+    // HTTP Client factory
+    fun createHttpClient(): HttpClient {
+        return HttpClient {
+            install(ContentNegotiation) {
+                json(Json {
+                    ignoreUnknownKeys = true
+                    isLenient = true
+                })
+            }
+        }
+    }
+    """
   end
 
   @doc """

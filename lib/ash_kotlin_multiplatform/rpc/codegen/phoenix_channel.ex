@@ -297,7 +297,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
         private fun startHeartbeat() {
             heartbeatJob?.cancel()
             heartbeatJob = scope.launch {
-                while (kotlinx.coroutines.isActive && state == SocketState.OPEN) {
+                while (isActive && state == SocketState.OPEN) {
                     kotlinx.coroutines.delay(heartbeatIntervalMs)
                     if (state == SocketState.OPEN) {
                         try {
@@ -540,8 +540,8 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
         topic: String,
         params: Map<String, Any?> = emptyMap()
     ) {
-        private val channel = socket.channel(topic, params)
-        private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+        @PublishedApi internal val channel = socket.channel(topic, params)
+        @PublishedApi internal val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
         fun isJoined(): Boolean = channel.isJoined()
 
