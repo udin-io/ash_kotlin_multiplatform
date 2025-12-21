@@ -26,8 +26,8 @@ defmodule AshKotlinMultiplatform.MixProject do
       docs: docs(),
       description: @description,
       name: "AshKotlinMultiplatform",
-      source_url: "https://github.com/ash-project/ash_kotlin_multiplatform",
-      homepage_url: "https://github.com/ash-project/ash_kotlin_multiplatform",
+      source_url: "https://github.com/udin-io/ash_kotlin_multiplatform",
+      homepage_url: "https://github.com/udin-io/ash_kotlin_multiplatform",
       consolidate_protocols: Mix.env() != :test
     ]
   end
@@ -49,10 +49,9 @@ defmodule AshKotlinMultiplatform.MixProject do
       licenses: ["MIT"],
       files: ~w(lib .formatter.exs mix.exs README* CHANGELOG* LICENSE*),
       links: %{
-        "GitHub" => "https://github.com/ash-project/ash_kotlin_multiplatform",
+        "GitHub" => "https://github.com/udin-io/ash_kotlin_multiplatform",
         "Discord" => "https://discord.gg/HTHRaaVPUc",
-        "Website" => "https://ash-hq.org",
-        "Forum" => "https://elixirforum.com/c/elixir-framework-forums/ash-framework-forum"
+        "Website" => "https://ash-hq.org"
       }
     ]
   end

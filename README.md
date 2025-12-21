@@ -10,7 +10,7 @@ Generate type-safe Kotlin Multiplatform clients from your Ash resources.
 > This library is in **alpha** and under active development. The API may change
 > between versions without notice. While functional and tested, it is not yet
 > recommended for production use. Please report issues and feedback on
-> [GitHub](https://github.com/ash-project/ash_kotlin_multiplatform/issues).
+> [GitHub](https://github.com/udin-io/ash_kotlin_multiplatform/issues).
 
 ## Features
 
