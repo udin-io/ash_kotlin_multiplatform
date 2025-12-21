@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.0] - 2025-01-XX
+## [0.1.2] - 2025-12-21
+
+### Fixed
+
+- Improved Kotlin codegen for sparse RPC responses
+- Simplified RpcResult from sealed class to data class with `dataAs<T>()` helper
+- Made AshRpcError fields nullable for flexibility
+
+## [0.1.1] - 2025-12-21
+
+### Fixed
+
+- Fixed GitHub URLs to point to correct repository (udin-io/ash_kotlin_multiplatform)
+
+## [0.1.0] - 2025-12-21
 
 > **Alpha Release** - This is an early alpha release. The API may change between versions.
 
@@ -48,5 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Requires Spark 2.0+
 - Requires Elixir 1.15+
 
-[Unreleased]: https://github.com/ash-project/ash_kotlin_multiplatform/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/ash-project/ash_kotlin_multiplatform/releases/tag/v0.1.0
+[Unreleased]: https://github.com/udin-io/ash_kotlin_multiplatform/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/udin-io/ash_kotlin_multiplatform/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/udin-io/ash_kotlin_multiplatform/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/udin-io/ash_kotlin_multiplatform/releases/tag/v0.1.0

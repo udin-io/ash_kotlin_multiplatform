@@ -523,15 +523,17 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
      * rpcChannel.join()
      *
      * // Call an RPC action
-     * val result = rpcChannel.call<List<Todo>>(
+     * val result = rpcChannel.call(
      *     action = "list_todos",
      *     input = mapOf("status" to "active"),
      *     fields = listOf("id", "title", "status")
      * )
      *
-     * when (result) {
-     *     is RpcSuccess -> println("Got todos: ${result.data}")
-     *     is RpcError -> println("Error: ${result.errors}")
+     * if (result.isSuccess()) {
+     *     val todos = result.dataAs<List<Todo>>()
+     *     println("Got todos: $todos")
+     * } else {
+     *     println("Error: ${result.errors}")
      * }
      * ```
      */
@@ -540,8 +542,8 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
         topic: String,
         params: Map<String, Any?> = emptyMap()
     ) {
-        @PublishedApi internal val channel = socket.channel(topic, params)
-        @PublishedApi internal val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+        private val channel = socket.channel(topic, params)
+        private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
         fun isJoined(): Boolean = channel.isJoined()
 
@@ -560,13 +562,13 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
          * @param timeout Timeout in milliseconds
          * @return RpcResult with the response data or errors
          */
-        suspend inline fun <reified T> call(
+        suspend fun call(
             action: String,
             input: Map<String, Any?>? = null,
             fields: List<Any> = emptyList(),
             tenant: String? = null,
             timeout: Long = 10000L
-        ): RpcResult<T> {
+        ): RpcResult {
             val payload = buildJsonObject {
                 put("action", action)
                 input?.let { inp ->
@@ -598,43 +600,58 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
                 PushStatus.OK -> {
                     response?.let { resp ->
                         try {
-                            json.decodeFromJsonElement<RpcSuccess<T>>(resp)
+                            json.decodeFromJsonElement<RpcResult>(resp)
                         } catch (e: Exception) {
-                            RpcError(errors = listOf(AshRpcError(
-                                type = "deserialization_error",
-                                message = "Failed to deserialize response: ${e.message}",
-                                shortMessage = "Deserialization failed"
-                            )))
+                            RpcResult(
+                                success = false,
+                                errors = listOf(AshRpcError(
+                                    type = "deserialization_error",
+                                    message = "Failed to deserialize response: ${e.message}",
+                                    shortMessage = "Deserialization failed"
+                                ))
+                            )
                         }
-                    } ?: RpcError(errors = listOf(AshRpcError(
-                        type = "empty_response",
-                        message = "Server returned empty response",
-                        shortMessage = "Empty response"
-                    )))
+                    } ?: RpcResult(
+                        success = false,
+                        errors = listOf(AshRpcError(
+                            type = "empty_response",
+                            message = "Server returned empty response",
+                            shortMessage = "Empty response"
+                        ))
+                    )
                 }
                 PushStatus.ERROR -> {
                     response?.let { resp ->
                         try {
-                            json.decodeFromJsonElement<RpcError<T>>(resp)
+                            json.decodeFromJsonElement<RpcResult>(resp)
                         } catch (e: Exception) {
-                            RpcError(errors = listOf(AshRpcError(
-                                type = "error",
-                                message = resp.toString(),
-                                shortMessage = "RPC Error"
-                            )))
+                            RpcResult(
+                                success = false,
+                                errors = listOf(AshRpcError(
+                                    type = "error",
+                                    message = resp.toString(),
+                                    shortMessage = "RPC Error"
+                                ))
+                            )
                         }
-                    } ?: RpcError(errors = listOf(AshRpcError(
-                        type = "unknown_error",
-                        message = "Unknown error occurred",
-                        shortMessage = "Unknown error"
-                    )))
+                    } ?: RpcResult(
+                        success = false,
+                        errors = listOf(AshRpcError(
+                            type = "unknown_error",
+                            message = "Unknown error occurred",
+                            shortMessage = "Unknown error"
+                        ))
+                    )
                 }
                 PushStatus.TIMEOUT -> {
-                    RpcError(errors = listOf(AshRpcError(
-                        type = "timeout",
-                        message = "Request timed out after ${timeout}ms",
-                        shortMessage = "Timeout"
-                    )))
+                    RpcResult(
+                        success = false,
+                        errors = listOf(AshRpcError(
+                            type = "timeout",
+                            message = "Request timed out after ${timeout}ms",
+                            shortMessage = "Timeout"
+                        ))
+                    )
                 }
             }
         }

@@ -171,16 +171,37 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
         ""
       end
 
-    # Handle default values for nullable fields
-    default =
-      if attribute.allow_nil? do
-        " = null"
-      else
-        ""
+    # All fields except `id` get defaults since RPC uses sparse fieldsets
+    # This allows responses to omit fields that weren't requested
+    {kotlin_type, default} =
+      cond do
+        # ID field is always required and present
+        attribute.name == :id ->
+          {kotlin_type, ""}
+
+        # Nullable fields get null default
+        attribute.allow_nil? ->
+          {kotlin_type, " = null"}
+
+        # Non-nullable fields need to be made nullable with defaults for sparse responses
+        true ->
+          nullable_type = make_nullable(kotlin_type)
+          default_value = get_default_for_type(kotlin_type)
+          {nullable_type, " = #{default_value}"}
       end
 
     "#{serial_name}val #{field_name}: #{kotlin_type}#{default}"
   end
+
+  defp make_nullable(kotlin_type) do
+    if String.ends_with?(kotlin_type, "?") do
+      kotlin_type
+    else
+      "#{kotlin_type}?"
+    end
+  end
+
+  defp get_default_for_type(_kotlin_type), do: "null"
 
   defp generate_relationship_field(_resource, rel) do
     field_name = format_field_name(rel.name)

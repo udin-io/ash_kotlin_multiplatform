@@ -92,10 +92,10 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
     // RPC Error types
     @Serializable
     data class AshRpcError(
-        val type: String,
-        val message: String,
+        val type: String? = null,
+        val message: String? = null,
         @SerialName("short_message")
-        val shortMessage: String,
+        val shortMessage: String? = null,
         val vars: Map<String, String> = emptyMap(),
         val fields: List<String> = emptyList(),
         val path: List<String> = emptyList(),
@@ -111,24 +111,19 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
     """
     // Generic result wrapper
     @Serializable
-    sealed class RpcResult<T> {
-        abstract val success: Boolean
+    data class RpcResult(
+        val success: Boolean,
+        val data: JsonElement? = null,
+        val errors: List<AshRpcError>? = null,
+        val metadata: JsonElement? = null
+    ) {
+        inline fun <reified T> dataAs(): T? {
+            return data?.let { Json { ignoreUnknownKeys = true }.decodeFromJsonElement<T>(it) }
+        }
+
+        fun isSuccess(): Boolean = success
+        fun isError(): Boolean = !success
     }
-
-    @Serializable
-    @SerialName("success")
-    data class RpcSuccess<T>(
-        override val success: Boolean = true,
-        val data: T,
-        val metadata: Map<String, @Contextual Any?>? = null
-    ) : RpcResult<T>()
-
-    @Serializable
-    @SerialName("error")
-    data class RpcError<T>(
-        override val success: Boolean = false,
-        val errors: List<AshRpcError>
-    ) : RpcResult<T>()
     """
   end
 

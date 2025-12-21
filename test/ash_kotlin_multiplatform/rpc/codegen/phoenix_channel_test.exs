@@ -89,12 +89,12 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannelTest do
       result = PhoenixChannel.generate()
 
       assert result =~ "class AshRpcChannel("
-      assert result =~ "suspend inline fun <reified T> call("
+      assert result =~ "suspend fun call("
       assert result =~ "action: String"
       assert result =~ "input: Map<String, Any?>?"
       assert result =~ "fields: List<Any>"
       assert result =~ "tenant: String?"
-      assert result =~ "RpcResult<T>"
+      assert result =~ "): RpcResult"
     end
 
     test "includes heartbeat handling" do

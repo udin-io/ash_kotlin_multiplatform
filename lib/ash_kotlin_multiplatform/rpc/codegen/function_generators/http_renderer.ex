@@ -50,7 +50,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.FunctionGenerators.HttpRenderer do
         client: HttpClient,
         config: #{config_name},
         endpoint: String = "#{endpoint}"
-    ): RpcResult<Map<String, Any?>> {
+    ): RpcResult {
         return client.post(endpoint) {
             contentType(ContentType.Application.Json)
             config.headers.forEach { (key, value) ->
