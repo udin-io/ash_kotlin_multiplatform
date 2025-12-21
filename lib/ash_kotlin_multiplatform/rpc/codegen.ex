@@ -13,13 +13,29 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
   - Sealed classes for union types
   - Input types for actions
   - Result types (sealed classes for success/error)
+  - Pagination types (offset, keyset, mixed)
+  - Metadata types for action metadata
   - RPC functions (both functional and object-oriented styles)
+  - Validation functions (if enabled)
   - Phoenix Channel client (if enabled)
   """
 
   alias AshKotlinMultiplatform.Rpc.Info
   alias AshKotlinMultiplatform.Codegen.{FilterTypes, ResourceSchemas, TypedQueries}
-  alias AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.{InputTypes, ResultTypes}
+
+  alias AshKotlinMultiplatform.Rpc.Codegen.{
+    KotlinStatic,
+    RpcConfigCollector
+  }
+
+  alias AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.{
+    InputTypes,
+    MetadataTypes,
+    PaginationTypes,
+    ResultTypes
+  }
+
+  alias AshKotlinMultiplatform.Rpc.Codegen.FunctionGenerators.HttpRenderer
   alias AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel
   alias AshIntrospection.Helpers
 
@@ -36,81 +52,109 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
   def generate_kotlin_code(otp_app, opts \\ []) do
     package_name = get_package_name(otp_app, opts)
 
-    # Collect RPC configuration
-    rpc_resources = Info.get_rpc_resources(otp_app)
+    # Collect RPC configuration using the collector
+    rpc_resources = RpcConfigCollector.get_rpc_resources(otp_app)
 
     if Enum.empty?(rpc_resources) do
       {:error, "No RPC resources found for #{otp_app}"}
     else
-      # Get RPC configs for input/result type generation
-      rpc_configs = get_rpc_configs(otp_app)
+      # Run verifiers if not in development/test mode
+      domains = Ash.Info.domains(otp_app)
 
-      # Generate comprehensive schema types
-      {data_classes, embedded_classes, enum_classes, sealed_classes} =
-        ResourceSchemas.generate_all_schemas(rpc_resources)
+      case AshKotlinMultiplatform.VerifierChecker.check_all_verifiers(rpc_resources ++ domains) do
+        :ok ->
+          generate_full_kotlin_code(otp_app, package_name, rpc_resources, opts)
 
-      # Generate action-specific input types
-      input_types = InputTypes.generate_input_types(rpc_configs)
-
-      # Generate action-specific result types
-      action_result_types = ResultTypes.generate_result_types(rpc_configs)
-
-      # Generate filter types if enabled
-      filter_types =
-        if Keyword.get(opts, :with_filters, AshKotlinMultiplatform.generate_filter_types?()) do
-          FilterTypes.generate_all_filter_types(otp_app)
-        else
-          ""
-        end
-
-      # Generate typed queries if any exist
-      typed_queries = TypedQueries.generate_from_config(otp_app)
-
-      kotlin_code =
-        [
-          generate_header(package_name),
-          generate_imports(opts),
-          generate_type_aliases(),
-          generate_error_types(),
-          # Resource data classes
-          non_empty_or_nil(data_classes, "// Resource Data Classes"),
-          # Embedded resource classes
-          non_empty_or_nil(embedded_classes, "// Embedded Resource Classes"),
-          # Enum classes for atom types with :one_of
-          non_empty_or_nil(enum_classes, "// Enum Classes"),
-          # Sealed classes for union types
-          non_empty_or_nil(sealed_classes, "// Union Sealed Classes"),
-          # Generic result types
-          generate_generic_result_types(),
-          # Action-specific result types
-          non_empty_or_nil(action_result_types, "// Action Result Types"),
-          # Input types for actions
-          non_empty_or_nil(input_types, "// Action Input Types"),
-          # Filter types (if enabled)
-          non_empty_or_nil(filter_types, "// Filter Types"),
-          # Typed queries (if any)
-          non_empty_or_nil(typed_queries, "// Typed Queries"),
-          # Config types
-          generate_config_types(otp_app),
-          # RPC functions (functional style)
-          generate_rpc_functions(otp_app),
-          # Object wrappers (OO style)
-          generate_object_wrappers(otp_app),
-          # Phoenix Channel client (if enabled)
-          maybe_generate_channel_client()
-        ]
-        |> Enum.reject(&is_nil/1)
-        |> Enum.reject(&(&1 == ""))
-        |> Enum.join("\n\n")
-
-      {:ok, kotlin_code}
+        {:error, error_message} ->
+          {:error, error_message}
+      end
     end
   end
 
-  defp get_rpc_configs(otp_app) do
-    otp_app
-    |> Ash.Info.domains()
-    |> Enum.flat_map(&Info.kotlin_rpc/1)
+  defp generate_full_kotlin_code(otp_app, package_name, rpc_resources, opts) do
+    # Get RPC configs for input/result type generation
+    resources_and_actions = RpcConfigCollector.get_rpc_resources_and_actions(otp_app)
+    rpc_configs = RpcConfigCollector.get_rpc_configs(otp_app)
+
+    # Generate comprehensive schema types
+    {data_classes, embedded_classes, enum_classes, sealed_classes} =
+      ResourceSchemas.generate_all_schemas(rpc_resources)
+
+    # Generate action-specific input types
+    input_types = InputTypes.generate_input_types(rpc_configs)
+
+    # Generate action-specific result types
+    action_result_types = ResultTypes.generate_result_types(rpc_configs)
+
+    # Generate metadata types for actions that expose metadata
+    metadata_types = generate_metadata_types(resources_and_actions)
+
+    # Generate pagination types for actions that support pagination
+    pagination_types = generate_pagination_types(resources_and_actions)
+
+    # Generate filter types if enabled
+    filter_types =
+      if Keyword.get(opts, :with_filters, AshKotlinMultiplatform.generate_filter_types?()) do
+        FilterTypes.generate_all_filter_types(otp_app)
+      else
+        ""
+      end
+
+    # Generate typed queries if any exist
+    typed_queries = TypedQueries.generate_from_config(otp_app)
+
+    # Generate validation types if validation functions are enabled
+    validation_types =
+      if AshKotlinMultiplatform.generate_validation_functions?() do
+        KotlinStatic.generate_validation_types()
+      else
+        ""
+      end
+
+    kotlin_code =
+      [
+        generate_header(package_name),
+        KotlinStatic.generate_imports(opts),
+        KotlinStatic.generate_type_aliases(),
+        KotlinStatic.generate_error_types(),
+        # Resource data classes
+        non_empty_or_nil(data_classes, "// Resource Data Classes"),
+        # Embedded resource classes
+        non_empty_or_nil(embedded_classes, "// Embedded Resource Classes"),
+        # Enum classes for atom types with :one_of
+        non_empty_or_nil(enum_classes, "// Enum Classes"),
+        # Sealed classes for union types
+        non_empty_or_nil(sealed_classes, "// Union Sealed Classes"),
+        # Generic result types
+        KotlinStatic.generate_generic_result_types(),
+        # Validation types (if enabled)
+        non_empty_or_nil(validation_types, "// Validation Types"),
+        # Pagination types
+        non_empty_or_nil(pagination_types, "// Pagination Types"),
+        # Metadata types
+        non_empty_or_nil(metadata_types, "// Metadata Types"),
+        # Action-specific result types
+        non_empty_or_nil(action_result_types, "// Action Result Types"),
+        # Input types for actions
+        non_empty_or_nil(input_types, "// Action Input Types"),
+        # Filter types (if enabled)
+        non_empty_or_nil(filter_types, "// Filter Types"),
+        # Typed queries (if any)
+        non_empty_or_nil(typed_queries, "// Typed Queries"),
+        # RPC functions (functional style with config types)
+        non_empty_or_nil(generate_rpc_functions(resources_and_actions, opts), "// RPC Functions"),
+        # Validation functions (if enabled)
+        maybe_generate_validation_functions(resources_and_actions, opts),
+        # Object wrappers (OO style)
+        non_empty_or_nil(generate_object_wrappers(otp_app), "// Object-Oriented API"),
+        # Phoenix Channel client (if enabled)
+        maybe_generate_channel_client()
+      ]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.join("\n\n")
+
+    {:ok, kotlin_code}
   end
 
   defp non_empty_or_nil(content, _header) when content in [nil, ""], do: nil
@@ -141,75 +185,9 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
     """
   end
 
-  defp generate_imports(opts) do
-    datetime_imports =
-      case AshKotlinMultiplatform.datetime_library() do
-        :kotlinx_datetime -> "import kotlinx.datetime.*"
-        :java_time -> "import java.time.*"
-      end
-
-    websocket_imports =
-      if AshKotlinMultiplatform.generate_phoenix_channel_client?() do
-        """
-        import io.ktor.client.plugins.websocket.*
-        import io.ktor.websocket.*
-        import kotlinx.coroutines.*
-        """
-      else
-        ""
-      end
-
-    validation_imports =
-      if Keyword.get(opts, :with_validation, false) do
-        """
-        import javax.validation.constraints.*
-        """
-      else
-        ""
-      end
-
-    """
-    import kotlinx.serialization.*
-    import kotlinx.serialization.json.*
-    #{datetime_imports}
-    import io.ktor.client.*
-    import io.ktor.client.call.*
-    import io.ktor.client.request.*
-    import io.ktor.http.*
-    #{websocket_imports}#{validation_imports}
-    """
-  end
-
-  defp generate_type_aliases do
-    """
-    // Type aliases for common types
-    typealias UUID = String
-    typealias Decimal = String
-    """
-  end
-
-  defp generate_error_types do
-    """
-    // RPC Error types
-    @Serializable
-    data class AshRpcError(
-        val type: String,
-        val message: String,
-        @SerialName("short_message")
-        val shortMessage: String,
-        val vars: Map<String, String> = emptyMap(),
-        val fields: List<String> = emptyList(),
-        val path: List<String> = emptyList(),
-        val details: Map<String, @Contextual Any?>? = null
-    )
-    """
-  end
-
   defp get_resource_type_name(resource) do
-    # Try to get from DSL configuration first
     case AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name(resource) do
       nil ->
-        # Fall back to module name
         resource
         |> Module.split()
         |> List.last()
@@ -218,107 +196,70 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
         name
     end
   rescue
-    # If the resource doesn't have the AshKotlinMultiplatform.Resource extension
     _ ->
       resource
       |> Module.split()
       |> List.last()
   end
 
-  defp generate_generic_result_types do
-    """
-    // Generic result wrapper
-    @Serializable
-    sealed class RpcResult<T> {
-        abstract val success: Boolean
-    }
+  # Generate pagination types for all paginated actions
+  defp generate_pagination_types(resources_and_actions) do
+    resources_and_actions
+    |> Enum.filter(fn {_resource, action, _rpc_action} ->
+      action.type == :read and PaginationTypes.action_supports_pagination?(action)
+    end)
+    |> Enum.map(fn {resource, action, rpc_action} ->
+      resource_name = get_resource_type_name(resource)
 
-    @Serializable
-    @SerialName("success")
-    data class RpcSuccess<T>(
-        override val success: Boolean = true,
-        val data: T,
-        val metadata: Map<String, @Contextual Any?>? = null
-    ) : RpcResult<T>()
-
-    @Serializable
-    @SerialName("error")
-    data class RpcError<T>(
-        override val success: Boolean = false,
-        val errors: List<AshRpcError>
-    ) : RpcResult<T>()
-    """
+      PaginationTypes.generate_pagination_result_type(
+        resource,
+        action,
+        rpc_action.name,
+        resource_name,
+        false
+      )
+    end)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n\n")
   end
 
-  defp generate_config_types(otp_app) do
-    otp_app
-    |> Ash.Info.domains()
-    |> Enum.flat_map(&Info.kotlin_rpc/1)
-    |> Enum.flat_map(fn %{resource: resource, rpc_actions: actions} ->
-      Enum.map(actions, fn action ->
-        generate_config_type(resource, action)
-      end)
+  # Generate metadata types for all actions that expose metadata
+  defp generate_metadata_types(resources_and_actions) do
+    resources_and_actions
+    |> Enum.map(fn {_resource, action, rpc_action} ->
+      MetadataTypes.generate_action_metadata_type(action, rpc_action, rpc_action.name)
+    end)
+    |> Enum.reject(&(&1 == ""))
+    |> Enum.join("\n\n")
+  end
+
+  # Generate RPC functions using the HttpRenderer
+  defp generate_rpc_functions(resources_and_actions, _opts) do
+    resources_and_actions
+    |> Enum.map(fn {resource, action, rpc_action} ->
+      HttpRenderer.render_execution_function(resource, action, rpc_action, rpc_action.name)
     end)
     |> Enum.join("\n\n")
   end
 
-  defp generate_config_type(_resource, %{name: name}) do
-    config_name = "#{Helpers.snake_to_pascal_case(name)}Config"
+  # Generate validation functions if enabled
+  defp maybe_generate_validation_functions(resources_and_actions, _opts) do
+    if AshKotlinMultiplatform.generate_validation_functions?() do
+      validation_functions =
+        resources_and_actions
+        |> Enum.filter(fn {_resource, action, _rpc_action} ->
+          # Only generate validation for actions that have input
+          action.type in [:create, :update]
+        end)
+        |> Enum.map(fn {resource, action, rpc_action} ->
+          HttpRenderer.render_validation_function(resource, action, rpc_action, rpc_action.name)
+        end)
+        |> Enum.join("\n\n")
 
-    """
-    data class #{config_name}(
-        val input: Map<String, Any?> = emptyMap(),
-        val fields: List<Any> = emptyList(),
-        val tenant: String? = null,
-        val headers: Map<String, String> = emptyMap()
-    )
-    """
-  end
-
-  defp generate_rpc_functions(otp_app) do
-    otp_app
-    |> Ash.Info.domains()
-    |> Enum.flat_map(&Info.kotlin_rpc/1)
-    |> Enum.flat_map(fn %{resource: resource, rpc_actions: actions} ->
-      Enum.map(actions, fn action ->
-        generate_rpc_function(resource, action)
-      end)
-    end)
-    |> Enum.join("\n\n")
-  end
-
-  defp generate_rpc_function(_resource, %{name: name}) do
-    function_name = Helpers.snake_to_camel_case(name)
-    config_name = "#{Helpers.snake_to_pascal_case(name)}Config"
-    endpoint = AshKotlinMultiplatform.run_endpoint()
-
-    """
-    suspend fun #{function_name}(
-        client: HttpClient,
-        config: #{config_name},
-        endpoint: String = "#{endpoint}"
-    ): RpcResult<Map<String, Any?>> {
-        return client.post(endpoint) {
-            contentType(ContentType.Application.Json)
-            config.headers.forEach { (key, value) ->
-                header(key, value)
-            }
-            setBody(buildJsonObject {
-                put("action", "#{name}")
-                put("input", Json.encodeToJsonElement(config.input))
-                putJsonArray("fields") {
-                    config.fields.forEach { field ->
-                        when (field) {
-                            is String -> add(field)
-                            else -> add(Json.encodeToJsonElement(field))
-                        }
-                    }
-                }
-                config.tenant?.let { put("tenant", it) }
-            })
-        }.body()
-    }
-    """
+      non_empty_or_nil(validation_functions, "// Validation Functions")
+    else
+      nil
+    end
   end
 
   defp generate_object_wrappers(otp_app) do

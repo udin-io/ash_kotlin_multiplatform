@@ -180,7 +180,12 @@ defmodule AshKotlinMultiplatform.Rpc do
     ]
   }
 
-  use Spark.Dsl.Extension, sections: [@rpc]
+  use Spark.Dsl.Extension,
+    sections: [@rpc],
+    verifiers: [
+      AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities,
+      AshKotlinMultiplatform.Rpc.Verifiers.VerifyActionTypes
+    ]
 
   @doc """
   Returns the input field formatter for RPC requests.
