@@ -10,7 +10,7 @@ defmodule AshKotlinMultiplatform do
   >
   > This library is in **alpha** and under active development. The API may change
   > between versions without notice. Please report issues on
-  > [GitHub](https://github.com/ash-project/ash_kotlin_multiplatform/issues).
+  > [GitHub](https://github.com/udin-io/ash_kotlin_multiplatform/issues).
 
   AshKotlinMultiplatform provides:
   - Automatic generation of Kotlin data classes from Ash resources

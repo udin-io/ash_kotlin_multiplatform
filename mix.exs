@@ -5,7 +5,7 @@
 defmodule AshKotlinMultiplatform.MixProject do
   use Mix.Project
 
-  @version "0.1.0"
+  @version "0.1.1"
 
   @description """
   Generate type-safe Kotlin Multiplatform clients directly from your Ash resources and actions,
