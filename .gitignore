@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2025 ash_typescript contributors <https://github.com/ash-project/ash_typescript/graphs.contributors>
+# SPDX-FileCopyrightText: 2025 ash_kotlin_multiplatform contributors
 #
 # SPDX-License-Identifier: MIT
 
@@ -21,11 +21,10 @@ erl_crash.dump
 *.ez
 
 # Ignore package tarball (built via "mix hex.build").
-ash_typescript-*.tar
+ash_kotlin_multiplatform-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
 
-test/ts/node_modules/
-test/ts/generated.ts
-test/ts/**/*.js
+# Generated Kotlin files (if output to project directory)
+*.kt.generated
