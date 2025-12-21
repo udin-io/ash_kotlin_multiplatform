@@ -186,4 +186,45 @@ defmodule AshKotlinMultiplatform do
   def generate_validation_annotations? do
     Application.get_env(:ash_kotlin_multiplatform, :generate_validation_annotations, false)
   end
+
+  @doc """
+  Returns whether the given resource requires a tenant parameter.
+
+  This is determined by the resource's multitenancy configuration.
+  """
+  def requires_tenant_parameter?(resource) do
+    case Ash.Resource.Info.multitenancy_strategy(resource) do
+      nil -> Application.get_env(:ash_kotlin_multiplatform, :require_tenant_parameters, false)
+      _ -> true
+    end
+  rescue
+    _ -> false
+  end
+
+  @doc """
+  Returns the before request hook for RPC actions.
+
+  The hook is a Kotlin function name that will be called before each request.
+  """
+  def rpc_action_before_request_hook do
+    Application.get_env(:ash_kotlin_multiplatform, :rpc_action_before_request_hook, nil)
+  end
+
+  @doc """
+  Returns the after request hook for RPC actions.
+
+  The hook is a Kotlin function name that will be called after each request.
+  """
+  def rpc_action_after_request_hook do
+    Application.get_env(:ash_kotlin_multiplatform, :rpc_action_after_request_hook, nil)
+  end
+
+  @doc """
+  Returns the field names callback to use for interop.
+
+  Defaults to :interop_field_names.
+  """
+  def field_names_callback do
+    Application.get_env(:ash_kotlin_multiplatform, :field_names_callback, :interop_field_names)
+  end
 end

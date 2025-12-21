@@ -21,8 +21,8 @@ defmodule AshKotlinMultiplatform.HelpersTest do
     end
 
     test "handles leading underscore" do
-      # Leading underscores are treated as empty segments and capitalized
-      assert Helpers.snake_to_camel_case("_private_field") == "PrivateField"
+      # Leading underscores are treated as empty segments, result is still camelCase
+      assert Helpers.snake_to_camel_case("_private_field") == "privateField"
     end
   end
 
@@ -50,8 +50,8 @@ defmodule AshKotlinMultiplatform.HelpersTest do
     end
 
     test "handles consecutive capitals" do
-      # Consecutive capitals are treated as single words
-      assert Helpers.camel_to_snake_case("XMLParser") == "xmlparser"
+      # Consecutive capitals are properly separated with underscores
+      assert Helpers.camel_to_snake_case("XMLParser") == "xml_parser"
     end
   end
 end

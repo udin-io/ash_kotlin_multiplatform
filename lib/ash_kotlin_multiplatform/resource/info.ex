@@ -65,4 +65,50 @@ defmodule AshKotlinMultiplatform.Resource.Info do
   rescue
     _ -> false
   end
+
+  @doc """
+  Checks if a resource has the AshKotlinMultiplatform.Resource extension.
+  """
+  def kotlin_multiplatform_resource?(resource) do
+    extensions = Spark.extensions(resource)
+    AshKotlinMultiplatform.Resource in extensions
+  rescue
+    _ -> false
+  end
+
+  @doc """
+  Returns the Kotlin type name for a resource, falling back to the module name.
+  """
+  def kotlin_multiplatform_type_name!(resource) do
+    case kotlin_multiplatform_type_name(resource) do
+      nil ->
+        resource
+        |> Module.split()
+        |> List.last()
+
+      name ->
+        name
+    end
+  end
+
+  @doc """
+  Returns the field name mappings for a resource (always returns a list).
+  """
+  def kotlin_multiplatform_field_names!(resource) do
+    kotlin_multiplatform_field_names(resource) || []
+  end
+
+  @doc """
+  Gets the mapped field name for a given field.
+
+  Returns the mapped name if a mapping exists, otherwise returns the original field name.
+  """
+  def get_mapped_field_name(resource, field_name) do
+    field_names = kotlin_multiplatform_field_names(resource)
+
+    case Keyword.get(field_names, field_name) do
+      nil -> field_name
+      mapped -> mapped
+    end
+  end
 end

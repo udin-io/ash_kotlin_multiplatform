@@ -50,5 +50,9 @@ defmodule AshKotlinMultiplatform.Resource do
   }
 
   use Spark.Dsl.Extension,
-    sections: [@kotlin_multiplatform]
+    sections: [@kotlin_multiplatform],
+    verifiers: [
+      AshKotlinMultiplatform.Resource.Verifiers.VerifyFieldNames,
+      AshKotlinMultiplatform.Resource.Verifiers.VerifyUniqueTypeNames
+    ]
 end
