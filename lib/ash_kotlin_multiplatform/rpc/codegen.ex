@@ -116,6 +116,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
         generate_header(package_name),
         KotlinStatic.generate_imports(opts),
         KotlinStatic.generate_type_aliases(),
+        KotlinStatic.generate_http_client_factory(),
         KotlinStatic.generate_error_types(),
         # Resource data classes
         non_empty_or_nil(data_classes, "// Resource Data Classes"),
@@ -146,7 +147,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
         # Validation functions (if enabled)
         maybe_generate_validation_functions(resources_and_actions, opts),
         # Object wrappers (OO style)
-        non_empty_or_nil(generate_object_wrappers(otp_app), "// Object-Oriented API"),
+        non_empty_or_nil(generate_object_wrappers(otp_app, package_name), "// Object-Oriented API"),
         # Phoenix Channel client (if enabled)
         maybe_generate_channel_client()
       ]
@@ -262,18 +263,18 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
     end
   end
 
-  defp generate_object_wrappers(otp_app) do
+  defp generate_object_wrappers(otp_app, package_name) do
     otp_app
     |> Ash.Info.domains()
     |> Enum.flat_map(&Info.kotlin_rpc/1)
     |> Enum.group_by(fn %{resource: resource} -> resource end)
     |> Enum.map(fn {resource, configs} ->
-      generate_object_wrapper(resource, List.first(configs))
+      generate_object_wrapper(resource, List.first(configs), package_name)
     end)
     |> Enum.join("\n\n")
   end
 
-  defp generate_object_wrapper(resource, %{rpc_actions: actions}) do
+  defp generate_object_wrapper(resource, %{rpc_actions: actions}, package_name) do
     type_name = get_resource_type_name(resource)
     object_name = "#{type_name}Rpc"
 
@@ -286,7 +287,8 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
         # Determine method name for OO API
         method_name = determine_method_name(name)
 
-        "    suspend fun #{method_name}(client: HttpClient, config: #{config_name}) = #{function_name}(client, config)"
+        # Qualify with package name to avoid recursive call when method_name matches function_name
+        "    suspend fun #{method_name}(client: HttpClient, config: #{config_name}) = #{package_name}.#{function_name}(client, config)"
       end)
       |> Enum.join("\n")
 
