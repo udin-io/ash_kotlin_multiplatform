@@ -6,6 +6,12 @@ defmodule AshKotlinMultiplatform do
   @moduledoc """
   Generate type-safe Kotlin Multiplatform clients from your Ash resources.
 
+  > #### Alpha Software {: .warning}
+  >
+  > This library is in **alpha** and under active development. The API may change
+  > between versions without notice. Please report issues on
+  > [GitHub](https://github.com/ash-project/ash_kotlin_multiplatform/issues).
+
   AshKotlinMultiplatform provides:
   - Automatic generation of Kotlin data classes from Ash resources
   - Type-safe RPC functions using Ktor client
