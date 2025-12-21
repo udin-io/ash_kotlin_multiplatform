@@ -163,13 +163,10 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
     field_name = format_field_name(attribute.name)
     original_name = Atom.to_string(attribute.name)
 
-    # Handle SerialName annotation if names differ
-    serial_name =
-      if original_name != field_name do
-        "@SerialName(\"#{original_name}\")\n    "
-      else
-        ""
-      end
+    # Handle SerialName annotation based on output field formatter
+    # If server outputs camelCase (default), Kotlin property names already match
+    # If server outputs snake_case, we need @SerialName for the snake_case JSON key
+    serial_name = get_serial_name_annotation(original_name, field_name)
 
     # All fields except `id` get defaults since RPC uses sparse fieldsets
     # This allows responses to omit fields that weren't requested
@@ -208,13 +205,8 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
     original_name = Atom.to_string(rel.name)
     related_type_name = get_kotlin_type_name(rel.destination)
 
-    # Handle SerialName annotation if names differ
-    serial_name =
-      if original_name != field_name do
-        "@SerialName(\"#{original_name}\")\n    "
-      else
-        ""
-      end
+    # Handle SerialName annotation based on output field formatter
+    serial_name = get_serial_name_annotation(original_name, field_name)
 
     # Determine the Kotlin type based on relationship type
     # Relationships are always nullable since they may not be loaded
@@ -328,12 +320,8 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
       formatted_name = format_field_name(field_name)
       original_name = Atom.to_string(field_name)
 
-      serial_name =
-        if original_name != formatted_name do
-          "@SerialName(\"#{original_name}\") "
-        else
-          ""
-        end
+      # Use inline version of serial_name for union fields
+      serial_name = get_inline_serial_name_annotation(original_name, formatted_name)
 
       default = if allow_nil, do: " = null", else: ""
 
@@ -378,5 +366,45 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
     name
     |> Atom.to_string()
     |> Helpers.snake_to_camel_case()
+  end
+
+  # Determines the correct @SerialName annotation based on output_field_formatter config
+  # When server outputs camelCase (default): no annotation needed, Kotlin properties already match
+  # When server outputs snake_case: need @SerialName("snake_case") since Kotlin properties are camelCase
+  defp get_serial_name_annotation(original_name, kotlin_field_name) do
+    output_formatter = AshKotlinMultiplatform.output_field_formatter()
+
+    case output_formatter do
+      :snake_case ->
+        # Server outputs snake_case, Kotlin properties are camelCase
+        # Need @SerialName to map snake_case JSON to camelCase property
+        if original_name != kotlin_field_name do
+          "@SerialName(\"#{original_name}\")\n    "
+        else
+          ""
+        end
+
+      _camel_case ->
+        # Server outputs camelCase (default), Kotlin properties are camelCase
+        # No annotation needed - property names match JSON keys
+        ""
+    end
+  end
+
+  # Inline version for union fields (no newline)
+  defp get_inline_serial_name_annotation(original_name, kotlin_field_name) do
+    output_formatter = AshKotlinMultiplatform.output_field_formatter()
+
+    case output_formatter do
+      :snake_case ->
+        if original_name != kotlin_field_name do
+          "@SerialName(\"#{original_name}\") "
+        else
+          ""
+        end
+
+      _camel_case ->
+        ""
+    end
   end
 end
