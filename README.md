@@ -452,7 +452,7 @@ config :ash_kotlin_multiplatform,
 
 ## Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Contributions are welcome! Please open an issue or pull request on [GitHub](https://github.com/udin-io/ash_kotlin_multiplatform).
 
 ## License
 
