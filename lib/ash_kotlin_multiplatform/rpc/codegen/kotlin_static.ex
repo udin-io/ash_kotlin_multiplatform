@@ -15,8 +15,22 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
   def generate_imports(opts \\ []) do
     datetime_imports =
       case AshKotlinMultiplatform.datetime_library() do
-        :kotlinx_datetime -> "import kotlinx.datetime.*"
-        :java_time -> "import java.time.*"
+        :kotlinx_datetime ->
+          """
+          import kotlinx.datetime.*
+          import kotlinx.serialization.KSerializer
+          import kotlinx.serialization.descriptors.PrimitiveKind
+          import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+          import kotlinx.serialization.descriptors.SerialDescriptor
+          import kotlinx.serialization.encoding.Decoder
+          import kotlinx.serialization.encoding.Encoder
+          import kotlinx.serialization.modules.SerializersModule
+          import kotlinx.serialization.modules.contextual
+          """
+          |> String.trim_trailing()
+
+        :java_time ->
+          "import java.time.*"
       end
 
     websocket_imports =
@@ -58,14 +72,48 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
   Generates a helper function to create a configured HttpClient.
   """
   def generate_http_client_factory do
+    # kotlinx-datetime 0.7 removed the concrete InstantIso8601Serializer object (Instant is
+    # deprecated in favor of kotlin.time.Instant there) in favor of an abstract
+    # FormattedInstantSerializer base that doesn't exist before 0.7. Neither name is safe to
+    # reference unconditionally — this codegen has no way to know which kotlinx-datetime
+    # version a given consumer has pinned — so this hand-writes a KSerializer against only
+    # Instant.toString()/Instant.parse(), which are stable ISO-8601 API across that version
+    # split. Fields typed as Instant are emitted as @Contextual (see
+    # ResourceSchemas.generate_field/1) and resolved through the SerializersModule below at
+    # runtime.
+    {instant_serializer_decl, serializers_module} =
+      case AshKotlinMultiplatform.datetime_library() do
+        :kotlinx_datetime ->
+          decl = """
+          private object InstantIso8601Serializer : KSerializer<kotlinx.datetime.Instant> {
+              override val descriptor: SerialDescriptor =
+                  PrimitiveSerialDescriptor("kotlinx.datetime.Instant", PrimitiveKind.STRING)
+
+              override fun serialize(encoder: Encoder, value: kotlinx.datetime.Instant) {
+                  encoder.encodeString(value.toString())
+              }
+
+              override fun deserialize(decoder: Decoder): kotlinx.datetime.Instant {
+                  return kotlinx.datetime.Instant.parse(decoder.decodeString())
+              }
+          }
+
+          """
+
+          {decl, "\n                    serializersModule = SerializersModule { contextual(InstantIso8601Serializer) }"}
+
+        :java_time ->
+          {"", ""}
+      end
+
     """
-    // HTTP Client factory
+    #{instant_serializer_decl}// HTTP Client factory
     fun createHttpClient(): HttpClient {
         return HttpClient {
             install(ContentNegotiation) {
                 json(Json {
                     ignoreUnknownKeys = true
-                    isLenient = true
+                    isLenient = true#{serializers_module}
                 })
             }
         }

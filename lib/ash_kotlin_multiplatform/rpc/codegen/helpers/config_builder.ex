@@ -12,6 +12,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.ConfigBuilder do
 
   alias AshKotlinMultiplatform.Codegen.TypeMapper
   alias AshKotlinMultiplatform.Rpc.Codegen.Helpers.ActionIntrospection
+  alias AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.MetadataTypes
   alias AshIntrospection.Helpers
 
   @doc """
@@ -133,6 +134,19 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.ConfigBuilder do
     fields =
       if context.supports_pagination do
         fields ++ [{:page, "Map<String, @Contextual Any?>?", true, "null"}]
+      else
+        fields
+      end
+
+    # Add metadata fields selector when the action exposes metadata (mirrors the
+    # has_metadata check in FunctionCore.build_execution_function_shape/5 — the two
+    # must stay in sync, or the emitted function body references a config property
+    # that was never declared on the class).
+    fields =
+      if MetadataTypes.metadata_enabled?(
+           MetadataTypes.get_exposed_metadata_fields(rpc_action, action)
+         ) do
+        fields ++ [{:metadata_fields, "List<Any>?", true, "null"}]
       else
         fields
       end
