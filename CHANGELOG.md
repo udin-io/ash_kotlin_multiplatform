@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- `AshKotlinMultiplatform.Codegen.ValidationSchemas`, the `with_validation`
+  option on `KotlinStatic.generate_imports/1`, and the orphaned
+  `generate_validation_annotations?/0` config accessor. Nothing in the
+  library called any of the three, and the `javax.validation.constraints`
+  annotations they would have emitted are JVM-only, so they could never
+  compile in the common Kotlin Multiplatform source set this library
+  targets. This is a breaking change on paper, since the module and the
+  accessor were public API, but neither was reachable through any
+  documented entry point.
+
 ### Fixed
 
 - `Rpc.Runner` now honors the `metadataFields` param the generated Kotlin
