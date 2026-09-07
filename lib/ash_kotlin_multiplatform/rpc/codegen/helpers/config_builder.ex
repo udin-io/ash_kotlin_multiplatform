@@ -146,7 +146,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.ConfigBuilder do
       if MetadataTypes.metadata_enabled?(
            MetadataTypes.get_exposed_metadata_fields(rpc_action, action)
          ) do
-        fields ++ [{:metadata_fields, "List<Any>?", true, "null"}]
+        fields ++ [{:metadata_fields, "List<String>?", true, "null"}]
       else
         fields
       end
