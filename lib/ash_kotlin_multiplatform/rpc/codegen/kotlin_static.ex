@@ -12,7 +12,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
   @doc """
   Generates the standard imports for the generated Kotlin file.
   """
-  def generate_imports(opts \\ []) do
+  def generate_imports(_opts \\ []) do
     datetime_imports =
       case AshKotlinMultiplatform.datetime_library() do
         :kotlinx_datetime ->
@@ -44,15 +44,6 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
         ""
       end
 
-    validation_imports =
-      if Keyword.get(opts, :with_validation, false) do
-        """
-        import javax.validation.constraints.*
-        """
-      else
-        ""
-      end
-
     """
     import kotlinx.serialization.*
     import kotlinx.serialization.json.*
@@ -63,7 +54,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
     import io.ktor.client.plugins.contentnegotiation.*
     import io.ktor.serialization.kotlinx.json.*
     import io.ktor.http.*
-    #{websocket_imports}#{validation_imports}
+    #{websocket_imports}
     """
     |> String.trim()
   end
