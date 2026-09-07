@@ -42,6 +42,7 @@ defmodule AshKotlinMultiplatform.Codegen.FilterTypes do
   """
 
   alias AshIntrospection.FieldFormatter
+  alias AshKotlinMultiplatform.Codegen.TypeMapper
 
   @doc """
   Generates filter types for multiple resources.
@@ -123,6 +124,13 @@ defmodule AshKotlinMultiplatform.Codegen.FilterTypes do
   These are the primitive filter types used by resource filters.
   """
   def generate_base_filter_types do
+    date_type = TypeMapper.get_kotlin_type_for_type(Ash.Type.Date)
+
+    instant_type =
+      TypeMapper.annotate_contextual_types(
+        TypeMapper.get_kotlin_type_for_type(Ash.Type.UtcDatetime)
+      )
+
     """
     @Serializable
     data class StringFilter(
@@ -172,26 +180,26 @@ defmodule AshKotlinMultiplatform.Codegen.FilterTypes do
 
     @Serializable
     data class DateFilter(
-        val eq: kotlinx.datetime.LocalDate? = null,
-        val notEq: kotlinx.datetime.LocalDate? = null,
-        val greaterThan: kotlinx.datetime.LocalDate? = null,
-        val greaterThanOrEqual: kotlinx.datetime.LocalDate? = null,
-        val lessThan: kotlinx.datetime.LocalDate? = null,
-        val lessThanOrEqual: kotlinx.datetime.LocalDate? = null,
+        val eq: #{date_type}? = null,
+        val notEq: #{date_type}? = null,
+        val greaterThan: #{date_type}? = null,
+        val greaterThanOrEqual: #{date_type}? = null,
+        val lessThan: #{date_type}? = null,
+        val lessThanOrEqual: #{date_type}? = null,
         @SerialName("in")
-        val inValues: List<kotlinx.datetime.LocalDate>? = null
+        val inValues: List<#{date_type}>? = null
     )
 
     @Serializable
     data class InstantFilter(
-        val eq: @Contextual kotlinx.datetime.Instant? = null,
-        val notEq: @Contextual kotlinx.datetime.Instant? = null,
-        val greaterThan: @Contextual kotlinx.datetime.Instant? = null,
-        val greaterThanOrEqual: @Contextual kotlinx.datetime.Instant? = null,
-        val lessThan: @Contextual kotlinx.datetime.Instant? = null,
-        val lessThanOrEqual: @Contextual kotlinx.datetime.Instant? = null,
+        val eq: #{instant_type}? = null,
+        val notEq: #{instant_type}? = null,
+        val greaterThan: #{instant_type}? = null,
+        val greaterThanOrEqual: #{instant_type}? = null,
+        val lessThan: #{instant_type}? = null,
+        val lessThanOrEqual: #{instant_type}? = null,
         @SerialName("in")
-        val inValues: List<@Contextual kotlinx.datetime.Instant>? = null
+        val inValues: List<#{instant_type}>? = null
     )
 
     @Serializable
