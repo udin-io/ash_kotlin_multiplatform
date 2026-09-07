@@ -184,14 +184,14 @@ defmodule AshKotlinMultiplatform.Codegen.FilterTypes do
 
     @Serializable
     data class InstantFilter(
-        val eq: kotlinx.datetime.Instant? = null,
-        val notEq: kotlinx.datetime.Instant? = null,
-        val greaterThan: kotlinx.datetime.Instant? = null,
-        val greaterThanOrEqual: kotlinx.datetime.Instant? = null,
-        val lessThan: kotlinx.datetime.Instant? = null,
-        val lessThanOrEqual: kotlinx.datetime.Instant? = null,
+        val eq: @Contextual kotlinx.datetime.Instant? = null,
+        val notEq: @Contextual kotlinx.datetime.Instant? = null,
+        val greaterThan: @Contextual kotlinx.datetime.Instant? = null,
+        val greaterThanOrEqual: @Contextual kotlinx.datetime.Instant? = null,
+        val lessThan: @Contextual kotlinx.datetime.Instant? = null,
+        val lessThanOrEqual: @Contextual kotlinx.datetime.Instant? = null,
         @SerialName("in")
-        val inValues: List<kotlinx.datetime.Instant>? = null
+        val inValues: List<@Contextual kotlinx.datetime.Instant>? = null
     )
 
     @Serializable

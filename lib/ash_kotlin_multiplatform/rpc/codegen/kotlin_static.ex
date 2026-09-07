@@ -100,7 +100,8 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
 
           """
 
-          {decl, "\n                    serializersModule = SerializersModule { contextual(InstantIso8601Serializer) }"}
+          {decl,
+           "\n                    serializersModule = SerializersModule { contextual(InstantIso8601Serializer) }"}
 
         :java_time ->
           {"", ""}

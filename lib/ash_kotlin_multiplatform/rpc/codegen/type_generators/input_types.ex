@@ -118,7 +118,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.InputTypes do
           {kotlin_type, ""}
       end
 
-    "#{serial_name}val #{field_name}: #{type_with_nullability}#{default}"
+    "#{serial_name}val #{field_name}: #{TypeMapper.annotate_contextual_types(type_with_nullability)}#{default}"
   end
 
   defp generate_attribute_field(attribute, action) do
@@ -153,7 +153,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.InputTypes do
           {kotlin_type, ""}
       end
 
-    "#{serial_name}val #{field_name}: #{type_with_nullability}#{default}"
+    "#{serial_name}val #{field_name}: #{TypeMapper.annotate_contextual_types(type_with_nullability)}#{default}"
   end
 
   # Determines if an attribute is optional for the given action

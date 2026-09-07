@@ -187,12 +187,7 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
           {nullable_type, " = #{default_value}"}
       end
 
-    # kotlinx-datetime's Instant has no default serializer; @Contextual defers to the
-    # SerializersModule registered in KotlinStatic.generate_http_client_factory/0.
-    contextual =
-      if String.contains?(kotlin_type, "kotlinx.datetime.Instant"), do: "@Contextual ", else: ""
-
-    "#{serial_name}#{contextual}val #{field_name}: #{kotlin_type}#{default}"
+    "#{serial_name}val #{field_name}: #{TypeMapper.annotate_contextual_types(kotlin_type)}#{default}"
   end
 
   defp make_nullable(kotlin_type) do
