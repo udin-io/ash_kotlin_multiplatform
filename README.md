@@ -16,7 +16,8 @@ Generate type-safe Kotlin Multiplatform clients from your Ash resources.
 
 - **Automatic Kotlin Multiplatform generation** from Elixir Ash resources
 - **Swift code generation** for native iOS apps
-- **End-to-end type safety** between backend (Elixir) and frontend (Kotlin/Swift)
+- **End-to-end type safety** between backend (Elixir) and frontend
+  (Kotlin/Swift)
 - **Type-safe RPC client generation** using Ktor (Kotlin) and URLSession (Swift)
 - **Built-in RPC controller** for Phoenix applications
 - **kotlinx.serialization** integration for JSON handling
@@ -51,7 +52,8 @@ end
 
 ### 1. Add the Resource Extension
 
-Configure your Ash resources with the `AshKotlinMultiplatform.Resource` extension:
+Configure your Ash resources with the `AshKotlinMultiplatform.Resource`
+extension:
 
 ```elixir
 defmodule MyApp.Todo do
@@ -89,7 +91,8 @@ end
 
 ### 2. Add the Domain Extension
 
-Configure your Ash domain with the `AshKotlinMultiplatform.Rpc` extension to expose actions via RPC:
+Configure your Ash domain with the `AshKotlinMultiplatform.Rpc` extension to
+expose actions via RPC:
 
 ```elixir
 defmodule MyApp.Domain do
@@ -168,7 +171,8 @@ Run the code generation mix task:
 mix ash_kotlin_multiplatform.codegen
 ```
 
-This generates a Kotlin file (default: `lib/generated/AshRpc.kt`) containing all your types and RPC functions.
+This generates a Kotlin file (default: `lib/generated/AshRpc.kt`) containing
+all your types and RPC functions.
 
 ### 5. Generate Swift Code (Optional)
 
@@ -313,7 +317,6 @@ config :ash_kotlin_multiplatform,
   generate_phoenix_channel_client: true,
   generate_validation_functions: true,
   generate_filter_types: false,
-  generate_validation_annotations: false,
 
   # Type handling
   datetime_library: :kotlinx_datetime,  # or :java_time
@@ -338,7 +341,6 @@ config :ash_kotlin_multiplatform,
 | `generate_phoenix_channel_client` | `true` | Generate WebSocket client code |
 | `generate_validation_functions` | `true` | Generate input validation functions |
 | `generate_filter_types` | `false` | Generate type-safe filter types |
-| `generate_validation_annotations` | `false` | Add javax.validation annotations |
 | `datetime_library` | `:kotlinx_datetime` | Date/time library (`:kotlinx_datetime` or `:java_time`) |
 | `nullable_strategy` | `:explicit` | Nullable handling (`:explicit` for `T?`, `:platform` for `T!`) |
 | `run_endpoint` | `"/rpc/run"` | RPC execution endpoint |
@@ -391,7 +393,8 @@ end
 
 ## Phoenix Channel Support
 
-When `generate_phoenix_channel_client: true`, the generator creates a full Phoenix Channel client:
+When `generate_phoenix_channel_client: true`, the generator creates a full
+Phoenix Channel client:
 
 ```kotlin
 // Connect to Phoenix Channel
@@ -452,7 +455,8 @@ config :ash_kotlin_multiplatform,
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or pull request on [GitHub](https://github.com/udin-io/ash_kotlin_multiplatform).
+Contributions are welcome! Please open an issue or pull request on
+[GitHub](https://github.com/udin-io/ash_kotlin_multiplatform).
 
 ## License
 

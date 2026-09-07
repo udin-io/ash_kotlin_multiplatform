@@ -183,17 +183,6 @@ defmodule AshKotlinMultiplatform do
   end
 
   @doc """
-  Returns whether to generate validation annotations.
-
-  When enabled, generates javax.validation annotations on input types.
-
-  Defaults to false.
-  """
-  def generate_validation_annotations? do
-    Application.get_env(:ash_kotlin_multiplatform, :generate_validation_annotations, false)
-  end
-
-  @doc """
   Returns whether the given resource requires a tenant parameter.
 
   This is determined by the resource's multitenancy configuration.
