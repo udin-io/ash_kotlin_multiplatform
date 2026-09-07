@@ -17,6 +17,12 @@ defmodule AshKotlinMultiplatform.Test.Domain do
       rpc_action :list_events, :read
       rpc_action :create_event, :create
       rpc_action :register_event, :register
+
+      # Exposes one of the action's two metadata fields, so a test can prove a
+      # client cannot widen past what the DSL allows.
+      rpc_action :register_event_narrow, :register do
+        show_metadata [:registered_at]
+      end
     end
 
     resource AshKotlinMultiplatform.Test.Todo do
