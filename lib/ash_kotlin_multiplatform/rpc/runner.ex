@@ -27,6 +27,9 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   - `"filter"` - Filter for read actions
   - `"sort"` - Sort string for read actions
   - `"page"` - Pagination options
+  - `"metadataFields"` - Metadata fields to return. Narrows the fields the DSL
+    exposes; it can never widen them. Absent or `nil` returns every exposed
+    field, `[]` returns none.
 
   ## Response Format
 
@@ -156,24 +159,10 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     extraction_template = build_extraction_template(resource, fields)
     {select, load} = build_select_and_load(resource, fields)
 
-    # Get show_metadata, ensuring it's always a list
-    # nil in DSL means "show all", but for the pipeline we need a list
-    # false or [] means "show none", a list means "show specific fields"
     show_metadata =
-      case Map.get(rpc_action, :show_metadata) do
-        nil ->
-          # nil means "show all" - get all metadata fields from action
-          get_action_metadata_fields(action)
-
-        false ->
-          []
-
-        list when is_list(list) ->
-          list
-
-        _ ->
-          []
-      end
+      action
+      |> dsl_metadata_fields(rpc_action)
+      |> narrow_metadata_fields(parse_metadata_fields(params))
 
     %Request{
       domain: domain,
@@ -256,8 +245,32 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     {:error, {:missing_required_parameter, :identity}}
   end
 
+  # ---------------------------------------------------------------------------
+  # Metadata Field Selection
+  # ---------------------------------------------------------------------------
+
+  # What the DSL exposes: nil means every field the action declares, false or []
+  # means none, a list means exactly that list.
+  defp dsl_metadata_fields(action, rpc_action) do
+    case Map.get(rpc_action, :show_metadata) do
+      nil -> action_metadata_fields(action)
+      false -> []
+      list when is_list(list) -> list
+      _ -> []
+    end
+  end
+
+  # The client can only narrow, never widen. Filtering the DSL list means a name
+  # the DSL withholds yields nothing and no error that would reveal it exists.
+  # nil means the client asked for nothing in particular, so it gets everything.
+  defp narrow_metadata_fields(dsl_fields, nil), do: dsl_fields
+
+  defp narrow_metadata_fields(dsl_fields, requested) do
+    Enum.filter(dsl_fields, &(&1 in requested))
+  end
+
   # Get all metadata field names from an action
-  defp get_action_metadata_fields(action) do
+  defp action_metadata_fields(action) do
     case Map.get(action, :metadata) do
       nil ->
         []
@@ -316,6 +329,27 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     end
   end
 
+  # nil means the client sent nothing, which keeps today's behaviour: everything
+  # the DSL exposes. An empty list means no metadata.
+  defp parse_metadata_fields(params) do
+    case params["metadataFields"] do
+      fields when is_list(fields) -> Enum.flat_map(fields, &existing_metadata_atom/1)
+      _ -> nil
+    end
+  end
+
+  # String.to_existing_atom/1 stops a client from growing the atom table. A name
+  # that does not resolve is dropped rather than raised on: an atom that does not
+  # exist cannot name a metadata field either, so there is nothing to report.
+  defp existing_metadata_atom(name) when is_binary(name) do
+    [name |> to_snake_case() |> String.to_existing_atom()]
+  rescue
+    ArgumentError -> []
+  end
+
+  defp existing_metadata_atom(name) when is_atom(name) and not is_nil(name), do: [name]
+  defp existing_metadata_atom(_), do: []
+
   defp convert_keys_to_atoms(map) when is_map(map) do
     Map.new(map, fn
       {key, value} when is_binary(key) ->
@@ -335,9 +369,14 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
 
   defp to_snake_case_atom(string) when is_binary(string) do
     string
+    |> to_snake_case()
+    |> String.to_atom()
+  end
+
+  defp to_snake_case(string) when is_binary(string) do
+    string
     |> String.replace(~r/([a-z])([A-Z])/, "\\1_\\2")
     |> String.downcase()
-    |> String.to_atom()
   end
 
   # ---------------------------------------------------------------------------
