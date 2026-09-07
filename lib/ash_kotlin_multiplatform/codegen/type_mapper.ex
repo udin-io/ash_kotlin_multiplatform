@@ -17,6 +17,9 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
 
   alias AshIntrospection.TypeSystem.Introspection
 
+  # Kotlin types with no serializer the compiler can resolve on its own.
+  @contextual_types ["kotlinx.datetime.Instant"]
+
   @doc """
   Returns the Kotlin type for an Ash attribute.
 
@@ -53,6 +56,31 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
   """
   def get_kotlin_type_for_type(type, constraints \\ []) do
     do_get_kotlin_type(type, constraints)
+  end
+
+  @doc """
+  Annotates the types that have no compile-time serializer with `@Contextual`.
+
+  `kotlinx.datetime.Instant` is the only such type. kotlinx-datetime 0.6 shipped a
+  default serializer for it; 0.7 deprecated the class in favour of
+  `kotlin.time.Instant` and dropped both the default and the concrete
+  `InstantIso8601Serializer` object. A generated file cannot know which version the
+  consumer pinned, so it defers the lookup to the `SerializersModule` that
+  `AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic.generate_http_client_factory/0`
+  registers.
+
+  Annotates in type position rather than on the property, so element types resolve
+  too: `List<@Contextual Instant>` consults the module for `Instant`, while
+  `@Contextual val x: List<Instant>` would look for a serializer registered for
+  `List<Instant>` and fail at runtime.
+
+  `java.time.Instant` is left alone — `:java_time` consumers supply their own
+  serializers. Idempotent, so it is safe to apply to an already-annotated type.
+  """
+  def annotate_contextual_types(kotlin_type) when is_binary(kotlin_type) do
+    Enum.reduce(@contextual_types, kotlin_type, fn type, acc ->
+      String.replace(acc, ~r/(?<!@Contextual )\b#{Regex.escape(type)}\b/, "@Contextual #{type}")
+    end)
   end
 
   defp do_get_kotlin_type(type, constraints) do

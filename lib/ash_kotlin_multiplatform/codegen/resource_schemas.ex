@@ -187,7 +187,7 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
           {nullable_type, " = #{default_value}"}
       end
 
-    "#{serial_name}val #{field_name}: #{kotlin_type}#{default}"
+    "#{serial_name}val #{field_name}: #{TypeMapper.annotate_contextual_types(kotlin_type)}#{default}"
   end
 
   defp make_nullable(kotlin_type) do

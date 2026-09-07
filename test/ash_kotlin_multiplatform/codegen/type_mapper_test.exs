@@ -91,4 +91,47 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapperTest do
       assert TypeMapper.get_kotlin_type_for_type(:unknown_type) == "Any"
     end
   end
+
+  describe "annotate_contextual_types/1" do
+    test "annotates a bare Instant in type position" do
+      assert TypeMapper.annotate_contextual_types("kotlinx.datetime.Instant") ==
+               "@Contextual kotlinx.datetime.Instant"
+    end
+
+    test "annotates a nullable Instant" do
+      assert TypeMapper.annotate_contextual_types("kotlinx.datetime.Instant?") ==
+               "@Contextual kotlinx.datetime.Instant?"
+    end
+
+    test "annotates the element type of a list, not the list" do
+      assert TypeMapper.annotate_contextual_types("List<kotlinx.datetime.Instant>?") ==
+               "List<@Contextual kotlinx.datetime.Instant>?"
+    end
+
+    test "annotates every occurrence in a nested type" do
+      assert TypeMapper.annotate_contextual_types(
+               "Map<kotlinx.datetime.Instant, List<kotlinx.datetime.Instant>>"
+             ) ==
+               "Map<@Contextual kotlinx.datetime.Instant, List<@Contextual kotlinx.datetime.Instant>>"
+    end
+
+    test "leaves types with a built-in serializer alone" do
+      assert TypeMapper.annotate_contextual_types("String?") == "String?"
+
+      assert TypeMapper.annotate_contextual_types("kotlinx.datetime.LocalDate") ==
+               "kotlinx.datetime.LocalDate"
+
+      assert TypeMapper.annotate_contextual_types("kotlinx.datetime.LocalDateTime") ==
+               "kotlinx.datetime.LocalDateTime"
+    end
+
+    test "leaves java.time.Instant alone" do
+      assert TypeMapper.annotate_contextual_types("java.time.Instant?") == "java.time.Instant?"
+    end
+
+    test "is idempotent" do
+      once = TypeMapper.annotate_contextual_types("kotlinx.datetime.Instant?")
+      assert TypeMapper.annotate_contextual_types(once) == once
+    end
+  end
 end

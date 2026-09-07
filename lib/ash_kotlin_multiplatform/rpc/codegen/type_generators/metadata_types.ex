@@ -94,12 +94,16 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.MetadataTypes do
 
       metadata_field_defs =
         Enum.map(metadata_fields_to_include, fn metadata_field ->
-          kotlin_type = TypeMapper.get_kotlin_type_for_type(metadata_field.type, metadata_field.constraints || [])
+          kotlin_type =
+            metadata_field.type
+            |> TypeMapper.get_kotlin_type_for_type(metadata_field.constraints || [])
+            |> TypeMapper.annotate_contextual_types()
 
           optional = Map.get(metadata_field, :allow_nil?, true)
 
           # Check for mapped metadata field names
           metadata_field_names = Map.get(rpc_action, :metadata_field_names, [])
+
           mapped_name = Keyword.get(metadata_field_names, metadata_field.name, metadata_field.name)
           formatted_name = Helpers.snake_to_camel_case(mapped_name)
 

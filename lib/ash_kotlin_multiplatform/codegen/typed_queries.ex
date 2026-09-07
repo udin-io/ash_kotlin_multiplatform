@@ -196,7 +196,7 @@ defmodule AshKotlinMultiplatform.Codegen.TypedQueries do
     attr = get_attribute_or_calculation(resource, field)
 
     if attr do
-      kotlin_type = TypeMapper.get_kotlin_type(attr)
+      kotlin_type = TypeMapper.annotate_contextual_types(TypeMapper.get_kotlin_type(attr))
       formatted_name = format_field_for_client(field, resource)
 
       if formatted_name != to_string(field) do
