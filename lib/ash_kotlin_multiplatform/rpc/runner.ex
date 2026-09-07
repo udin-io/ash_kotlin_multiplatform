@@ -129,7 +129,8 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     action_info = Ash.Resource.Info.action(resource, action_name)
 
     # Build the request
-    request = build_request(domain, resource, action_info, rpc_action, params, actor, tenant, context)
+    request =
+      build_request(domain, resource, action_info, rpc_action, params, actor, tenant, context)
 
     # Execute through the pipeline
     with {:ok, ash_result} <- Pipeline.execute_ash_action(request),
@@ -163,9 +164,15 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
         nil ->
           # nil means "show all" - get all metadata fields from action
           get_action_metadata_fields(action)
-        false -> []
-        list when is_list(list) -> list
-        _ -> []
+
+        false ->
+          []
+
+        list when is_list(list) ->
+          list
+
+        _ ->
+          []
       end
 
     %Request{
@@ -207,6 +214,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
 
         :update ->
           identity = parse_identity(params)
+
           with {:ok, record} <- get_record_for_validation(resource, identity, opts) do
             changeset = Ash.Changeset.for_update(record, action_name, input, opts)
             {:ok, changeset}
@@ -224,11 +232,16 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
         build_validation_error_response(errors)
 
       {:error, :validation_not_supported} ->
-        %{"success" => false, "errors" => [%{
-          "type" => "unsupported",
-          "message" => "Validation is only supported for create and update actions",
-          "shortMessage" => "Unsupported"
-        }]}
+        %{
+          "success" => false,
+          "errors" => [
+            %{
+              "type" => "unsupported",
+              "message" => "Validation is only supported for create and update actions",
+              "shortMessage" => "Unsupported"
+            }
+          ]
+        }
 
       {:error, error} ->
         build_error_response(error)
@@ -246,7 +259,9 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # Get all metadata field names from an action
   defp get_action_metadata_fields(action) do
     case Map.get(action, :metadata) do
-      nil -> []
+      nil ->
+        []
+
       metadata when is_list(metadata) ->
         Enum.map(metadata, fn
           %{name: name} -> name
@@ -255,7 +270,9 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
           _ -> nil
         end)
         |> Enum.reject(&is_nil/1)
-      _ -> []
+
+      _ ->
+        []
     end
   end
 
