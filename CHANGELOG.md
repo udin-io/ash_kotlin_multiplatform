@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `Rpc.Runner` now honors the `metadataFields` param the generated Kotlin
+  client sends. It narrows the metadata fields the DSL exposes and can never
+  widen them: a field the DSL withholds is not returned and raises no error.
+  Absent or `null` returns everything the DSL exposes, as before; `[]` returns
+  no metadata.
+
 ## [0.1.3] - 2025-12-21
 
 ### Changed
@@ -25,16 +33,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Fixed GitHub URLs to point to correct repository (udin-io/ash_kotlin_multiplatform)
+- Fixed GitHub URLs to point to correct repository
+  (udin-io/ash_kotlin_multiplatform)
 
 ## [0.1.0] - 2025-12-21
 
-> **Alpha Release** - This is an early alpha release. The API may change between versions.
+> **Alpha Release** - This is an early alpha release. The API may change
+> between versions.
 
 ### Added
 
 - Initial release of AshKotlinMultiplatform
-- `AshKotlinMultiplatform.Resource` extension for resource-level Kotlin configuration
+- `AshKotlinMultiplatform.Resource` extension for resource-level Kotlin
+  configuration
   - `type_name` option for custom Kotlin class names
   - `field_names` option for mapping field names to valid Kotlin identifiers
   - `argument_names` option for mapping action argument names
