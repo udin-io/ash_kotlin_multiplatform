@@ -50,20 +50,20 @@ defmodule AshKotlinMultiplatform.Codegen.InstantSerializationTest do
 
   describe "resource data classes" do
     test "annotates Instant attributes" do
-      kotlin = ResourceSchemas.generate_data_class(Event)
+      kotlin = ResourceSchemas.generate_data_class(Event, [Event])
 
       assert kotlin =~ "val occurredAt: @Contextual kotlinx.datetime.Instant? = null"
       assert_no_bare_instants(kotlin)
     end
 
     test "annotates the element type of an Instant list, not the list itself" do
-      kotlin = ResourceSchemas.generate_data_class(Event)
+      kotlin = ResourceSchemas.generate_data_class(Event, [Event])
 
       assert kotlin =~ "val reminderAts: List<@Contextual kotlinx.datetime.Instant>? = null"
     end
 
     test "leaves types with a built-in serializer bare" do
-      kotlin = ResourceSchemas.generate_data_class(Event)
+      kotlin = ResourceSchemas.generate_data_class(Event, [Event])
 
       assert kotlin =~ "val startsOn: kotlinx.datetime.LocalDate? = null"
     end
