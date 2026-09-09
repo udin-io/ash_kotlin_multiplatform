@@ -188,6 +188,12 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
   @doc """
   Generates the RPC error types.
   """
+  # `shortMessage` carries no `@SerialName`. Every error map `Rpc.Runner` builds
+  # writes the key `"shortMessage"` literally, under every
+  # `output_field_formatter` setting: see `build_error_response/1`,
+  # `format_validation_errors/1` and `format_single_error/1`. Annotating the
+  # field `short_message` therefore made it decode as `null` on every error the
+  # server has ever sent (#24).
   def generate_error_types do
     """
     // RPC Error types
@@ -195,7 +201,6 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
     data class AshRpcError(
         val type: String? = null,
         val message: String? = null,
-        @SerialName("short_message")
         val shortMessage: String? = null,
         val vars: Map<String, String> = emptyMap(),
         val fields: List<String> = emptyList(),
@@ -208,6 +213,12 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
   @doc """
   Generates the generic RPC result types.
   """
+  # No `metadata` property. `Rpc.Runner.build_success_response/1` returns
+  # `success` and `data` and nothing else, and action metadata reaches the
+  # client *inside* `data` — `AshIntrospection.Rpc.Pipeline.add_metadata/4`
+  # merges the exposed fields into the record. A top-level `metadata` promised a
+  # key the server has never sent, so it decoded as `null` every time and sent
+  # readers looking for it in the wrong place (#24).
   def generate_generic_result_types do
     """
     // Generic result wrapper
@@ -215,8 +226,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
     data class RpcResult(
         val success: Boolean,
         val data: JsonElement? = null,
-        val errors: List<AshRpcError>? = null,
-        val metadata: JsonElement? = null
+        val errors: List<AshRpcError>? = null
     ) {
         inline fun <reified T> dataAs(): T? {
             return data?.let { Json { ignoreUnknownKeys = true }.decodeFromJsonElement<T>(it) }
@@ -231,22 +241,47 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
   @doc """
   Generates the validation result type.
   """
+  # A plain `@Serializable sealed class` makes kotlinx-serialization look for a
+  # `"type"` class discriminator. `Rpc.Runner.build_validation_success_response/0`
+  # sends `{"success":true,"valid":true}` and
+  # `build_validation_error_response/1` sends the same with `"valid":false` and
+  # an `"errors"` list — neither carries a discriminator, so every `validateX()`
+  # call threw `JsonDecodingException` on decode (#24).
+  #
+  # `valid` is the discriminator the server already sends, and
+  # `JsonContentPolymorphicSerializer` is how kotlinx reads one out of the
+  # content rather than out of a synthetic key:
+  # https://kotlinlang.org/api/kotlinx.serialization/kotlinx-serialization-json/kotlinx.serialization.json/-json-content-polymorphic-serializer/
+  # Choosing it over adding `"type"` to the response keeps the wire format the
+  # Swift generator and the Phoenix channel client already read unchanged.
   def generate_validation_types do
     """
     // Validation result types
-    @Serializable
+    @Serializable(with = ValidationResultSerializer::class)
     sealed class ValidationResult {
         abstract val valid: Boolean
     }
 
+    // The server sends no class discriminator, so the `valid` flag is the
+    // discriminator. See AshKotlinMultiplatform.Rpc.Runner.
+    object ValidationResultSerializer :
+        JsonContentPolymorphicSerializer<ValidationResult>(ValidationResult::class) {
+        override fun selectDeserializer(
+            element: JsonElement
+        ): DeserializationStrategy<ValidationResult> =
+            if (element.jsonObject["valid"]?.jsonPrimitive?.booleanOrNull == true) {
+                ValidationValid.serializer()
+            } else {
+                ValidationInvalid.serializer()
+            }
+    }
+
     @Serializable
-    @SerialName("valid")
     data class ValidationValid(
         override val valid: Boolean = true
     ) : ValidationResult()
 
     @Serializable
-    @SerialName("invalid")
     data class ValidationInvalid(
         override val valid: Boolean = false,
         val errors: List<AshRpcError>
