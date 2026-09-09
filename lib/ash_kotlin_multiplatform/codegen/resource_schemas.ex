@@ -161,7 +161,7 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
   end
 
   defp generate_field(attribute) do
-    kotlin_type = TypeMapper.get_kotlin_type(attribute)
+    kotlin_type = field_kotlin_type(attribute)
     field_name = format_field_name(attribute.name)
     original_name = Atom.to_string(attribute.name)
 
@@ -191,6 +191,27 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
 
     "#{serial_name}val #{field_name}: #{TypeMapper.annotate_contextual_types(kotlin_type)}#{default}"
   end
+
+  # A union attribute has a sealed class generated for it by `collect_types/1`, and
+  # the field has to name that class or the class is emitted and referenced by
+  # nothing. `TypeMapper` cannot supply the name: it maps from the Ash type alone,
+  # while the class name comes from the attribute name.
+  #
+  # Both `collect_types/1` and `generate_data_class/1` read
+  # `Ash.Resource.Info.public_attributes/1`, so the class a field names always
+  # exists. Nothing else may take this branch — a union reached through an action
+  # argument or a union member has no generated class, and naming one there would
+  # emit a dangling reference.
+  defp field_kotlin_type(attribute) do
+    if TypeMapper.is_union_type?(attribute.type) do
+      nullable_class_name(generate_union_name(attribute.name), attribute)
+    else
+      TypeMapper.get_kotlin_type(attribute)
+    end
+  end
+
+  defp nullable_class_name(class_name, %{allow_nil?: true}), do: "#{class_name}?"
+  defp nullable_class_name(class_name, _attribute), do: class_name
 
   defp make_nullable(kotlin_type) do
     if String.ends_with?(kotlin_type, "?") do
