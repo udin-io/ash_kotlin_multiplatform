@@ -28,12 +28,11 @@ afterwards.
 | 2026-09-09 | The Kotlin compile gate: a Gradle fixture and a CI job (#37, PR #47) |
 | 2026-09-09 | Generated Kotlin compiles for map, union and unmapped types (PR #50) |
 | 2026-09-09 | The generated Kotlin compiles and the gate enforces it (#44, #45, #46) |
+| 2026-09-09 | This source of truth, the v2 channel protocol, and binary channel payloads (#49) |
 
 ## In progress
 
-| Issue | What |
-| ----- | ---- |
-| #49 | Binary payloads over the generated Phoenix channel client, and this source of truth |
+Nothing.
 
 ## Next
 

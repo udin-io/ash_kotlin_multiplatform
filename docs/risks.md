@@ -47,16 +47,30 @@ same `{resource, action, rpc_action}` tuples the HTTP renderer uses.
 
 ### The client owns a wire format it does not share with the server
 
-The channel client hand-writes Phoenix's serializer format in Kotlin. The
-Elixir side of that format lives in the `phoenix` package, not here, so a
-Phoenix change to it is invisible to this repository's test suite.
+The channel client hand-writes Phoenix's v2 serializer format in Kotlin —
+four binary layouts and a text array. The Elixir side of that format lives
+in the `phoenix` package, not here, so a Phoenix change to it would
+otherwise be invisible to this repository.
 
-*Watch:* the wire-format assertions in `phoenix_channel_test.exs` name the
-Phoenix file and version they were verified against.
+*Watch:* the `the Phoenix v2 wire format the generated client is written
+against` block in `phoenix_channel_test.exs`. It asserts each layout against
+`Phoenix.Socket.V2.JSONSerializer` itself and names the Phoenix version it
+was verified on.
 *Do:* on a Phoenix major bump, re-read
-`deps/phoenix/lib/phoenix/socket/serializers/` and re-check those
-assertions. A mismatch produces frames the server drops in silence, with no
-error on either side.
+`deps/phoenix/lib/phoenix/socket/serializers/v2_json_serializer.ex` and
+update both the assertions and the generated Kotlin together. A mismatch
+produces frames the server drops in silence, with no error on either side.
+
+### The v2 switch changes the wire for every existing consumer
+
+The socket now sends `vsn=2.0.0` and frames text as a JSON array. Any
+consumer on an older generated client keeps talking v1 and is unaffected,
+but a regenerated client will not work against a server whose socket
+declares only the v1 serializer.
+
+*Watch:* the alpha notice, and the CHANGELOG entry naming this as breaking.
+*Do:* nothing for the stock Phoenix socket, which offers both. A host that
+narrowed `serializer:` to v1 must add v2.
 
 ### `main` is not formatter-clean
 

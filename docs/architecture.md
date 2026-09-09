@@ -93,7 +93,7 @@ flowchart TD
     tuples --> types["TypeGenerators.*<br/>InputTypes, ResultTypes,<br/>MetadataTypes, PaginationTypes"]
     tuples --> filters["Codegen.FilterTypes<br/>Codegen.TypedQueries"]
     tuples --> fns["FunctionGenerators.HttpRenderer<br/>+ FunctionCore, ConfigBuilder,<br/>ActionIntrospection, PayloadBuilder"]
-    tuples --> chan["Rpc.Codegen.PhoenixChannel<br/>PhoenixMessage, PhoenixSocket,<br/>PhoenixChannel, AshRpcChannel"]
+    tuples --> chan["Rpc.Codegen.PhoenixChannel<br/>PhoenixSerializer, PhoenixSocket,<br/>PhoenixChannel, AshRpcChannel"]
 
     schemas --> tm["Codegen.TypeMapper<br/>Codegen.TypeDiscovery"]
     types --> tm
@@ -147,20 +147,40 @@ sequenceDiagram
 
 ## 5. The Phoenix channel wire format
 
-The generated channel client speaks Phoenix's **v1** serializer,
-`Phoenix.Socket.V1.JSONSerializer`. Nothing chose it: the socket sends no
-`vsn` query parameter, and `deps/phoenix/lib/phoenix/socket.ex:499` defaults
-an absent `vsn` to `"1.0.0"`, which
-`deps/phoenix/lib/phoenix/transports/websocket.ex:29` matches to v1. The
-generated `PhoenixMessage` is a `@Serializable` data class, so it encodes to
-the JSON object v1 expects:
+The generated channel client speaks Phoenix's **v2** serializer,
+`Phoenix.Socket.V2.JSONSerializer`, selected by the `vsn=2.0.0` query
+parameter the socket appends on connect. The negotiation is in
+`deps/phoenix/lib/phoenix/socket.ex:499` and the serializer list in
+`deps/phoenix/lib/phoenix/transports/websocket.ex:29`. Absent a `vsn`,
+Phoenix falls back to v1, which has no binary branch at all — that is what
+the client did before #49, unmarked.
+
+Text frames are a five-element JSON array, not an object:
 
 ```
-{"join_ref": ..., "ref": ..., "topic": ..., "event": ..., "payload": ...}
+[join_ref, ref, topic, event, payload]
 ```
 
-The `PhoenixChannel` module's own docstring claims v2. It is wrong, and the
-gap is not cosmetic: v1's `decode!/2` JSON-decodes whatever arrives and has
-no binary branch at all, so no binary frame can reach a channel over this
-client. That is issue #49.
+Binary frames are length-prefixed, and the layout differs by direction and
+kind. Every length is one unsigned byte, so each of those strings is capped
+at 255 bytes.
+
+| Direction | Kind | Header bytes | Fields after the header |
+| --------- | ---- | ------------ | ----------------------- |
+| Client to server | `0` push | `0`, joinRefLen, refLen, topicLen, eventLen | joinRef, ref, topic, event, data |
+| Server to client | `0` push | `0`, joinRefLen, topicLen, eventLen | joinRef, topic, event, data (no ref) |
+| Server to client | `1` reply | `1`, joinRefLen, refLen, topicLen, statusLen | joinRef, ref, topic, status, data |
+| Server to client | `2` broadcast | `2`, topicLen, eventLen | topic, event, data (no refs) |
+
+The outgoing push carries a ref and the incoming push does not, and a reply
+puts its status where a push puts its event name. A client that reuses one
+layout for both directions misreads every field, and the result is frames
+the server drops in silence.
+
+Both directions are emitted by `Rpc.Codegen.PhoenixChannel` as the generated
+`PhoenixSerializer` object. The Elixir half of the contract is asserted byte
+for byte in
+`test/ash_kotlin_multiplatform/rpc/codegen/phoenix_channel_test.exs`,
+against the same `Phoenix.Socket.V2.JSONSerializer` that will decode the
+frames.
 

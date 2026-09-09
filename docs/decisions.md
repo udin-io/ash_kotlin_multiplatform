@@ -91,6 +91,37 @@ relationship into a build break.
 Cost: the omission is silent. A developer who expects the field has to know
 the destination must carry the `kotlin_multiplatform` extension.
 
+## 2026-09-09 — The channel client owns Phoenix's v2 format by hand
+
+`PhoenixMessage` lost `@Serializable`; the generated `PhoenixSerializer`
+encodes text frames as the JSON array v2 expects and the socket sends
+`vsn=2.0.0`.
+
+Why: a `@Serializable` data class can only emit a JSON object, which is the
+v1 shape, and v1's serializer has no binary frame at all. Binary payloads
+(#49) are impossible without v2, and v2's text frame is an array.
+
+Cost: the client now hand-writes a format that lives in the `phoenix`
+package, so a Phoenix change to it is invisible here. The mitigation is a
+test block asserting the format against `Phoenix.Socket.V2.JSONSerializer`
+itself, and it is the reason that risk is written down.
+
+## 2026-09-09 — A separate `pushBinary`, not a widened payload type
+
+`channel.push(event, jsonElement)` is unchanged; `channel.pushBinary(event,
+byteArray)` is new. `Push.payload` became a `ChannelPayload` so it stops
+claiming a binary push carried JSON, but its `JsonElement` constructor and
+its `await()`/`receive()` signatures are kept.
+
+Why: the JSON path is every existing user of this library. Widening
+`push`'s parameter to a sealed type would have made the common call read
+`push(event, ChannelPayload.Json(x))` — a worse API for everyone, to serve
+the rarer case.
+
+Cost: two lanes to keep in step. `await()` returns null for a reply the
+server sent as binary, and `awaitBinary()` returns null for a JSON one;
+`awaitPayload()` is the one that never hides a reply.
+
 ## 2026-09-09 — Contextual serializers for every Kotlin `Any`
 
 Untyped maps, keywords, tuples, unions and unmapped Ash types all landed on
