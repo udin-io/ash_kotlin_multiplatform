@@ -189,23 +189,17 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
     # If server outputs snake_case, we need @SerialName for the snake_case JSON key
     serial_name = get_serial_name_annotation(original_name, field_name)
 
-    # All fields except `id` get defaults since RPC uses sparse fieldsets
-    # This allows responses to omit fields that weren't requested
+    # Every field is nullable with a default, `id` included. RPC uses sparse
+    # fieldsets, so any field the request did not ask for is absent from the
+    # response, and a field with no default is a `MissingFieldException` at
+    # decode time. `id` used to be exempt on the theory that it is "always
+    # present" — `fields = ["title"]` omits it like any other, and that threw on
+    # every sparse read that left it out (#24).
     {kotlin_type, default} =
-      cond do
-        # ID field is always required and present
-        attribute.name == :id ->
-          {kotlin_type, ""}
-
-        # Nullable fields get null default
-        attribute.allow_nil? ->
-          {kotlin_type, " = null"}
-
-        # Non-nullable fields need to be made nullable with defaults for sparse responses
-        true ->
-          nullable_type = make_nullable(kotlin_type)
-          default_value = get_default_for_type(kotlin_type)
-          {nullable_type, " = #{default_value}"}
+      if attribute.allow_nil? do
+        {kotlin_type, " = null"}
+      else
+        {make_nullable(kotlin_type), " = #{get_default_for_type(kotlin_type)}"}
       end
 
     "#{serial_name}val #{field_name}: #{TypeMapper.annotate_contextual_types(kotlin_type)}#{default}"
