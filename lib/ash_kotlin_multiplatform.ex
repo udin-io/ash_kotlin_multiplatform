@@ -60,6 +60,13 @@ defmodule AshKotlinMultiplatform do
   A configured override need not carry the annotation —
   `AshKotlinMultiplatform.Codegen.TypeMapper.annotate_contextual_types/1` adds it
   on the way into a serializable field.
+
+  `@Contextual` fixes compilation, not decoding. A field holding an actual map
+  still throws `SerializationException: Serializer for class 'Any' is not found`
+  unless the consumer registers a serializer for `Any` on the `SerializersModule`
+  (verified against kotlinx-serialization 1.9.0; `null` and absent values decode
+  fine without one). Configure this option to a concrete Kotlin type when the map
+  has a known shape.
   """
   def untyped_map_type do
     Application.get_env(
