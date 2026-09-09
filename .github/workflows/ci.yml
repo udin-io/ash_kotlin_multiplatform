@@ -48,3 +48,84 @@ jobs:
 
       - name: Audit dependencies for known vulnerabilities
         run: mix deps.audit
+
+  # Hands the emitted Kotlin to a real Kotlin compiler. Every "generated code
+  # does not compile" defect so far (#20, #23, #24, #30, #33) was found by a
+  # human reading strings; this job is the machine that should have found them.
+  #
+  # NOT BLOCKING YET. The gate is red on arrival, on two defects it found the
+  # first time it ran:
+  #
+  #   * #44 - a relationship to a resource the Kotlin DSL never published emits
+  #     `List<Secret>` with no `Secret` type anywhere in the file.
+  #   * #45 - `datetime_library: :java_time` emits java.time types into
+  #     @Serializable classes with no serializer, so every date/time field is a
+  #     SERIALIZER_NOT_FOUND error.
+  #
+  # Close both and drop `continue-on-error` from the compile step below (#46).
+  # A required check that is red on arrival teaches everyone to ignore CI.
+  kotlin-compile-gate:
+    name: Compile the generated Kotlin
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27"
+          elixir-version: "1.18.4"
+
+      # Restore-only: the `test` job owns writing this key, and both jobs run in
+      # parallel off the same mix.lock.
+      - name: Restore deps and _build cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      # MIX_ENV=test is what puts AshKotlinMultiplatform.Test.Domain into
+      # :ash_domains (config/config.exs), so it is what gives the generator any
+      # resources to emit at all.
+      - name: Generate the Kotlin fixture sources
+        run: MIX_ENV=test mix ash_kotlin_multiplatform.gen_kotlin_fixture
+
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # Installs Gradle and caches ~/.gradle, so the Maven Central downloads for
+      # kotlinx/ktor are paid for once rather than on every run.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "9.7.0"
+
+      - name: Compile the generated Kotlin
+        id: compile
+        continue-on-error: true
+        working-directory: test/fixtures/kotlin_compile
+        run: gradle compileKotlin --console=plain
+
+      - name: Report gate result
+        run: |
+          if [ "${{ steps.compile.outcome }}" = "success" ]; then
+            echo "Generated Kotlin compiles." >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "## The generated Kotlin does not compile"
+              echo
+              echo "Compiler output is in the \"Compile the generated Kotlin\" step above."
+              echo
+              echo "This step is not blocking yet - see the comment in .github/workflows/ci.yml."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
