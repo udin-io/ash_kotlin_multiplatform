@@ -63,9 +63,19 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapperTest do
       assert TypeMapper.get_kotlin_type(attr) == "List<String>?"
     end
 
-    test "maps Map type to Map<String, Any?>" do
+    test "maps Map type to a contextual untyped map" do
       attr = %{type: Ash.Type.Map, constraints: [], allow_nil?: false}
-      assert TypeMapper.get_kotlin_type(attr) == "Map<String, Any?>"
+      assert TypeMapper.get_kotlin_type(attr) == "Map<String, @Contextual Any?>"
+    end
+
+    test "maps Keyword type to a contextual untyped map" do
+      attr = %{type: Ash.Type.Keyword, constraints: [], allow_nil?: false}
+      assert TypeMapper.get_kotlin_type(attr) == "Map<String, @Contextual Any?>"
+    end
+
+    test "maps Tuple type to a list of contextual values" do
+      attr = %{type: Ash.Type.Tuple, constraints: [], allow_nil?: false}
+      assert TypeMapper.get_kotlin_type(attr) == "List<@Contextual Any?>"
     end
 
     test "maps Decimal type to String" do
@@ -87,8 +97,37 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapperTest do
       assert TypeMapper.get_kotlin_type_for_type({:array, Ash.Type.Integer}) == "List<Int>"
     end
 
-    test "handles unknown types as Any" do
-      assert TypeMapper.get_kotlin_type_for_type(:unknown_type) == "Any"
+    test "handles unknown types as a contextual Any" do
+      assert TypeMapper.get_kotlin_type_for_type(:unknown_type) == "@Contextual Any"
+    end
+
+    test "handles an Ash type with no mapping as a contextual Any" do
+      assert TypeMapper.get_kotlin_type_for_type(Ash.Type.Term) == "@Contextual Any"
+    end
+
+    test "handles a union with no owning attribute as a contextual Any" do
+      constraints = [types: [text: [type: Ash.Type.String]]]
+      assert TypeMapper.get_kotlin_type_for_type(Ash.Type.Union, constraints) == "@Contextual Any"
+    end
+  end
+
+  describe "is_enum_type?/2" do
+    test "is true for an atom constrained to a list of values" do
+      assert TypeMapper.is_enum_type?(Ash.Type.Atom, one_of: [:a, :b])
+    end
+
+    test "is false for an unconstrained atom" do
+      refute TypeMapper.is_enum_type?(Ash.Type.Atom, [])
+    end
+
+    # ResourceSchemas.collect_types/1 skips a nil :one_of, so the field must not
+    # name an enum class for one either — the class would never be generated.
+    test "is false when one_of is present but nil" do
+      refute TypeMapper.is_enum_type?(Ash.Type.Atom, one_of: nil)
+    end
+
+    test "is false for a non-atom type" do
+      refute TypeMapper.is_enum_type?(Ash.Type.String, one_of: [:a, :b])
     end
   end
 
@@ -123,6 +162,29 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapperTest do
 
       assert TypeMapper.annotate_contextual_types("kotlinx.datetime.LocalDateTime") ==
                "kotlinx.datetime.LocalDateTime"
+    end
+
+    test "annotates a bare Any" do
+      assert TypeMapper.annotate_contextual_types("Any?") == "@Contextual Any?"
+    end
+
+    test "annotates the value type of a configured untyped map" do
+      assert TypeMapper.annotate_contextual_types("Map<String, Any?>") ==
+               "Map<String, @Contextual Any?>"
+    end
+
+    test "annotates the element type of a list of Any" do
+      assert TypeMapper.annotate_contextual_types("List<Any?>?") == "List<@Contextual Any?>?"
+    end
+
+    test "leaves a type whose name merely starts with Any alone" do
+      assert TypeMapper.annotate_contextual_types("AnyOf?") == "AnyOf?"
+      assert TypeMapper.annotate_contextual_types("List<Anything>") == "List<Anything>"
+    end
+
+    test "is idempotent for Any" do
+      once = TypeMapper.annotate_contextual_types("Map<String, Any?>")
+      assert TypeMapper.annotate_contextual_types(once) == once
     end
 
     test "leaves java.time.Instant alone" do

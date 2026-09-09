@@ -18,7 +18,7 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
   alias AshIntrospection.TypeSystem.Introspection
 
   # Kotlin types with no serializer the compiler can resolve on its own.
-  @contextual_types ["kotlinx.datetime.Instant"]
+  @contextual_types ["kotlinx.datetime.Instant", "Any"]
 
   @doc """
   Returns the Kotlin type for an Ash attribute.
@@ -61,13 +61,22 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
   @doc """
   Annotates the types that have no compile-time serializer with `@Contextual`.
 
-  `kotlinx.datetime.Instant` is the only such type. kotlinx-datetime 0.6 shipped a
-  default serializer for it; 0.7 deprecated the class in favour of
-  `kotlin.time.Instant` and dropped both the default and the concrete
-  `InstantIso8601Serializer` object. A generated file cannot know which version the
-  consumer pinned, so it defers the lookup to the `SerializersModule` that
+  Two types need it.
+
+  `kotlinx.datetime.Instant`: kotlinx-datetime 0.6 shipped a default serializer for
+  it; 0.7 deprecated the class in favour of `kotlin.time.Instant` and dropped both
+  the default and the concrete `InstantIso8601Serializer` object. A generated file
+  cannot know which version the consumer pinned, so it defers the lookup to the
+  `SerializersModule` that
   `AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic.generate_http_client_factory/0`
   registers.
+
+  `Any`: the landing type for untyped maps, keywords, tuples, unions and every Ash
+  type the mapper has no case for. kotlinx-serialization has no serializer for
+  `Any` and never will, so a bare `Any` inside a `@Serializable` class is a compile
+  error — "Serializer has not been found for type 'Any'" — not a runtime one.
+  `@Contextual` turns it into a `SerializersModule` lookup, which is the same
+  trade `ConfigBuilder` already makes for its `filter` and `page` maps.
 
   Annotates in type position rather than on the property, so element types resolve
   too: `List<@Contextual Instant>` consults the module for `Instant`, while
@@ -75,7 +84,9 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
   `List<Instant>` and fail at runtime.
 
   `java.time.Instant` is left alone — `:java_time` consumers supply their own
-  serializers. Idempotent, so it is safe to apply to an already-annotated type.
+  serializers. Matches whole words only, so `Any` does not touch `AnyOf` or a
+  resource named `Anything`. Idempotent, so it is safe to apply to an
+  already-annotated type.
   """
   def annotate_contextual_types(kotlin_type) when is_binary(kotlin_type) do
     Enum.reduce(@contextual_types, kotlin_type, fn type, acc ->
@@ -186,15 +197,18 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
   # Tuple type
   defp map_type(Ash.Type.Tuple, constraints) do
     case Keyword.get(constraints, :fields) do
-      nil -> "List<Any?>"
-      _fields -> "List<Any?>"
+      nil -> "List<@Contextual Any?>"
+      _fields -> "List<@Contextual Any?>"
     end
   end
 
-  # Union type - will be handled as sealed class
+  # Union type. A resource attribute gets the sealed class generated for it by
+  # `AshKotlinMultiplatform.Codegen.ResourceSchemas` — that lookup needs the
+  # attribute name, which this function does not have. Everywhere else (union
+  # member fields, action metadata, identity types) there is no such class, so the
+  # union falls back to a contextual `Any`.
   defp map_type(Ash.Type.Union, _constraints) do
-    # Union types are generated as sealed classes separately
-    "Any"
+    "@Contextual Any"
   end
 
   # Struct type
@@ -218,19 +232,21 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
 
         do_get_kotlin_type(unwrapped_type, unwrapped_constraints)
 
-      # Check if it's any Ash type
+      # An Ash type this module has no case for. `@Contextual` rather than a bare
+      # `Any` so the field still compiles inside a `@Serializable` class; the
+      # consumer registers a serializer for it, or configures
+      # :type_mapping_overrides to name a concrete Kotlin type.
       Introspection.is_ash_type?(type) ->
-        # Unknown Ash type, default to Any
-        "Any"
+        "@Contextual Any"
 
       true ->
         # Module that might be a custom type
-        "Any"
+        "@Contextual Any"
     end
   end
 
   # Fallback for non-atom types
-  defp map_type(_, _constraints), do: "Any"
+  defp map_type(_, _constraints), do: "@Contextual Any"
 
   @doc """
   Checks if a module has interop_field_names/0 callback.
@@ -274,9 +290,13 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
 
   @doc """
   Checks if an Ash type should be generated as a Kotlin enum class.
+
+  Requires `:one_of` to hold a list, not merely to be present.
+  `AshKotlinMultiplatform.Codegen.ResourceSchemas.collect_types/1` generates no
+  class for a nil `:one_of`, so a field must not name one for it either.
   """
   def is_enum_type?(type, constraints) do
-    type == Ash.Type.Atom and Keyword.has_key?(constraints, :one_of)
+    type == Ash.Type.Atom and is_list(Keyword.get(constraints, :one_of))
   end
 
   @doc """

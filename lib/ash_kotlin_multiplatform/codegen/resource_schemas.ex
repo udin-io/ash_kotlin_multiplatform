@@ -82,37 +82,34 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
     type = attr.type
     constraints = attr.constraints || []
 
-    {enums, unions, embedded} =
-      case type do
-        Ash.Type.Atom ->
-          case Keyword.get(constraints, :one_of) do
-            nil -> {enums, unions, embedded}
-            values ->
-              enum_name = generate_enum_name(attr.name)
-              {[{enum_name, values} | enums], unions, embedded}
-          end
+    # Shares its predicates with `field_kotlin_type/1`: whatever gets a class here
+    # is exactly what a field is allowed to name, so the two cannot drift into
+    # orphaned classes or dangling references.
+    cond do
+      TypeMapper.is_enum_type?(type, constraints) ->
+        enum_name = generate_enum_name(attr.name)
+        {[{enum_name, TypeMapper.get_enum_values(constraints)} | enums], unions, embedded}
 
-        Ash.Type.Union ->
-          union_types = Introspection.get_union_types_from_constraints(type, constraints)
-          union_name = generate_union_name(attr.name)
-          {enums, [{union_name, union_types} | unions], embedded}
+      TypeMapper.is_union_type?(type) ->
+        union_types = Introspection.get_union_types_from_constraints(type, constraints)
+        union_name = generate_union_name(attr.name)
+        {enums, [{union_name, union_types} | unions], embedded}
 
-        {:array, inner_type} ->
-          if Introspection.is_embedded_resource?(inner_type) do
-            {enums, unions, MapSet.put(embedded, inner_type)}
-          else
-            {enums, unions, embedded}
-          end
+      true ->
+        {enums, unions, collect_embedded_resource(type, embedded)}
+    end
+  end
 
-        _ ->
-          if Introspection.is_embedded_resource?(type) do
-            {enums, unions, MapSet.put(embedded, type)}
-          else
-            {enums, unions, embedded}
-          end
-      end
+  defp collect_embedded_resource({:array, inner_type}, embedded) do
+    collect_embedded_resource(inner_type, embedded)
+  end
 
-    {enums, unions, embedded}
+  defp collect_embedded_resource(type, embedded) do
+    if Introspection.is_embedded_resource?(type) do
+      MapSet.put(embedded, type)
+    else
+      embedded
+    end
   end
 
   @doc """
@@ -159,7 +156,7 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
   end
 
   defp generate_field(attribute) do
-    kotlin_type = TypeMapper.get_kotlin_type(attribute)
+    kotlin_type = field_kotlin_type(attribute)
     field_name = format_field_name(attribute.name)
     original_name = Atom.to_string(attribute.name)
 
@@ -189,6 +186,35 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
 
     "#{serial_name}val #{field_name}: #{TypeMapper.annotate_contextual_types(kotlin_type)}#{default}"
   end
+
+  # A union attribute has a sealed class generated for it by `collect_types/1`, and
+  # a `one_of` atom attribute an enum class; the field has to name that class or
+  # the class is emitted and referenced by nothing. `TypeMapper` cannot supply the
+  # name: it maps from the Ash type alone, while both names come from the attribute
+  # name.
+  #
+  # Both `collect_types/1` and `generate_data_class/1` read
+  # `Ash.Resource.Info.public_attributes/1` and share the predicates below, so the
+  # class a field names always exists. Nothing else may take these branches — a
+  # union or `one_of` atom reached through an action argument or a union member has
+  # no generated class, and naming one there would emit a dangling reference.
+  defp field_kotlin_type(attribute) do
+    constraints = attribute.constraints || []
+
+    cond do
+      TypeMapper.is_union_type?(attribute.type) ->
+        nullable_class_name(generate_union_name(attribute.name), attribute)
+
+      TypeMapper.is_enum_type?(attribute.type, constraints) ->
+        nullable_class_name(generate_enum_name(attribute.name), attribute)
+
+      true ->
+        TypeMapper.get_kotlin_type(attribute)
+    end
+  end
+
+  defp nullable_class_name(class_name, %{allow_nil?: true}), do: "#{class_name}?"
+  defp nullable_class_name(class_name, _attribute), do: class_name
 
   defp make_nullable(kotlin_type) do
     if String.ends_with?(kotlin_type, "?") do
@@ -283,18 +309,22 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
       case member_type do
         Ash.Type.Map ->
           case Keyword.get(member_constraints, :fields) do
-            nil -> "val value: Map<String, Any?>"
+            nil -> "val value: #{untyped_map_type()}"
             field_specs -> generate_union_fields(field_specs)
           end
 
         Ash.Type.Struct ->
           case Keyword.get(member_constraints, :instance_of) do
-            nil -> "val value: Map<String, Any?>"
+            nil -> "val value: #{untyped_map_type()}"
             module -> "val value: #{TypeMapper.get_kotlin_class_name(module)}"
           end
 
         _ ->
-          kotlin_type = TypeMapper.get_kotlin_type_for_type(member_type, member_constraints)
+          kotlin_type =
+            member_type
+            |> TypeMapper.get_kotlin_type_for_type(member_constraints)
+            |> TypeMapper.annotate_contextual_types()
+
           "val value: #{kotlin_type}"
       end
 
@@ -314,7 +344,11 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
       field_constraints = Keyword.get(field_config, :constraints, [])
       allow_nil = Keyword.get(field_config, :allow_nil?, true)
 
-      kotlin_type = TypeMapper.get_kotlin_type_for_type(field_type, field_constraints)
+      kotlin_type =
+        field_type
+        |> TypeMapper.get_kotlin_type_for_type(field_constraints)
+        |> TypeMapper.annotate_contextual_types()
+
       kotlin_type = if allow_nil, do: "#{kotlin_type}?", else: kotlin_type
 
       formatted_name = format_field_name(field_name)
@@ -328,6 +362,11 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
       "#{serial_name}val #{formatted_name}: #{kotlin_type}#{default}"
     end)
     |> Enum.join(",\n            ")
+  end
+
+  defp untyped_map_type do
+    AshKotlinMultiplatform.untyped_map_type()
+    |> TypeMapper.annotate_contextual_types()
   end
 
   defp generate_enum_name(attr_name) do
