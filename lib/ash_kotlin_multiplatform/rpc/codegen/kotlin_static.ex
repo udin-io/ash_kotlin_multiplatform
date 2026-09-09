@@ -213,6 +213,12 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
   @doc """
   Generates the generic RPC result types.
   """
+  # No `metadata` property. `Rpc.Runner.build_success_response/1` returns
+  # `success` and `data` and nothing else, and action metadata reaches the
+  # client *inside* `data` — `AshIntrospection.Rpc.Pipeline.add_metadata/4`
+  # merges the exposed fields into the record. A top-level `metadata` promised a
+  # key the server has never sent, so it decoded as `null` every time and sent
+  # readers looking for it in the wrong place (#24).
   def generate_generic_result_types do
     """
     // Generic result wrapper
@@ -220,8 +226,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
     data class RpcResult(
         val success: Boolean,
         val data: JsonElement? = null,
-        val errors: List<AshRpcError>? = null,
-        val metadata: JsonElement? = null
+        val errors: List<AshRpcError>? = null
     ) {
         inline fun <reified T> dataAs(): T? {
             return data?.let { Json { ignoreUnknownKeys = true }.decodeFromJsonElement<T>(it) }
