@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Binary payloads on the generated Phoenix channel client.
+  `PhoenixChannel.pushBinary/3` and `AshRpcChannel.pushBinary/3` send a
+  `ByteArray` as a Phoenix binary frame, which the server receives as
+  `{:binary, data}` in `handle_in/3`; `onBinary/2` and `offBinary/1` bind
+  incoming binary events, and `Push.awaitBinary/0`, `receiveBinary/2` and
+  `awaitPayload/0` read a binary reply. Incoming binary frames were
+  previously dropped by the socket's receive loop. The JSON path is
+  unchanged: `push`, `on`, `receive` and `await` keep their signatures.
+
+### Changed
+
+- **Breaking on the wire.** The generated channel client now speaks
+  Phoenix's v2 protocol. It appends `vsn=2.0.0` on connect and frames text
+  messages as the JSON array `[join_ref, ref, topic, event, payload]`.
+  Previously it sent no `vsn`, so Phoenix negotiated v1 and the client was
+  an unmarked v1 client; v1 has no binary frame at all. The stock Phoenix
+  socket offers both versions and needs no change. A host that narrowed its
+  socket's `serializer:` option to v1 only must add v2.
+- **Breaking on the Kotlin API.** `PhoenixMessage` is no longer
+  `@Serializable` — kotlinx.serialization can only emit the v1 object — and
+  its `joinRef` field no longer carries `@SerialName("join_ref")`. Encode
+  and decode it through the generated `PhoenixSerializer`. `Push.payload` is
+  now a `ChannelPayload` rather than a `JsonElement`, so that a binary push
+  stops reporting a JSON payload it never had; `Push`'s `JsonElement`
+  constructor is kept, so no existing call site changes.
+
 ### Removed
 
 - `AshKotlinMultiplatform.Codegen.ValidationSchemas`, the `with_validation`

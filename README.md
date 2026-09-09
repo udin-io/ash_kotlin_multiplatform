@@ -12,6 +12,10 @@ Generate type-safe Kotlin Multiplatform clients from your Ash resources.
 > recommended for production use. Please report issues and feedback on
 > [GitHub](https://github.com/udin-io/ash_kotlin_multiplatform/issues).
 
+[**docs/PROJECT.md**](docs/PROJECT.md) is the source of truth for what this
+library is, how it is built, where it is going and what is at risk. Start
+there rather than here if you are joining the project.
+
 ## Features
 
 - **Automatic Kotlin Multiplatform generation** from Elixir Ash resources
@@ -397,18 +401,54 @@ When `generate_phoenix_channel_client: true`, the generator creates a full
 Phoenix Channel client:
 
 ```kotlin
-// Connect to Phoenix Channel
-val channel = AshRpcChannel(
-    httpClient = client,
-    baseUrl = "ws://localhost:4000/socket/websocket"
+val socket = PhoenixSocket(client, "ws://localhost:4000/socket/websocket")
+socket.connect()
+
+val channel = AshRpcChannel(socket, "rpc:lobby")
+channel.join()
+
+val result = channel.call(
+    action = "create_todo",
+    input = mapOf("title" to "Ship it"),
+    fields = listOf("id", "title")
 )
-
-// Join the RPC topic
-channel.join("rpc:lobby")
-
-// Make RPC calls over WebSocket
-val result = channel.call<CreateTodoResult>("create_todo", config)
 ```
+
+The client speaks Phoenix's v2 protocol and appends `vsn=2.0.0` on connect.
+The stock Phoenix socket offers v1 and v2, so nothing needs configuring; a
+host that narrowed its `serializer:` option to v1 only must add v2.
+
+### Binary payloads
+
+`pushBinary` sends raw bytes — an image frame, an audio chunk, a file —
+instead of base64 inside a JSON payload, which costs 33% more bytes on the
+wire and a second allocation on the server. The JSON path is unchanged.
+
+```kotlin
+// Send. The server sees {:binary, data} as the payload of handle_in/3.
+val push = channel.pushBinary("frame", jpegBytes)
+val (status, reply) = push.await()
+
+// Receive. Binary events bind separately from JSON ones, so `on` keeps its
+// JsonElement callback.
+channel.onBinary("frame") { bytes -> render(bytes) }
+```
+
+On the server:
+
+```elixir
+def handle_in("frame", {:binary, data}, socket) do
+  {:reply, {:ok, %{bytes: byte_size(data)}}, socket}
+end
+```
+
+A reply is JSON or binary independently of what was pushed. Use `await()`
+for a JSON reply, `awaitBinary()` for `{:reply, {:ok, {:binary, data}}}`,
+and `awaitPayload()` when the server can send either.
+
+`join_ref`, `ref`, `topic` and `event` are each length-prefixed with a
+single byte in a binary frame, so a topic or event name over 255 bytes
+raises rather than truncating.
 
 ## Advanced Features
 
