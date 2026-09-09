@@ -290,9 +290,13 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
 
   @doc """
   Checks if an Ash type should be generated as a Kotlin enum class.
+
+  Requires `:one_of` to hold a list, not merely to be present.
+  `AshKotlinMultiplatform.Codegen.ResourceSchemas.collect_types/1` generates no
+  class for a nil `:one_of`, so a field must not name one for it either.
   """
   def is_enum_type?(type, constraints) do
-    type == Ash.Type.Atom and Keyword.has_key?(constraints, :one_of)
+    type == Ash.Type.Atom and is_list(Keyword.get(constraints, :one_of))
   end
 
   @doc """

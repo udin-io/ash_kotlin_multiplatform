@@ -12,6 +12,10 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemasTest do
     test "a union attribute names the sealed class generated for it" do
       assert ResourceSchemas.generate_data_class(Todo) =~ "val content: ContentUnion? = null"
     end
+
+    test "a one_of atom attribute names the enum class generated for it" do
+      assert ResourceSchemas.generate_data_class(Todo) =~ "val status: Status? = null"
+    end
   end
 
   describe "generate_enum_class/1" do

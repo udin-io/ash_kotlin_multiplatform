@@ -82,39 +82,34 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
     type = attr.type
     constraints = attr.constraints || []
 
-    {enums, unions, embedded} =
-      case type do
-        Ash.Type.Atom ->
-          case Keyword.get(constraints, :one_of) do
-            nil ->
-              {enums, unions, embedded}
+    # Shares its predicates with `field_kotlin_type/1`: whatever gets a class here
+    # is exactly what a field is allowed to name, so the two cannot drift into
+    # orphaned classes or dangling references.
+    cond do
+      TypeMapper.is_enum_type?(type, constraints) ->
+        enum_name = generate_enum_name(attr.name)
+        {[{enum_name, TypeMapper.get_enum_values(constraints)} | enums], unions, embedded}
 
-            values ->
-              enum_name = generate_enum_name(attr.name)
-              {[{enum_name, values} | enums], unions, embedded}
-          end
+      TypeMapper.is_union_type?(type) ->
+        union_types = Introspection.get_union_types_from_constraints(type, constraints)
+        union_name = generate_union_name(attr.name)
+        {enums, [{union_name, union_types} | unions], embedded}
 
-        Ash.Type.Union ->
-          union_types = Introspection.get_union_types_from_constraints(type, constraints)
-          union_name = generate_union_name(attr.name)
-          {enums, [{union_name, union_types} | unions], embedded}
+      true ->
+        {enums, unions, collect_embedded_resource(type, embedded)}
+    end
+  end
 
-        {:array, inner_type} ->
-          if Introspection.is_embedded_resource?(inner_type) do
-            {enums, unions, MapSet.put(embedded, inner_type)}
-          else
-            {enums, unions, embedded}
-          end
+  defp collect_embedded_resource({:array, inner_type}, embedded) do
+    collect_embedded_resource(inner_type, embedded)
+  end
 
-        _ ->
-          if Introspection.is_embedded_resource?(type) do
-            {enums, unions, MapSet.put(embedded, type)}
-          else
-            {enums, unions, embedded}
-          end
-      end
-
-    {enums, unions, embedded}
+  defp collect_embedded_resource(type, embedded) do
+    if Introspection.is_embedded_resource?(type) do
+      MapSet.put(embedded, type)
+    else
+      embedded
+    end
   end
 
   @doc """
@@ -193,20 +188,28 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
   end
 
   # A union attribute has a sealed class generated for it by `collect_types/1`, and
-  # the field has to name that class or the class is emitted and referenced by
-  # nothing. `TypeMapper` cannot supply the name: it maps from the Ash type alone,
-  # while the class name comes from the attribute name.
+  # a `one_of` atom attribute an enum class; the field has to name that class or
+  # the class is emitted and referenced by nothing. `TypeMapper` cannot supply the
+  # name: it maps from the Ash type alone, while both names come from the attribute
+  # name.
   #
   # Both `collect_types/1` and `generate_data_class/1` read
-  # `Ash.Resource.Info.public_attributes/1`, so the class a field names always
-  # exists. Nothing else may take this branch — a union reached through an action
-  # argument or a union member has no generated class, and naming one there would
-  # emit a dangling reference.
+  # `Ash.Resource.Info.public_attributes/1` and share the predicates below, so the
+  # class a field names always exists. Nothing else may take these branches — a
+  # union or `one_of` atom reached through an action argument or a union member has
+  # no generated class, and naming one there would emit a dangling reference.
   defp field_kotlin_type(attribute) do
-    if TypeMapper.is_union_type?(attribute.type) do
-      nullable_class_name(generate_union_name(attribute.name), attribute)
-    else
-      TypeMapper.get_kotlin_type(attribute)
+    constraints = attribute.constraints || []
+
+    cond do
+      TypeMapper.is_union_type?(attribute.type) ->
+        nullable_class_name(generate_union_name(attribute.name), attribute)
+
+      TypeMapper.is_enum_type?(attribute.type, constraints) ->
+        nullable_class_name(generate_enum_name(attribute.name), attribute)
+
+      true ->
+        TypeMapper.get_kotlin_type(attribute)
     end
   end
 

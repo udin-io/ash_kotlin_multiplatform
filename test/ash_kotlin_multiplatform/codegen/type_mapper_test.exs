@@ -111,6 +111,26 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapperTest do
     end
   end
 
+  describe "is_enum_type?/2" do
+    test "is true for an atom constrained to a list of values" do
+      assert TypeMapper.is_enum_type?(Ash.Type.Atom, one_of: [:a, :b])
+    end
+
+    test "is false for an unconstrained atom" do
+      refute TypeMapper.is_enum_type?(Ash.Type.Atom, [])
+    end
+
+    # ResourceSchemas.collect_types/1 skips a nil :one_of, so the field must not
+    # name an enum class for one either — the class would never be generated.
+    test "is false when one_of is present but nil" do
+      refute TypeMapper.is_enum_type?(Ash.Type.Atom, one_of: nil)
+    end
+
+    test "is false for a non-atom type" do
+      refute TypeMapper.is_enum_type?(Ash.Type.String, one_of: [:a, :b])
+    end
+  end
+
   describe "annotate_contextual_types/1" do
     test "annotates a bare Instant in type position" do
       assert TypeMapper.annotate_contextual_types("kotlinx.datetime.Instant") ==
