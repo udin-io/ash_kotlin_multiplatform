@@ -188,6 +188,12 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
   @doc """
   Generates the RPC error types.
   """
+  # `shortMessage` carries no `@SerialName`. Every error map `Rpc.Runner` builds
+  # writes the key `"shortMessage"` literally, under every
+  # `output_field_formatter` setting: see `build_error_response/1`,
+  # `format_validation_errors/1` and `format_single_error/1`. Annotating the
+  # field `short_message` therefore made it decode as `null` on every error the
+  # server has ever sent (#24).
   def generate_error_types do
     """
     // RPC Error types
@@ -195,7 +201,6 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
     data class AshRpcError(
         val type: String? = null,
         val message: String? = null,
-        @SerialName("short_message")
         val shortMessage: String? = null,
         val vars: Map<String, String> = emptyMap(),
         val fields: List<String> = emptyList(),
