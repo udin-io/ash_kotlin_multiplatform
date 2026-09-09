@@ -19,4 +19,7 @@ config :ash, default_string_length_count: :codepoints
 # Test-only: shipping a test domain in the library's own app config would be a bug.
 if config_env() == :test do
   config :ash_kotlin_multiplatform, ash_domains: [AshKotlinMultiplatform.Test.Domain]
+
+  # The ETS data layer logs every write at :debug, which buries the test output.
+  config :logger, level: :warning
 end

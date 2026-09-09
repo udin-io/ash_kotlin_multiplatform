@@ -7,12 +7,29 @@ defmodule AshKotlinMultiplatform.Test.Domain do
   use Ash.Domain, extensions: [AshKotlinMultiplatform.Rpc]
 
   resources do
+    resource AshKotlinMultiplatform.Test.Author
+    resource AshKotlinMultiplatform.Test.Book
     resource AshKotlinMultiplatform.Test.Event
+    resource AshKotlinMultiplatform.Test.Secret
     resource AshKotlinMultiplatform.Test.Todo
     resource AshKotlinMultiplatform.Test.User
   end
 
   kotlin_rpc do
+    # Author and Book carry the field-selection coverage: a public relationship,
+    # calculation and aggregate, over a data layer that can read back. Secret is
+    # published to no rpc_action, so it is reachable only by walking
+    # `Author.secrets` — which field selection must refuse.
+    resource AshKotlinMultiplatform.Test.Author do
+      rpc_action :list_authors, :read
+      rpc_action :create_author, :create
+    end
+
+    resource AshKotlinMultiplatform.Test.Book do
+      rpc_action :list_books, :read
+      rpc_action :create_book, :create
+    end
+
     resource AshKotlinMultiplatform.Test.Event do
       rpc_action :list_events, :read
       rpc_action :create_event, :create

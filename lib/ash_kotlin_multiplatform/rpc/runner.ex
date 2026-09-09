@@ -22,7 +22,14 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   The params map should contain:
   - `"action"` - The RPC action name (e.g., "list_todos", "create_todo")
   - `"input"` - Input parameters for the action
-  - `"fields"` - Fields to select/return (sparse fieldsets)
+  - `"fields"` - Fields to select/return (sparse fieldsets). A list whose entries
+    are either a field name (`"title"`) or a map naming a relationship,
+    calculation or embedded field and the fields to take from it
+    (`%{"author" => ["id", "name"]}`), nested to any depth. Absent or `[]`
+    returns every public attribute and nothing else. Selection is resolved by
+    `AshIntrospection.Rpc.FieldProcessing.FieldSelector`, so an unknown name is
+    an error rather than silently dropped, and a relationship whose destination
+    the `kotlin_rpc` DSL does not publish is refused.
   - `"identity"` - Identity for update/destroy actions
   - `"filter"` - Filter for read actions
   - `"sort"` - Sort string for read actions
@@ -42,6 +49,8 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
 
   alias AshKotlinMultiplatform.Rpc.Info
   alias AshKotlinMultiplatform.Rpc.Pipeline
+  alias AshIntrospection.Rpc.ErrorBuilder
+  alias AshIntrospection.Rpc.FieldProcessing.FieldSelector
   alias AshIntrospection.Rpc.Request
   alias AshIntrospection.FieldFormatter
 
@@ -131,12 +140,18 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     action_name = rpc_action.action
     action_info = Ash.Resource.Info.action(resource, action_name)
 
-    # Build the request
-    request =
-      build_request(domain, resource, action_info, rpc_action, params, actor, tenant, context)
-
-    # Execute through the pipeline
-    with {:ok, ash_result} <- Pipeline.execute_ash_action(request),
+    with {:ok, request} <-
+           build_request(
+             domain,
+             resource,
+             action_info,
+             rpc_action,
+             params,
+             actor,
+             tenant,
+             context
+           ),
+         {:ok, ash_result} <- Pipeline.execute_ash_action(request),
          {:ok, processed} <- Pipeline.process_result(ash_result, request) do
       # Use format_output/1 which just formats field names without expecting a wrapped response
       formatted = Pipeline.format_output(processed)
@@ -155,33 +170,33 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     sort = parse_sort(params)
     page = parse_pagination(params)
 
-    # Build extraction template for field selection
-    extraction_template = build_extraction_template(resource, fields)
-    {select, load} = build_select_and_load(resource, fields)
-
     show_metadata =
       action
       |> dsl_metadata_fields(rpc_action)
       |> narrow_metadata_fields(parse_metadata_fields(params))
 
-    %Request{
-      domain: domain,
-      resource: resource,
-      action: action,
-      rpc_action: rpc_action,
-      input: input,
-      identity: identity,
-      filter: filter,
-      sort: sort,
-      pagination: page,
-      actor: actor,
-      tenant: tenant,
-      context: context,
-      extraction_template: extraction_template,
-      select: select,
-      load: load,
-      show_metadata: show_metadata
-    }
+    with {:ok, {select, load, extraction_template}} <-
+           select_fields(resource, action, fields) do
+      {:ok,
+       %Request{
+         domain: domain,
+         resource: resource,
+         action: action,
+         rpc_action: rpc_action,
+         input: input,
+         identity: identity,
+         filter: filter,
+         sort: sort,
+         pagination: page,
+         actor: actor,
+         tenant: tenant,
+         context: context,
+         extraction_template: extraction_template,
+         select: select,
+         load: load,
+         show_metadata: show_metadata
+       }}
+    end
   end
 
   defp validate_changeset(domain, resource, rpc_action, params, actor, tenant) do
@@ -383,61 +398,35 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # Field Selection
   # ---------------------------------------------------------------------------
 
-  defp build_extraction_template(resource, []), do: build_default_extraction_template(resource)
-
-  defp build_extraction_template(_resource, fields) when is_list(fields) do
-    Enum.map(fields, fn field ->
-      atom_field = to_snake_case_atom(field)
-      {atom_field, []}
-    end)
+  # An empty request keeps the existing contract: every public attribute, no
+  # relationships, calculations or aggregates. The client asked for nothing in
+  # particular, so it gets the resource's own flat shape.
+  defp select_fields(resource, _action, []) do
+    template = Enum.map(Ash.Resource.Info.public_attributes(resource), & &1.name)
+    {:ok, {template, [], template}}
   end
 
-  defp build_default_extraction_template(resource) do
-    attributes = Ash.Resource.Info.public_attributes(resource)
-
-    Enum.map(attributes, fn attr ->
-      {attr.name, []}
-    end)
+  defp select_fields(resource, action, fields) when is_list(fields) do
+    case FieldSelector.process(resource, action.name, fields, field_selector_config()) do
+      {:ok, result} -> {:ok, result}
+      {:error, reason} -> {:error, {:invalid_fields, reason}}
+    end
   end
 
-  defp build_select_and_load(resource, []) do
-    attributes = Ash.Resource.Info.public_attributes(resource)
-    select = Enum.map(attributes, & &1.name)
-    {select, []}
+  defp select_fields(_resource, _action, fields) do
+    {:error, {:invalid_fields, {:fields_must_be_a_list, fields}}}
   end
 
-  defp build_select_and_load(resource, fields) when is_list(fields) do
-    attribute_names =
-      resource
-      |> Ash.Resource.Info.public_attributes()
-      |> Enum.map(& &1.name)
-
-    relationship_names =
-      try do
-        resource
-        |> Ash.Resource.Info.public_relationships()
-        |> Enum.map(& &1.name)
-      rescue
-        _ -> []
-      end
-
-    {select, load} =
-      Enum.reduce(fields, {[], []}, fn field, {sel, lod} ->
-        atom_field = to_snake_case_atom(field)
-
-        cond do
-          atom_field in attribute_names ->
-            {[atom_field | sel], lod}
-
-          atom_field in relationship_names ->
-            {sel, [atom_field | lod]}
-
-          true ->
-            {sel, lod}
-        end
-      end)
-
-    {Enum.reverse(select), Enum.reverse(load)}
+  # `is_interop_resource?` is what stops a nested request walking out of the
+  # published graph: without it `FieldSelector` treats every Ash resource as
+  # traversable, so a relationship to a resource the `kotlin_rpc` DSL never
+  # exposed would become readable the moment nested selection started working.
+  defp field_selector_config do
+    Map.put(
+      Pipeline.build_config(),
+      :is_interop_resource?,
+      &AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_resource?/1
+    )
   end
 
   # ---------------------------------------------------------------------------
@@ -478,6 +467,27 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
         "field" => get_error_field(error)
       }
     end)
+  end
+
+  # Field selection errors carry a field path and a suggestion the client can
+  # act on, so they are rendered from the shared `ErrorBuilder` rather than
+  # flattened into a generic "error". The message arrives as a template plus
+  # vars, which `render_message/2` fills in.
+  defp build_error_response({:invalid_fields, reason}) do
+    errors =
+      {:invalid_fields, reason}
+      |> ErrorBuilder.build_error_response(Pipeline.build_config())
+      |> List.wrap()
+      |> Enum.map(fn error ->
+        %{
+          "type" => to_string(error.type),
+          "message" => render_message(error.message, Map.get(error, :vars, %{})),
+          "shortMessage" => error.short_message,
+          "field" => error |> Map.get(:fields, []) |> List.first()
+        }
+      end)
+
+    %{"success" => false, "errors" => errors}
   end
 
   defp build_error_response({:action_not_found, action_name}) do
@@ -605,6 +615,12 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
         }
       ]
     }
+  end
+
+  defp render_message(message, vars) when is_binary(message) and is_map(vars) do
+    Enum.reduce(vars, message, fn {key, value}, acc ->
+      String.replace(acc, "%{#{key}}", to_string(value))
+    end)
   end
 
   defp format_single_error(error) when is_exception(error) do
