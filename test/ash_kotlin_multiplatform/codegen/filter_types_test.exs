@@ -54,20 +54,21 @@ defmodule AshKotlinMultiplatform.Codegen.FilterTypesTest do
       :ok
     end
 
-    test "DateFilter names java.time.LocalDate" do
+    # kotlinx-serialization has no serializer for any java.time type, so unlike the
+    # kotlinx-datetime block above, DateFilter needs the annotation too (#45).
+    test "DateFilter names java.time.LocalDate, annotated @Contextual" do
       kotlin = FilterTypes.generate_base_filter_types()
 
-      assert kotlin =~ "val eq: java.time.LocalDate? = null"
-      assert kotlin =~ "val inValues: List<java.time.LocalDate>? = null"
+      assert kotlin =~ "val eq: @Contextual java.time.LocalDate? = null"
+      assert kotlin =~ "val inValues: List<@Contextual java.time.LocalDate>? = null"
       refute kotlin =~ "kotlinx.datetime"
     end
 
-    test "InstantFilter names java.time.Instant, left bare (no @Contextual)" do
+    test "InstantFilter names java.time.Instant, annotated @Contextual" do
       kotlin = FilterTypes.generate_base_filter_types()
 
-      assert kotlin =~ "val eq: java.time.Instant? = null"
-      assert kotlin =~ "val inValues: List<java.time.Instant>? = null"
-      refute kotlin =~ "@Contextual"
+      assert kotlin =~ "val eq: @Contextual java.time.Instant? = null"
+      assert kotlin =~ "val inValues: List<@Contextual java.time.Instant>? = null"
     end
   end
 end

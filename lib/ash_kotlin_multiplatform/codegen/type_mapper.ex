@@ -20,6 +20,30 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
   # Kotlin types with no serializer the compiler can resolve on its own.
   @contextual_types ["kotlinx.datetime.Instant", "Any"]
 
+  # Every java.time type `map_type/2` can emit. kotlinx-serialization ships a
+  # serializer for none of them, so all of them need the annotation and the
+  # matching entry in the `SerializersModule`
+  # `AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic.generate_http_client_factory/0`
+  # builds. Longer names are not shadowed by shorter prefixes: the trailing `\b`
+  # in the pattern below rejects `java.time.LocalDate` inside
+  # `java.time.LocalDateTime`.
+  @java_time_contextual_types [
+    "java.time.LocalDate",
+    "java.time.LocalTime",
+    "java.time.Instant",
+    "java.time.ZonedDateTime",
+    "java.time.LocalDateTime"
+  ]
+
+  @doc """
+  Returns every java.time type the mapper can emit.
+
+  `AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic` declares one `KSerializer` per
+  entry, so the list is the single source of truth for which types get annotated
+  and which get a serializer. The two must not drift.
+  """
+  def java_time_contextual_types, do: @java_time_contextual_types
+
   @doc """
   Returns the Kotlin type for an Ash attribute.
 
@@ -61,7 +85,7 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
   @doc """
   Annotates the types that have no compile-time serializer with `@Contextual`.
 
-  Two types need it.
+  Three groups need it.
 
   `kotlinx.datetime.Instant`: kotlinx-datetime 0.6 shipped a default serializer for
   it; 0.7 deprecated the class in favour of `kotlin.time.Instant` and dropped both
@@ -83,15 +107,26 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
   `@Contextual val x: List<Instant>` would look for a serializer registered for
   `List<Instant>` and fail at runtime.
 
-  `java.time.Instant` is left alone — `:java_time` consumers supply their own
-  serializers. Matches whole words only, so `Any` does not touch `AnyOf` or a
-  resource named `Anything`. Idempotent, so it is safe to apply to an
-  already-annotated type.
+  The `java.time` types, under `datetime_library: :java_time` only:
+  kotlinx-serialization has a serializer for none of them, so every date or time
+  field was a SERIALIZER_NOT_FOUND compile error and the option could not produce a
+  compiling client at all (#45). `KotlinStatic` registers an ISO-8601 serializer per
+  type, which is what this annotation resolves against.
+
+  Matches whole words only, so `Any` does not touch `AnyOf` or a resource named
+  `Anything`. Idempotent, so it is safe to apply to an already-annotated type.
   """
   def annotate_contextual_types(kotlin_type) when is_binary(kotlin_type) do
-    Enum.reduce(@contextual_types, kotlin_type, fn type, acc ->
+    Enum.reduce(contextual_types(), kotlin_type, fn type, acc ->
       String.replace(acc, ~r/(?<!@Contextual )\b#{Regex.escape(type)}\b/, "@Contextual #{type}")
     end)
+  end
+
+  defp contextual_types do
+    case AshKotlinMultiplatform.datetime_library() do
+      :java_time -> @contextual_types ++ @java_time_contextual_types
+      _kotlinx_datetime -> @contextual_types
+    end
   end
 
   defp do_get_kotlin_type(type, constraints) do

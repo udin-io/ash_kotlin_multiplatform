@@ -26,14 +26,18 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
     # Collect all types that need generation
     {enums, unions, embedded} = collect_types(resources)
 
+    # Exactly the resources this pass declares a data class for. Nothing else may
+    # be named by a relationship field - see `generate_relationship_fields/2`.
+    emitted = resources ++ embedded
+
     data_classes =
       resources
-      |> Enum.map(&generate_data_class/1)
+      |> Enum.map(&generate_data_class(&1, emitted))
       |> Enum.join("\n\n")
 
     embedded_classes =
       embedded
-      |> Enum.map(&generate_embedded_class/1)
+      |> Enum.map(&generate_embedded_class(&1, emitted))
       |> Enum.join("\n\n")
 
     enum_classes =
@@ -114,19 +118,21 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
 
   @doc """
   Generates a Kotlin data class for an Ash resource including relationships.
+
+  `emitted_resources` is every resource the same generation pass declares a class
+  for. A relationship whose destination is not in it is dropped rather than
+  emitted against a type that does not exist; pass the full set, not just the
+  resource being generated.
   """
-  def generate_data_class(resource) do
+  def generate_data_class(resource, emitted_resources) do
     type_name = get_kotlin_type_name(resource)
     attributes = Ash.Resource.Info.public_attributes(resource)
-    relationships = get_public_relationships(resource)
 
     attribute_fields =
       attributes
       |> Enum.map(&generate_field/1)
 
-    relationship_fields =
-      relationships
-      |> Enum.map(fn rel -> generate_relationship_field(resource, rel) end)
+    relationship_fields = generate_relationship_fields(resource, emitted_resources)
 
     all_fields =
       (attribute_fields ++ relationship_fields)
@@ -140,6 +146,24 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
     """
   end
 
+  # A relationship field may only name a class this file declares. `Author` has a
+  # public `has_many :secrets` to a resource the Kotlin DSL never published, and
+  # emitting `List<Secret>` for it made every generated file fail to compile with
+  # "Unresolved reference 'Secret'" (#44).
+  #
+  # Dropping the field is what the server already does. `AshKotlinMultiplatform.Rpc.Runner`
+  # hands `FieldSelector` an `is_interop_resource?` gate, so a nested request into
+  # `Author.secrets` comes back `unknown_field`. Generating the missing class instead
+  # would publish a resource the DSL deliberately withheld.
+  defp generate_relationship_fields(resource, emitted_resources) do
+    emitted = MapSet.new(emitted_resources)
+
+    resource
+    |> get_public_relationships()
+    |> Enum.filter(&MapSet.member?(emitted, &1.destination))
+    |> Enum.map(&generate_relationship_field/1)
+  end
+
   defp get_public_relationships(resource) do
     try do
       Ash.Resource.Info.public_relationships(resource)
@@ -151,8 +175,8 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
   @doc """
   Generates a Kotlin data class for an embedded Ash resource.
   """
-  def generate_embedded_class(resource) do
-    generate_data_class(resource)
+  def generate_embedded_class(resource, emitted_resources) do
+    generate_data_class(resource, emitted_resources)
   end
 
   defp generate_field(attribute) do
@@ -226,7 +250,7 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
 
   defp get_default_for_type(_kotlin_type), do: "null"
 
-  defp generate_relationship_field(_resource, rel) do
+  defp generate_relationship_field(rel) do
     field_name = format_field_name(rel.name)
     original_name = Atom.to_string(rel.name)
     related_type_name = get_kotlin_type_name(rel.destination)

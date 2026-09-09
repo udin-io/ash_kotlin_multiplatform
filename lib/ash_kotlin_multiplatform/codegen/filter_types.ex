@@ -124,7 +124,11 @@ defmodule AshKotlinMultiplatform.Codegen.FilterTypes do
   These are the primitive filter types used by resource filters.
   """
   def generate_base_filter_types do
-    date_type = TypeMapper.get_kotlin_type_for_type(Ash.Type.Date)
+    # Both go through the annotator: `kotlinx.datetime.LocalDate` comes back
+    # untouched because kotlinx-datetime serializes it, while `java.time.LocalDate`
+    # picks up the `@Contextual` its serializer is registered under.
+    date_type =
+      TypeMapper.annotate_contextual_types(TypeMapper.get_kotlin_type_for_type(Ash.Type.Date))
 
     instant_type =
       TypeMapper.annotate_contextual_types(
