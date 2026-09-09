@@ -236,22 +236,47 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
   @doc """
   Generates the validation result type.
   """
+  # A plain `@Serializable sealed class` makes kotlinx-serialization look for a
+  # `"type"` class discriminator. `Rpc.Runner.build_validation_success_response/0`
+  # sends `{"success":true,"valid":true}` and
+  # `build_validation_error_response/1` sends the same with `"valid":false` and
+  # an `"errors"` list — neither carries a discriminator, so every `validateX()`
+  # call threw `JsonDecodingException` on decode (#24).
+  #
+  # `valid` is the discriminator the server already sends, and
+  # `JsonContentPolymorphicSerializer` is how kotlinx reads one out of the
+  # content rather than out of a synthetic key:
+  # https://kotlinlang.org/api/kotlinx.serialization/kotlinx-serialization-json/kotlinx.serialization.json/-json-content-polymorphic-serializer/
+  # Choosing it over adding `"type"` to the response keeps the wire format the
+  # Swift generator and the Phoenix channel client already read unchanged.
   def generate_validation_types do
     """
     // Validation result types
-    @Serializable
+    @Serializable(with = ValidationResultSerializer::class)
     sealed class ValidationResult {
         abstract val valid: Boolean
     }
 
+    // The server sends no class discriminator, so the `valid` flag is the
+    // discriminator. See AshKotlinMultiplatform.Rpc.Runner.
+    object ValidationResultSerializer :
+        JsonContentPolymorphicSerializer<ValidationResult>(ValidationResult::class) {
+        override fun selectDeserializer(
+            element: JsonElement
+        ): DeserializationStrategy<ValidationResult> =
+            if (element.jsonObject["valid"]?.jsonPrimitive?.booleanOrNull == true) {
+                ValidationValid.serializer()
+            } else {
+                ValidationInvalid.serializer()
+            }
+    }
+
     @Serializable
-    @SerialName("valid")
     data class ValidationValid(
         override val valid: Boolean = true
     ) : ValidationResult()
 
     @Serializable
-    @SerialName("invalid")
     data class ValidationInvalid(
         override val valid: Boolean = false,
         val errors: List<AshRpcError>
