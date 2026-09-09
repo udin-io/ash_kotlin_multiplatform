@@ -99,7 +99,7 @@ defmodule AshKotlinMultiplatform.MixProject do
 
   defp deps do
     [
-      {:ash_introspection, "~> 0.2.0"},
+      {:ash_introspection, "~> 0.3"},
       # Floors below are security floors, not preferences. A library's floor is
       # what its consumers inherit, so each one is the lowest release that
       # carries every published fix for that package as of 2026-09-09.
