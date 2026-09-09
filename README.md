@@ -12,6 +12,10 @@ Generate type-safe Kotlin Multiplatform clients from your Ash resources.
 > recommended for production use. Please report issues and feedback on
 > [GitHub](https://github.com/udin-io/ash_kotlin_multiplatform/issues).
 
+[**docs/PROJECT.md**](docs/PROJECT.md) is the source of truth for what this
+library is, how it is built, where it is going and what is at risk. Start
+there rather than here if you are joining the project.
+
 ## Features
 
 - **Automatic Kotlin Multiplatform generation** from Elixir Ash resources
