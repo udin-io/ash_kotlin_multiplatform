@@ -21,8 +21,10 @@ defmodule AshKotlinMultiplatform.HelpersTest do
     end
 
     test "handles leading underscore" do
-      # Leading underscores cause first segment to be capitalized
-      assert Helpers.snake_to_camel_case("_private_field") == "PrivateField"
+      # snake_to_camel_case always lowercases the first character, even when
+      # the leading underscore makes Macro.camelize/1 capitalize the segment
+      # that follows it. camelCase output stays camelCase (see #36).
+      assert Helpers.snake_to_camel_case("_private_field") == "privateField"
     end
   end
 
@@ -50,8 +52,10 @@ defmodule AshKotlinMultiplatform.HelpersTest do
     end
 
     test "handles consecutive capitals" do
-      # Consecutive capitals are lowercased together
-      assert Helpers.camel_to_snake_case("XMLParser") == "xmlparser"
+      # Macro.underscore/1 treats a run of capitals as one acronym segment
+      # and splits before the capital that starts the next word, same as
+      # the HelloWorld case above (see #36).
+      assert Helpers.camel_to_snake_case("XMLParser") == "xml_parser"
     end
   end
 end
