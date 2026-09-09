@@ -86,7 +86,9 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
       case type do
         Ash.Type.Atom ->
           case Keyword.get(constraints, :one_of) do
-            nil -> {enums, unions, embedded}
+            nil ->
+              {enums, unions, embedded}
+
             values ->
               enum_name = generate_enum_name(attr.name)
               {[{enum_name, values} | enums], unions, embedded}
@@ -283,18 +285,22 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
       case member_type do
         Ash.Type.Map ->
           case Keyword.get(member_constraints, :fields) do
-            nil -> "val value: Map<String, Any?>"
+            nil -> "val value: #{untyped_map_type()}"
             field_specs -> generate_union_fields(field_specs)
           end
 
         Ash.Type.Struct ->
           case Keyword.get(member_constraints, :instance_of) do
-            nil -> "val value: Map<String, Any?>"
+            nil -> "val value: #{untyped_map_type()}"
             module -> "val value: #{TypeMapper.get_kotlin_class_name(module)}"
           end
 
         _ ->
-          kotlin_type = TypeMapper.get_kotlin_type_for_type(member_type, member_constraints)
+          kotlin_type =
+            member_type
+            |> TypeMapper.get_kotlin_type_for_type(member_constraints)
+            |> TypeMapper.annotate_contextual_types()
+
           "val value: #{kotlin_type}"
       end
 
@@ -314,7 +320,11 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
       field_constraints = Keyword.get(field_config, :constraints, [])
       allow_nil = Keyword.get(field_config, :allow_nil?, true)
 
-      kotlin_type = TypeMapper.get_kotlin_type_for_type(field_type, field_constraints)
+      kotlin_type =
+        field_type
+        |> TypeMapper.get_kotlin_type_for_type(field_constraints)
+        |> TypeMapper.annotate_contextual_types()
+
       kotlin_type = if allow_nil, do: "#{kotlin_type}?", else: kotlin_type
 
       formatted_name = format_field_name(field_name)
@@ -328,6 +338,11 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
       "#{serial_name}val #{formatted_name}: #{kotlin_type}#{default}"
     end)
     |> Enum.join(",\n            ")
+  end
+
+  defp untyped_map_type do
+    AshKotlinMultiplatform.untyped_map_type()
+    |> TypeMapper.annotate_contextual_types()
   end
 
   defp generate_enum_name(attr_name) do

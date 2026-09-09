@@ -51,10 +51,22 @@ defmodule AshKotlinMultiplatform do
   @doc """
   Returns the Kotlin type to use for untyped maps.
 
-  Defaults to "Map<String, Any?>".
+  Defaults to `"Map<String, @Contextual Any?>"`. The annotation is load-bearing:
+  an untyped map lands in `@Serializable` data class fields, kotlinx-serialization
+  has no serializer for `Any`, and a bare `Map<String, Any?>` there fails to
+  compile with "Serializer has not been found for type 'Any?'". `@Contextual`
+  defers the lookup to the `SerializersModule`.
+
+  A configured override need not carry the annotation —
+  `AshKotlinMultiplatform.Codegen.TypeMapper.annotate_contextual_types/1` adds it
+  on the way into a serializable field.
   """
   def untyped_map_type do
-    Application.get_env(:ash_kotlin_multiplatform, :untyped_map_type, "Map<String, Any?>")
+    Application.get_env(
+      :ash_kotlin_multiplatform,
+      :untyped_map_type,
+      "Map<String, @Contextual Any?>"
+    )
   end
 
   @doc """
