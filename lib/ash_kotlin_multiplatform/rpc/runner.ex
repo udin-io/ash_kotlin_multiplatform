@@ -368,8 +368,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   defp convert_keys_to_atoms(map) when is_map(map) do
     Map.new(map, fn
       {key, value} when is_binary(key) ->
-        atom_key = to_snake_case_atom(key)
-        {atom_key, convert_keys_to_atoms(value)}
+        {to_snake_case_key(key), convert_keys_to_atoms(value)}
 
       {key, value} ->
         {key, convert_keys_to_atoms(value)}
@@ -382,10 +381,20 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
 
   defp convert_keys_to_atoms(value), do: value
 
-  defp to_snake_case_atom(string) when is_binary(string) do
-    string
-    |> to_snake_case()
-    |> String.to_atom()
+  # `String.to_existing_atom/1`, never `String.to_atom/1`. These keys come from
+  # the client's `input`, `filter`, `page` and `identity` maps, and the atom
+  # table is never garbage collected, so minting one atom per key let a caller
+  # looping on fresh names exhaust it and take the node down (issue #18). A name
+  # no atom exists for names no argument, attribute or option either, so leaving
+  # it a string costs nothing: Ash rejects it downstream as an unknown key.
+  defp to_snake_case_key(string) when is_binary(string) do
+    snake = to_snake_case(string)
+
+    try do
+      String.to_existing_atom(snake)
+    rescue
+      ArgumentError -> snake
+    end
   end
 
   defp to_snake_case(string) when is_binary(string) do
