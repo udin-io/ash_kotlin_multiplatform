@@ -12,12 +12,21 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannelTest do
       result = PhoenixChannel.generate()
 
       assert result =~ "data class PhoenixMessage"
-      assert result =~ "@SerialName(\"join_ref\")"
       assert result =~ "val joinRef: String?"
       assert result =~ "val ref: String?"
       assert result =~ "val topic: String"
       assert result =~ "val event: String"
       assert result =~ "val payload: JsonElement"
+    end
+
+    test "PhoenixMessage is not @Serializable" do
+      # A v2 text frame is a JSON array. kotlinx.serialization would emit the
+      # data class as an object, which is the v1 shape, so the array is built
+      # by hand in PhoenixSerializer instead.
+      result = PhoenixChannel.generate()
+
+      refute result =~ "@Serializable\ndata class PhoenixMessage"
+      refute result =~ "@SerialName(\"join_ref\")"
     end
 
     test "generates ChannelState enum" do
@@ -111,6 +120,50 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannelTest do
       assert result =~ "reconnectDelayMs"
       assert result =~ "maxReconnectAttempts"
       assert result =~ "scheduleReconnect()"
+    end
+  end
+
+  describe "the generated PhoenixSerializer" do
+    test "negotiates v2, which is the only version with a binary frame" do
+      result = PhoenixChannel.generate()
+
+      assert result =~ "const val VSN = \"2.0.0\""
+      assert result =~ ~s|("vsn" to PhoenixSerializer.VSN)|
+    end
+
+    test "encodes a text frame as the five-element array v2 expects" do
+      result = PhoenixChannel.generate()
+
+      assert result =~ "fun encodeText(message: PhoenixMessage): String"
+      assert result =~ "fun decodeText(text: String): PhoenixMessage"
+      assert result =~ "jsonString(message.joinRef)"
+      assert result =~ "jsonString(message.ref)"
+      assert result =~ "jsonString(message.topic)"
+      assert result =~ "jsonString(message.event)"
+    end
+  end
+
+  # These pin Phoenix's serializer, which lives in the phoenix package and can
+  # change without anything in this repository noticing. Each builds or reads
+  # the exact byte layout the generated PhoenixSerializer is written against,
+  # so a Phoenix change to the format fails here rather than silently producing
+  # frames the server drops. Verified against Phoenix 1.8.13,
+  # lib/phoenix/socket/serializers/v2_json_serializer.ex.
+  describe "the Phoenix v2 wire format the generated client is written against" do
+    alias Phoenix.Socket.V2.JSONSerializer
+
+    test "a text frame is a five-element array, not the object v1 used" do
+      {:socket_push, :text, iodata} =
+        JSONSerializer.encode!(%Phoenix.Socket.Message{
+          join_ref: "7",
+          ref: "9",
+          topic: "rpc:lobby",
+          event: "rpc",
+          payload: %{"action" => "list_todos"}
+        })
+
+      assert Phoenix.json_library().decode!(IO.iodata_to_binary(iodata)) ==
+               ["7", "9", "rpc:lobby", "rpc", %{"action" => "list_todos"}]
     end
   end
 end

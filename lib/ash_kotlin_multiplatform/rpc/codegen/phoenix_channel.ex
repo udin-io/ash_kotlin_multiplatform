@@ -4,24 +4,45 @@
 
 defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
   @moduledoc """
-  Generates Kotlin Phoenix Channel client code.
+  Generates the Kotlin Phoenix Channel client: connection management with
+  reconnection and heartbeats, channel join and leave, the push/receive
+  pattern, and an `AshRpcChannel` wrapper for RPC actions.
 
-  This module generates a complete Phoenix Channel implementation for Kotlin
-  that supports:
-  - WebSocket connection management with automatic reconnection
-  - Phoenix protocol message format (v2)
-  - Heartbeat handling
-  - Channel join/leave with callbacks
-  - Push/receive pattern for messages
-  - RPC-specific convenience methods
+  ## The wire format is owned here, not by kotlinx.serialization
+
+  The client speaks Phoenix's **v2** protocol, `Phoenix.Socket.V2.JSONSerializer`.
+  That is a deliberate choice with two consequences the rest of the generated
+  code does not have, and getting either wrong produces frames the server drops
+  in silence:
+
+  * The socket appends `vsn=2.0.0` on connect. Phoenix defaults an absent `vsn`
+    to `"1.0.0"` (`phoenix/lib/phoenix/socket.ex`, `__connect__/3`), and the v1
+    serializer has no binary branch at all, so a binary payload is impossible
+    without this. Before issue #49 the client sent no `vsn` and was, unmarked, a
+    v1 client.
+  * A v2 text frame is the JSON **array** `[join_ref, ref, topic, event, payload]`.
+    A `@Serializable` data class would emit an object, which is the v1 shape, so
+    `PhoenixMessage` is encoded by hand in the generated `PhoenixSerializer`.
+
+  Verified against Phoenix 1.8.13:
+  `phoenix/lib/phoenix/socket/serializers/v2_json_serializer.ex` (`encode!/1`,
+  `decode_binary/1`) and `phoenix/assets/js/phoenix/serializer.js`. The Elixir
+  half of that contract is asserted in
+  `test/ash_kotlin_multiplatform/rpc/codegen/phoenix_channel_test.exs`, because
+  it lives in another package and can change without this repository noticing.
   """
 
   @doc """
   Generates the complete Phoenix Channel client code for Kotlin.
+
+  Returns one string of top-level Kotlin declarations. Takes no resource and no
+  action: the same text is emitted for every application (issue #35).
   """
   def generate do
     """
     #{generate_phoenix_message()}
+
+    #{generate_phoenix_serializer()}
 
     #{generate_channel_state()}
 
@@ -41,10 +62,13 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
 
   defp generate_phoenix_message do
     """
-    // Phoenix Protocol Message
-    @Serializable
+    // A Phoenix protocol message with a JSON payload.
+    //
+    // Deliberately not @Serializable: a v2 text frame is the JSON array
+    // [join_ref, ref, topic, event, payload], and kotlinx.serialization would
+    // emit this as an object, which is the v1 shape. PhoenixSerializer builds
+    // the array.
     data class PhoenixMessage(
-        @SerialName("join_ref")
         val joinRef: String?,
         val ref: String?,
         val topic: String,
@@ -69,6 +93,57 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
             fun push(topic: String, joinRef: String?, ref: String, event: String, payload: JsonElement) =
                 PhoenixMessage(joinRef = joinRef, ref = ref, topic = topic, event = event, payload = payload)
         }
+    }
+    """
+  end
+
+  defp generate_phoenix_serializer do
+    """
+    /**
+     * Phoenix's v2 wire protocol.
+     *
+     * Text frames are the JSON array [join_ref, ref, topic, event, payload],
+     * not the object v1 used. The Phoenix source this was read from is in the
+     * generator's moduledoc.
+     */
+    object PhoenixSerializer {
+        // Sent as the `vsn` query parameter. Phoenix defaults an absent vsn to
+        // "1.0.0", and the v1 serializer has no binary frame at all.
+        const val VSN = "2.0.0"
+
+        fun encodeText(message: PhoenixMessage): String =
+            JsonArray(
+                listOf(
+                    jsonString(message.joinRef),
+                    jsonString(message.ref),
+                    jsonString(message.topic),
+                    jsonString(message.event),
+                    message.payload
+                )
+            ).toString()
+
+        fun decodeText(text: String): PhoenixMessage {
+            val fields = Json.parseToJsonElement(text) as? JsonArray
+                ?: throw IllegalArgumentException("Phoenix v2 text frame is not a JSON array")
+
+            require(fields.size >= 5) {
+                "Phoenix v2 text frame needs 5 elements, got ${fields.size}"
+            }
+
+            return PhoenixMessage(
+                joinRef = stringOrNull(fields[0]),
+                ref = stringOrNull(fields[1]),
+                topic = stringOrNull(fields[2]) ?: "",
+                event = stringOrNull(fields[3]) ?: "",
+                payload = fields[4]
+            )
+        }
+
+        private fun jsonString(value: String?): JsonElement =
+            if (value == null) JsonNull else JsonPrimitive(value)
+
+        private fun stringOrNull(element: JsonElement): String? =
+            if (element is JsonPrimitive && element != JsonNull) element.content else null
     }
     """
   end
@@ -123,7 +198,6 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
         private var status: PushStatus? = null
         private val responseCallbacks = mutableMapOf<String, (JsonElement) -> Unit>()
         private var timeoutCallback: (() -> Unit)? = null
-        private val sent = kotlinx.coroutines.CompletableDeferred<Unit>()
         private val responded = kotlinx.coroutines.CompletableDeferred<Pair<PushStatus, JsonElement?>>()
 
         fun receive(status: String, callback: (JsonElement) -> Unit): Push {
@@ -210,7 +284,6 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
         private var onCloseCallbacks = mutableListOf<(Int, String) -> Unit>()
         private var onErrorCallbacks = mutableListOf<(Throwable) -> Unit>()
         private var onMessageCallbacks = mutableListOf<(PhoenixMessage) -> Unit>()
-        private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
         private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
 
         fun generateRef(): String = (++refCounter).toString()
@@ -277,7 +350,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
         }
 
         internal suspend fun push(message: PhoenixMessage) {
-            session?.send(io.ktor.websocket.Frame.Text(json.encodeToString(PhoenixMessage.serializer(), message)))
+            session?.send(io.ktor.websocket.Frame.Text(PhoenixSerializer.encodeText(message)))
         }
 
         internal fun registerPush(push: Push) {
@@ -288,10 +361,15 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
             pendingPushes.remove(ref)
         }
 
+        // `vsn` selects the server's serializer, and Phoenix defaults an absent
+        // one to "1.0.0", whose serializer has no binary frame. It is set here
+        // rather than left to the caller, because the frames this client
+        // encodes are v2 either way.
         private fun buildUrl(): String {
             val separator = if (url.contains("?")) "&" else "?"
-            val queryParams = params.entries.joinToString("&") { "${it.key}=${it.value}" }
-            return if (queryParams.isNotEmpty()) "$url$separator$queryParams" else url
+            val allParams = params.filterKeys { it != "vsn" } + ("vsn" to PhoenixSerializer.VSN)
+            val queryParams = allParams.entries.joinToString("&") { "${it.key}=${it.value}" }
+            return "$url$separator$queryParams"
         }
 
         private fun startHeartbeat() {
@@ -320,8 +398,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
                                 is io.ktor.websocket.Frame.Text -> {
                                     val text = frame.readText()
                                     try {
-                                        val message = json.decodeFromString(PhoenixMessage.serializer(), text)
-                                        handleMessage(message)
+                                        handleMessage(PhoenixSerializer.decodeText(text))
                                     } catch (e: Exception) {
                                         onErrorCallbacks.forEach { it(e) }
                                     }
@@ -676,6 +753,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
             channel.off(event)
             return this
         }
+
     }
     """
   end
