@@ -30,6 +30,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previously dropped by the socket's receive loop. The JSON path is
   unchanged: `push`, `on`, `receive` and `await` keep their signatures.
 
+### Fixed
+
+- A calculation declared `field?: false` no longer reaches the generated
+  Kotlin. Ash keeps such a calculation's value in the record's
+  `calculations` map instead of as a struct key, so the generator had
+  nowhere to read it from, yet it still appeared in the data class, the
+  filter input, type discovery and field-name verification. The last of
+  those could fail a build outright: a `field?: false` calculation named
+  `score_1` was rejected for a name that never reached Kotlin.
+
 ### Changed
 
 - **Breaking on the wire.** The generated channel client now speaks

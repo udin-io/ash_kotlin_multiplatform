@@ -419,7 +419,7 @@ defmodule AshKotlinMultiplatform.Codegen.TypeDiscovery do
 
   defp get_public_calculations(resource) do
     try do
-      Ash.Resource.Info.public_calculations(resource)
+      AshKotlinMultiplatform.Resource.Info.public_field_calculations(resource)
     rescue
       _ -> []
     end
