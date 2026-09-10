@@ -234,7 +234,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
         val vars: Map<String, String> = emptyMap(),
         val fields: List<String> = emptyList(),
         val path: List<String> = emptyList(),
-        val details: Map<String, @Contextual Any?>? = null
+        val details: Map<String, JsonElement>? = null
     )
     """
   end

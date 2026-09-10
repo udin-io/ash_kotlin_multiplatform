@@ -58,7 +58,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.ResultTypes do
         data class Success(
             override val success: Boolean = true,
             val data: #{data_type},
-            val metadata: Map<String, @Contextual Any?>? = null
+            val metadata: Map<String, JsonElement>? = null
         ) : #{result_class_name}()
 
         @Serializable

@@ -23,7 +23,7 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
   # Every java.time type `map_type/2` can emit. kotlinx-serialization ships a
   # serializer for none of them, so all of them need the annotation and the
   # matching entry in the `SerializersModule`
-  # `AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic.generate_http_client_factory/0`
+  # `AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic.generate_shared_json/0`
   # builds. Longer names are not shadowed by shorter prefixes: the trailing `\b`
   # in the pattern below rejects `java.time.LocalDate` inside
   # `java.time.LocalDateTime`.
@@ -92,15 +92,17 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
   the default and the concrete `InstantIso8601Serializer` object. A generated file
   cannot know which version the consumer pinned, so it defers the lookup to the
   `SerializersModule` that
-  `AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic.generate_http_client_factory/0`
+  `AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic.generate_shared_json/0`
   registers.
 
-  `Any`: the landing type for untyped maps, keywords, tuples, unions and every Ash
-  type the mapper has no case for. kotlinx-serialization has no serializer for
-  `Any` and never will, so a bare `Any` inside a `@Serializable` class is a compile
-  error — "Serializer has not been found for type 'Any'" — not a runtime one.
-  `@Contextual` turns it into a `SerializersModule` lookup, which is the same
-  trade `ConfigBuilder` already makes for its `filter` and `page` maps.
+  `Any`: only ever from a consumer's own `:untyped_map_type` or
+  `:type_mapping_overrides`. Since #51 the mapper emits `JsonElement` for every
+  untyped shape, because kotlinx-serialization has no serializer for `Any` and
+  never will: a bare `Any` inside a `@Serializable` class is a compile error, and
+  `@Contextual Any` is a compile that throws `SerializationException: Serializer
+  for class 'Any' is not found` the moment the field holds something. The
+  annotation stays so a consumer who names `Any` still compiles; making it decode
+  is then theirs to arrange.
 
   Annotates in type position rather than on the property, so element types resolve
   too: `List<@Contextual Instant>` consults the module for `Instant`, while
@@ -229,11 +231,13 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
     AshKotlinMultiplatform.untyped_map_type()
   end
 
-  # Tuple type
+  # Tuple type. `JsonElement` rather than `Any` for the same reason the untyped
+  # map takes it: a positional list of unknown types has no Kotlin element type,
+  # and `Any` compiles but does not decode (#51).
   defp map_type(Ash.Type.Tuple, constraints) do
     case Keyword.get(constraints, :fields) do
-      nil -> "List<@Contextual Any?>"
-      _fields -> "List<@Contextual Any?>"
+      nil -> "List<JsonElement>"
+      _fields -> "List<JsonElement>"
     end
   end
 
@@ -243,7 +247,7 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
   # member fields, action metadata, identity types) there is no such class, so the
   # union falls back to a contextual `Any`.
   defp map_type(Ash.Type.Union, _constraints) do
-    "@Contextual Any"
+    "JsonElement"
   end
 
   # Struct type
@@ -267,21 +271,20 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
 
         do_get_kotlin_type(unwrapped_type, unwrapped_constraints)
 
-      # An Ash type this module has no case for. `@Contextual` rather than a bare
-      # `Any` so the field still compiles inside a `@Serializable` class; the
-      # consumer registers a serializer for it, or configures
+      # An Ash type this module has no case for. `JsonElement` carries whatever
+      # the server sent without claiming to know its shape; configure
       # :type_mapping_overrides to name a concrete Kotlin type.
       Introspection.is_ash_type?(type) ->
-        "@Contextual Any"
+        "JsonElement"
 
       true ->
         # Module that might be a custom type
-        "@Contextual Any"
+        "JsonElement"
     end
   end
 
   # Fallback for non-atom types
-  defp map_type(_, _constraints), do: "@Contextual Any"
+  defp map_type(_, _constraints), do: "JsonElement"
 
   @doc """
   Checks if a module has interop_field_names/0 callback.

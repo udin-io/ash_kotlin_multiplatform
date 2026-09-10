@@ -123,13 +123,13 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.FunctionGenerators.FunctionCore do
             "List<#{resource_name}>"
 
           {:ok, :typed_map, _} ->
-            "Map<String, @Contextual Any?>"
+            "Map<String, JsonElement>"
 
           {:ok, :unconstrained_map, _} ->
-            "Map<String, @Contextual Any?>"
+            "Map<String, JsonElement>"
 
           _ ->
-            "Map<String, @Contextual Any?>"
+            "Map<String, JsonElement>"
         end
 
       action.type == :read and context.is_get_action ->
@@ -137,7 +137,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.FunctionGenerators.FunctionCore do
 
       action.type == :read and context.supports_pagination ->
         # Return paginated result
-        "Map<String, @Contextual Any?>"
+        "Map<String, JsonElement>"
 
       action.type == :read ->
         "List<#{resource_name}>"
@@ -146,7 +146,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.FunctionGenerators.FunctionCore do
         "#{resource_name}"
 
       true ->
-        "Map<String, @Contextual Any?>"
+        "Map<String, JsonElement>"
     end
   end
 end
