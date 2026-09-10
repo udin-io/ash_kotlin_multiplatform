@@ -99,6 +99,28 @@ defmodule AshKotlinMultiplatform.Resource.Info do
   end
 
   @doc """
+  Returns the resource's public calculations that are fields on the struct.
+
+  Ash stores a calculation declared `field?: false` in the record's
+  `calculations` map rather than as a struct key, so the generator has nowhere
+  to put it: it is absent from the Kotlin data class, from the filter input and
+  from anything that reads a field off a record. Every call site that treats a
+  calculation as a generatable field goes through here.
+  """
+  def public_field_calculations(resource) do
+    resource
+    |> Ash.Resource.Info.public_calculations()
+    |> Enum.filter(&field_calculation?/1)
+  end
+
+  @doc """
+  Whether a calculation is a field on the resource struct.
+
+  Defaults to `true`, matching Ash's own default for the `field?` option.
+  """
+  def field_calculation?(calculation), do: Map.get(calculation, :field?, true)
+
+  @doc """
   Gets the mapped field name for a given field.
 
   Returns the mapped name if a mapping exists, otherwise returns the original field name.

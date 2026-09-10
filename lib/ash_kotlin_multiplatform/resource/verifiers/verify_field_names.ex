@@ -66,7 +66,7 @@ defmodule AshKotlinMultiplatform.Resource.Verifiers.VerifyFieldNames do
     # Check public calculations
     invalid_fields =
       invalid_fields ++
-        (Ash.Resource.Info.public_calculations(resource)
+        (AshKotlinMultiplatform.Resource.Info.public_field_calculations(resource)
          |> Enum.filter(fn calc ->
            mapped_name =
              AshKotlinMultiplatform.Resource.Info.get_mapped_field_name(resource, calc.name)

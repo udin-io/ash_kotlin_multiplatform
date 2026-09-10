@@ -270,8 +270,7 @@ defmodule AshKotlinMultiplatform.Codegen.FilterTypes do
       |> Ash.Resource.Info.public_attributes()
 
     calcs =
-      resource
-      |> Ash.Resource.Info.public_calculations()
+      AshKotlinMultiplatform.Resource.Info.public_field_calculations(resource)
 
     (attrs ++ calcs)
     |> Enum.map(&generate_attribute_filter(&1, resource))

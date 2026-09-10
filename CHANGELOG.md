@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Breaking for existing users.** Compile-time check that every action
+  reachable from the generated Kotlin client is `public?`. Ash documents
+  `public? false` as "internal-only and must not be exposed by API
+  extensions"; nothing enforced that here, so a `rpc_action` naming a
+  non-public action produced a fully typed client function for it. Four
+  places are checked: the action a `rpc_action` names, the `read_action` a
+  `rpc_action` uses to find records, the action a `typed_query` names, and
+  the read action behind a public relationship whose destination is itself
+  a Kotlin resource. A project that was exposing a non-public action now
+  fails to compile; the error names the offending action and says whether
+  to mark it `public? true` or drop the entry.
+
 - Binary payloads on the generated Phoenix channel client.
   `PhoenixChannel.pushBinary/3` and `AshRpcChannel.pushBinary/3` send a
   `ByteArray` as a Phoenix binary frame, which the server receives as
@@ -17,6 +29,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `awaitPayload/0` read a binary reply. Incoming binary frames were
   previously dropped by the socket's receive loop. The JSON path is
   unchanged: `push`, `on`, `receive` and `await` keep their signatures.
+
+### Fixed
+
+- Union member names that Kotlin cannot compile are now caught at compile
+  time. A union attribute is the one place where a name inside
+  `constraints` becomes a Kotlin identifier: the sealed class turns each
+  member name into a subclass name and each field of a map member into a
+  property, so a member `is_valid?` emitted `data class IsValid?(` and a
+  member field `ok?` emitted `val ok?:`. Both are rejected now, with the
+  attribute, the member and a suggested name in the message. **Breaking
+  for existing users** whose union members carry such names — but their
+  generated Kotlin did not compile either. Names the generator erases (a
+  `:map` attribute's fields, a `:tuple`'s) are deliberately not checked.
+
+- A calculation declared `field?: false` no longer reaches the generated
+  Kotlin. Ash keeps such a calculation's value in the record's
+  `calculations` map instead of as a struct key, so the generator had
+  nowhere to read it from, yet it still appeared in the data class, the
+  filter input, type discovery and field-name verification. The last of
+  those could fail a build outright: a `field?: false` calculation named
+  `score_1` was rejected for a name that never reached Kotlin.
 
 ### Changed
 
