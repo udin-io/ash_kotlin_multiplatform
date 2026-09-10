@@ -123,7 +123,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.ConfigBuilder do
       if context.supports_filtering do
         fields ++
           [
-            {:filter, "Map<String, @Contextual Any?>?", true, "null"},
+            {:filter, "Map<String, JsonElement>?", true, "null"},
             {:sort, "String?", true, "null"}
           ]
       else
@@ -133,7 +133,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.ConfigBuilder do
     # Add pagination config for paginated reads
     fields =
       if context.supports_pagination do
-        fields ++ [{:page, "Map<String, @Contextual Any?>?", true, "null"}]
+        fields ++ [{:page, "Map<String, JsonElement>?", true, "null"}]
       else
         fields
       end
@@ -190,12 +190,12 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.ConfigBuilder do
           TypeMapper.get_kotlin_type_for_type(attr.type, attr.constraints || [])
         else
           # Composite primary key - use a Map
-          "Map<String, @Contextual Any>"
+          "Map<String, JsonElement>"
         end
 
       _ ->
         # Multiple identities - use a generic type
-        "@Contextual Any"
+        "JsonElement"
     end
   end
 end

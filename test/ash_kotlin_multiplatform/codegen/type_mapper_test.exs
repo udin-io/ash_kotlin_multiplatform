@@ -63,19 +63,19 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapperTest do
       assert TypeMapper.get_kotlin_type(attr) == "List<String>?"
     end
 
-    test "maps Map type to a contextual untyped map" do
+    test "maps Map type to an untyped map of JsonElement" do
       attr = %{type: Ash.Type.Map, constraints: [], allow_nil?: false}
-      assert TypeMapper.get_kotlin_type(attr) == "Map<String, @Contextual Any?>"
+      assert TypeMapper.get_kotlin_type(attr) == "Map<String, JsonElement>"
     end
 
-    test "maps Keyword type to a contextual untyped map" do
+    test "maps Keyword type to an untyped map of JsonElement" do
       attr = %{type: Ash.Type.Keyword, constraints: [], allow_nil?: false}
-      assert TypeMapper.get_kotlin_type(attr) == "Map<String, @Contextual Any?>"
+      assert TypeMapper.get_kotlin_type(attr) == "Map<String, JsonElement>"
     end
 
-    test "maps Tuple type to a list of contextual values" do
+    test "maps Tuple type to a list of JsonElement" do
       attr = %{type: Ash.Type.Tuple, constraints: [], allow_nil?: false}
-      assert TypeMapper.get_kotlin_type(attr) == "List<@Contextual Any?>"
+      assert TypeMapper.get_kotlin_type(attr) == "List<JsonElement>"
     end
 
     test "maps Decimal type to String" do
@@ -97,17 +97,17 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapperTest do
       assert TypeMapper.get_kotlin_type_for_type({:array, Ash.Type.Integer}) == "List<Int>"
     end
 
-    test "handles unknown types as a contextual Any" do
-      assert TypeMapper.get_kotlin_type_for_type(:unknown_type) == "@Contextual Any"
+    test "handles unknown types as JsonElement" do
+      assert TypeMapper.get_kotlin_type_for_type(:unknown_type) == "JsonElement"
     end
 
-    test "handles an Ash type with no mapping as a contextual Any" do
-      assert TypeMapper.get_kotlin_type_for_type(Ash.Type.Term) == "@Contextual Any"
+    test "handles an Ash type with no mapping as JsonElement" do
+      assert TypeMapper.get_kotlin_type_for_type(Ash.Type.Term) == "JsonElement"
     end
 
-    test "handles a union with no owning attribute as a contextual Any" do
+    test "handles a union with no owning attribute as JsonElement" do
       constraints = [types: [text: [type: Ash.Type.String]]]
-      assert TypeMapper.get_kotlin_type_for_type(Ash.Type.Union, constraints) == "@Contextual Any"
+      assert TypeMapper.get_kotlin_type_for_type(Ash.Type.Union, constraints) == "JsonElement"
     end
   end
 

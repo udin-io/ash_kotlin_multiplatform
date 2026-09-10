@@ -116,6 +116,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
         generate_header(package_name),
         KotlinStatic.generate_imports(opts),
         KotlinStatic.generate_type_aliases(),
+        KotlinStatic.generate_shared_json(),
         KotlinStatic.generate_http_client_factory(),
         KotlinStatic.generate_error_types(),
         # Resource data classes
@@ -147,7 +148,10 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
         # Validation functions (if enabled)
         maybe_generate_validation_functions(resources_and_actions, opts),
         # Object wrappers (OO style)
-        non_empty_or_nil(generate_object_wrappers(otp_app, package_name), "// Object-Oriented API"),
+        non_empty_or_nil(
+          generate_object_wrappers(otp_app, package_name),
+          "// Object-Oriented API"
+        ),
         # Phoenix Channel client (if enabled)
         maybe_generate_channel_client()
       ]

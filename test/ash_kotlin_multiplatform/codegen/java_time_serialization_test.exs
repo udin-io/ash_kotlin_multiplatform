@@ -105,7 +105,7 @@ defmodule AshKotlinMultiplatform.Codegen.JavaTimeSerializationTest do
     end
 
     test "declares a serializer for every java.time type it can emit" do
-      kotlin = KotlinStatic.generate_http_client_factory()
+      kotlin = KotlinStatic.generate_shared_json()
 
       for type <- @java_time_types do
         assert kotlin =~ "KSerializer<#{type}>",
@@ -114,7 +114,7 @@ defmodule AshKotlinMultiplatform.Codegen.JavaTimeSerializationTest do
     end
 
     test "registers every serializer on the Json config" do
-      kotlin = KotlinStatic.generate_http_client_factory()
+      kotlin = KotlinStatic.generate_shared_json()
 
       assert kotlin =~ "serializersModule = SerializersModule {"
       assert kotlin =~ "contextual(JavaLocalDateIso8601Serializer)"
@@ -147,7 +147,7 @@ defmodule AshKotlinMultiplatform.Codegen.JavaTimeSerializationTest do
     end
 
     test "emits no java.time serializer" do
-      kotlin = KotlinStatic.generate_http_client_factory()
+      kotlin = KotlinStatic.generate_shared_json()
 
       refute kotlin =~ "java.time"
     end

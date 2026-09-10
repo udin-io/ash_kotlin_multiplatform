@@ -8,6 +8,12 @@
 # actually emits, which is the one thing this fixture exists to detect.
 */src/
 
+# Same argument for the responses the round-trip gate decodes: they are real
+# Rpc.Runner output, rewritten by
+# `MIX_ENV=test mix ash_kotlin_multiplatform.gen_roundtrip_fixture`. Roundtrip.kt
+# beside it is hand-written and IS committed.
+roundtrip/responses.json
+
 .gradle/
 build/
 */build/

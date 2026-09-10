@@ -10,7 +10,6 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.PayloadBuilder do
   in the generated Kotlin RPC functions to send requests to the server.
   """
 
-
   @doc """
   Generates the payload construction code for an RPC function.
 
@@ -45,7 +44,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.PayloadBuilder do
     # Add identity if present
     payload_lines =
       if context.identities != [] do
-        payload_lines ++ ["put(\"identity\", Json.encodeToJsonElement(config.identity))"]
+        payload_lines ++ ["put(\"identity\", ashRpcJson.encodeToJsonElement(config.identity))"]
       else
         payload_lines
       end
@@ -54,10 +53,11 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.PayloadBuilder do
     payload_lines =
       case context.action_input_type do
         :required ->
-          payload_lines ++ ["put(\"input\", Json.encodeToJsonElement(config.input))"]
+          payload_lines ++ ["put(\"input\", ashRpcJson.encodeToJsonElement(config.input))"]
 
         :optional ->
-          payload_lines ++ ["config.input?.let { put(\"input\", Json.encodeToJsonElement(it)) }"]
+          payload_lines ++
+            ["config.input?.let { put(\"input\", ashRpcJson.encodeToJsonElement(it)) }"]
 
         :none ->
           payload_lines
@@ -73,7 +73,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.PayloadBuilder do
                             config.fields.forEach { field ->
                                 when (field) {
                                     is String -> add(field)
-                                    else -> add(Json.encodeToJsonElement(field))
+                                    else -> add(ashRpcJson.encodeToJsonElement(field))
                                 }
                             }
                         }
@@ -89,7 +89,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.PayloadBuilder do
       if context.supports_filtering do
         payload_lines ++
           [
-            "config.filter?.let { put(\"filter\", Json.encodeToJsonElement(it)) }",
+            "config.filter?.let { put(\"filter\", ashRpcJson.encodeToJsonElement(it)) }",
             "config.sort?.let { put(\"sort\", it) }"
           ]
       else
@@ -99,7 +99,8 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.PayloadBuilder do
     # Add pagination if supported
     payload_lines =
       if context.supports_pagination do
-        payload_lines ++ ["config.page?.let { put(\"page\", Json.encodeToJsonElement(it)) }"]
+        payload_lines ++
+          ["config.page?.let { put(\"page\", ashRpcJson.encodeToJsonElement(it)) }"]
       else
         payload_lines
       end
@@ -108,7 +109,9 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.PayloadBuilder do
     payload_lines =
       if include_metadata_fields do
         payload_lines ++
-          ["config.metadataFields?.let { put(\"metadataFields\", Json.encodeToJsonElement(it)) }"]
+          [
+            "config.metadataFields?.let { put(\"metadataFields\", ashRpcJson.encodeToJsonElement(it)) }"
+          ]
       else
         payload_lines
       end
@@ -136,10 +139,11 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.PayloadBuilder do
     payload_lines =
       case context.action_input_type do
         :required ->
-          payload_lines ++ ["put(\"input\", Json.encodeToJsonElement(config.input))"]
+          payload_lines ++ ["put(\"input\", ashRpcJson.encodeToJsonElement(config.input))"]
 
         :optional ->
-          payload_lines ++ ["config.input?.let { put(\"input\", Json.encodeToJsonElement(it)) }"]
+          payload_lines ++
+            ["config.input?.let { put(\"input\", ashRpcJson.encodeToJsonElement(it)) }"]
 
         :none ->
           payload_lines

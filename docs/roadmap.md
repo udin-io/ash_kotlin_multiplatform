@@ -29,6 +29,8 @@ afterwards.
 | 2026-09-09 | Generated Kotlin compiles for map, union and unmapped types (PR #50) |
 | 2026-09-09 | The generated Kotlin compiles and the gate enforces it (#44, #45, #46) |
 | 2026-09-09 | This source of truth, the v2 channel protocol, and binary channel payloads (#49) |
+| 2026-09-09 | The generated Kotlin decodes the server's own responses (#24, PR #56) |
+| 2026-09-10 | One shared `Json`, `JsonElement` for untyped shapes, and a decode gate in CI (#51, #54, #58) |
 
 ## In progress
 
@@ -41,8 +43,9 @@ Ordered by what unblocks the most.
 | Issue | What | Why now |
 | ----- | ---- | ------- |
 | #38 | Make `main` formatter-clean and put the check in CI | One mechanical commit; unblocks review signal |
-| #22, #24 | Typed results, and decoding the server's own error shape | The type safety the README leads with |
-| #51, #48 | Untyped maps fail to decode; the runner mangles unconstrained map keys | The runtime half of the `@Contextual` trade |
+| #22 | Typed results | The type safety the README leads with |
+| #48, #53 | The runner mangles unconstrained map keys; FilterTypes emits unpublished resources | Both leak shapes the client cannot use |
+| #57 | Error keys ignore the output field formatter | The decode gate now reads those keys |
 | #17, #43 | Unstable output order across builds | A regenerated file should diff empty |
 | #35 | The channel client is static and cannot send most params | Blocks any per-action channel work |
 | #31 | Decide the fate of the half-built Swift generator | It is generated and never compiled |

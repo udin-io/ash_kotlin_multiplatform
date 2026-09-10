@@ -51,28 +51,32 @@ defmodule AshKotlinMultiplatform do
   @doc """
   Returns the Kotlin type to use for untyped maps.
 
-  Defaults to `"Map<String, @Contextual Any?>"`. The annotation is load-bearing:
-  an untyped map lands in `@Serializable` data class fields, kotlinx-serialization
-  has no serializer for `Any`, and a bare `Map<String, Any?>` there fails to
-  compile with "Serializer has not been found for type 'Any?'". `@Contextual`
-  defers the lookup to the `SerializersModule`.
+  Defaults to `"Map<String, JsonElement>"`.
 
-  A configured override need not carry the annotation —
-  `AshKotlinMultiplatform.Codegen.TypeMapper.annotate_contextual_types/1` adds it
-  on the way into a serializable field.
+  An untyped map has no Kotlin type, and `JsonElement` is the type that says so.
+  It also decodes: through 0.1.3 the default was `"Map<String, @Contextual Any?>"`,
+  which compiled and then threw `SerializationException: Serializer for class
+  'Any' is not found` on any map that actually held something — `@Contextual`
+  is a `SerializersModule` lookup, and kotlinx-serialization has no serializer
+  for `Any` to register (#51). `JsonElement` needs no module at all, so it
+  survives a consumer decoding with a `Json` of their own, and `JsonPrimitive`
+  keeps the literal a number arrived as instead of guessing `Long` or `Double`.
 
-  `@Contextual` fixes compilation, not decoding. A field holding an actual map
-  still throws `SerializationException: Serializer for class 'Any' is not found`
-  unless the consumer registers a serializer for `Any` on the `SerializersModule`
-  (verified against kotlinx-serialization 1.9.0; `null` and absent values decode
-  fine without one). Configure this option to a concrete Kotlin type when the map
-  has a known shape.
+  Read a value with the `kotlinx.serialization.json` accessors:
+
+      val retries = todo.metadata?.get("retries")?.jsonPrimitive?.int
+
+  Configure this option to a concrete Kotlin type when the map has a known
+  shape. A configured value naming `Any` still compiles —
+  `AshKotlinMultiplatform.Codegen.TypeMapper.annotate_contextual_types/1` adds
+  `@Contextual` on the way into a serializable field — but it decodes only if
+  the consumer registers a serializer for `Any` themselves.
   """
   def untyped_map_type do
     Application.get_env(
       :ash_kotlin_multiplatform,
       :untyped_map_type,
-      "Map<String, @Contextual Any?>"
+      "Map<String, JsonElement>"
     )
   end
 

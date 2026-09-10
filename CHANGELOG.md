@@ -35,6 +35,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stops reporting a JSON payload it never had; `Push`'s `JsonElement`
   constructor is kept, so no existing call site changes.
 
+- **Breaking on the Kotlin API.** Every untyped shape is now `JsonElement`
+  rather than `@Contextual Any`: untyped maps and keywords are
+  `Map<String, JsonElement>`, tuples are `List<JsonElement>`, and a union
+  without an owning attribute or an Ash type the mapper does not recognise is
+  `JsonElement`. So are the `filter` and `page` config maps,
+  `AshRpcError.details` and the action-result `metadata` map. `@Contextual`
+  only deferred the failure: kotlinx-serialization has no serializer for
+  `Any`, so a field holding a populated map threw
+  `SerializationException: Serializer for class 'Any' is not found` at
+  runtime. Read a value with the `kotlinx.serialization.json` accessors —
+  `todo.metadata?.get("retries")?.jsonPrimitive?.int`. The
+  `:untyped_map_type` default changed with it; a configured value naming
+  `Any` still compiles.
+
 ### Removed
 
 - `AshKotlinMultiplatform.Codegen.ValidationSchemas`, the `with_validation`
@@ -49,6 +63,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Every encode and decode path in the generated client now shares one `Json`,
+  the public `ashRpcJson`, which carries the `SerializersModule`. Only
+  `createHttpClient()` did before: `RpcResult.dataAs()` and the Phoenix
+  channel client each built their own, and every request payload encoded
+  through the `Json` companion, which is `Json.Default` and registers
+  nothing. A date or any other `@Contextual` field down those paths threw at
+  runtime — including `dataAs()`, the documented way to read a result.
 - `Rpc.Runner` now honors the `metadataFields` param the generated Kotlin
   client sends. It narrows the metadata fields the DSL exposes and can never
   widen them: a field the DSL withholds is not returned and raises no error.

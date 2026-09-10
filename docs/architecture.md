@@ -54,7 +54,7 @@ C4Container
         Container(serve, "RPC server half", "Elixir", "Phoenix.Controller, Rpc.Runner, Rpc.Pipeline, Rpc.Hooks")
     }
 
-    Container_Ext(gate, "Kotlin compile gate", "Gradle + Kotlin 2.4.20", "test/fixtures/kotlin_compile; hands the emitted Kotlin to a real compiler in CI")
+    Container_Ext(gate, "Kotlin compile and round-trip gate", "Gradle + Kotlin 2.4.20", "test/fixtures/kotlin_compile; compiles the emitted Kotlin in CI, then decodes real Runner responses with it")
     System_Ext(ash, "Ash + AshIntrospection", "")
     System_Ext(client, "Generated client", "Kotlin / Swift", "AshRpc.kt, AshRpc.swift")
 
@@ -65,12 +65,18 @@ C4Container
     Rel(kgen, client, "writes AshRpc.kt")
     Rel(sgen, client, "writes AshRpc.swift")
     Rel(gate, kgen, "compiles what it emits, one subproject per datetime_library")
+    Rel(gate, serve, "decodes real Runner responses with the generated classes")
     Rel(client, serve, "POST /rpc/run, /rpc/validate")
     Rel(serve, ash, "Ash action through the shared pipeline")
 ```
 
-The compile gate is drawn because it is the only thing in the repository
-that checks the product. Everything else asserts on strings.
+The gate is drawn because it is the only thing in the repository that checks
+the product. Everything else asserts on strings. It has two halves and they
+catch different defects: `gradle compileKotlin` catches Kotlin that does not
+compile, and `gradle run` catches Kotlin that compiles and then throws or
+reads `null` at decode time (#24, #51, #54). A compiler has no opinion about
+what a server actually sends, so the second half decodes responses
+`Rpc.Runner` produced.
 
 ## 3. Component: the Kotlin generator
 
@@ -88,7 +94,7 @@ flowchart TD
 
     coll --> tuples["{resource, action, rpc_action}"]
 
-    tuples --> static["KotlinStatic<br/>imports, type aliases,<br/>HttpClient factory, error and result types"]
+    tuples --> static["KotlinStatic<br/>imports, type aliases, the shared ashRpcJson,<br/>HttpClient factory, error and result types"]
     tuples --> schemas["Codegen.ResourceSchemas<br/>data classes, enums,<br/>sealed unions, embedded"]
     tuples --> types["TypeGenerators.*<br/>InputTypes, ResultTypes,<br/>MetadataTypes, PaginationTypes"]
     tuples --> filters["Codegen.FilterTypes<br/>Codegen.TypedQueries"]

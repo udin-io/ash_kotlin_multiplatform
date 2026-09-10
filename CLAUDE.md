@@ -26,15 +26,20 @@ decision it made. A merge is not finished until those pages describe `main`
 as it now is. A source of truth that lags is worse than none, because
 readers trust it.
 
-## The product is Kotlin source, so compile it
+## The product is Kotlin source, so compile it AND run it
 
 Assertions like `assert result =~ "class Push("` pass on Kotlin that does
-not compile. Five defects proved it (#20, #23, #24, #30, #33). Any change to
-a generator must go through the compile gate:
+not compile. Five defects proved it (#20, #23, #24, #30, #33). Compiling is
+not enough either: #24, #51 and #54 all compiled and then threw or read
+`null` at decode time. Any change to a generator must go through both halves
+of the gate:
 
 ```sh
 MIX_ENV=test mix ash_kotlin_multiplatform.gen_kotlin_fixture
-cd test/fixtures/kotlin_compile && gradle compileKotlin --console=plain
+MIX_ENV=test mix ash_kotlin_multiplatform.gen_roundtrip_fixture
+cd test/fixtures/kotlin_compile
+gradle compileKotlin --console=plain
+gradle run --console=plain
 ```
 
 `MIX_ENV=test` is load-bearing — it is what puts the test domain into
@@ -42,15 +47,21 @@ cd test/fixtures/kotlin_compile && gradle compileKotlin --console=plain
 resources to emit at all. The gate needs JDK 21 and Gradle 9.7; there is no
 committed wrapper.
 
+`gradle run` decodes real `Rpc.Runner` responses with the generated classes.
+Its harness is `test/fixtures/kotlin_compile/roundtrip/Roundtrip.kt`,
+hand-written and committed, compiled into BOTH `:datetime_library`
+subprojects from that one source — so every check has to compile under
+`java.time` and `kotlinx-datetime` alike. Assert on `toString()`, never on a
+concrete date class.
+
 ## Project-specific lessons
 
-### The compile gate is blocking and green — keep it that way
+### The gate is blocking and green — keep it that way
 
-Since #52 the `kotlin-compile-gate` job has no `continue-on-error`, and
-`gradle compileKotlin` exits 0 on `main`. Two warnings are expected, one per
-subproject: "Redundant creation of Json format", from `RpcResult.dataAs()`.
-Any error is yours. Run the gate before pushing a generator change; the CI
-job will not merge without it.
+Since #52 the `kotlin-compile-gate` job has no `continue-on-error`, and both
+`gradle compileKotlin` and `gradle run` exit 0 on `main` with no warnings.
+Any warning or error is yours. Run both before pushing a generator change;
+the CI job will not merge without them.
 
 ### `mix format --check-formatted` fails on `main`
 
@@ -85,6 +96,26 @@ either side:
 It takes no resource and no action, so the same Kotlin is emitted for every
 application (#35). Do not reach for the `{resource, action, rpc_action}`
 tuples inside it; they are not passed in.
+
+### There is one `Json` in the generated file, and it is `ashRpcJson`
+
+Never emit `Json { ... }` or the bare `Json.` companion (which is
+`Json.Default`) in generated Kotlin. Both skip the `SerializersModule`, and a
+`@Contextual` field decoded or encoded through either throws at runtime while
+compiling clean — that was #54, in four separate places.
+`AshKotlinMultiplatform.Codegen.SharedJsonTest` counts them, so a new one
+fails a test rather than a user's app. If a path genuinely needs different
+settings, copy: `Json(from = ashRpcJson) { ... }`.
+
+### An untyped shape is `JsonElement`, never `Any`
+
+kotlinx-serialization has no serializer for `Any` and never will. A bare
+`Any` inside a `@Serializable` class does not compile, and `@Contextual Any`
+compiles and then throws the moment the field holds something (#50 bought the
+first, #51 measured the second). Untyped maps, keywords, tuples, unions
+without an owning attribute and unrecognised Ash types all take
+`JsonElement`. See `docs/decisions.md` for why an `Any` serializer was
+measured and refused.
 
 ### Section generators share no state
 
