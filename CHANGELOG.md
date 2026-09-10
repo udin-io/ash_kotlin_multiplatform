@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Breaking for existing users.** Compile-time check that every action
+  reachable from the generated Kotlin client is `public?`. Ash documents
+  `public? false` as "internal-only and must not be exposed by API
+  extensions"; nothing enforced that here, so a `rpc_action` naming a
+  non-public action produced a fully typed client function for it. Four
+  places are checked: the action a `rpc_action` names, the `read_action` a
+  `rpc_action` uses to find records, the action a `typed_query` names, and
+  the read action behind a public relationship whose destination is itself
+  a Kotlin resource. A project that was exposing a non-public action now
+  fails to compile; the error names the offending action and says whether
+  to mark it `public? true` or drop the entry.
+
 - Binary payloads on the generated Phoenix channel client.
   `PhoenixChannel.pushBinary/3` and `AshRpcChannel.pushBinary/3` send a
   `ByteArray` as a Phoenix binary frame, which the server receives as

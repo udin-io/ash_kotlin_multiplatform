@@ -183,6 +183,7 @@ defmodule AshKotlinMultiplatform.Rpc do
   use Spark.Dsl.Extension,
     sections: [@rpc],
     verifiers: [
+      AshKotlinMultiplatform.Rpc.Verifiers.VerifyPublicActions,
       AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities,
       AshKotlinMultiplatform.Rpc.Verifiers.VerifyActionTypes
     ]
