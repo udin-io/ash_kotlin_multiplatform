@@ -62,9 +62,30 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
   end
 
   @doc """
-  Generates a helper function to create a configured HttpClient.
+  Generates the hand-written serializers and the one `Json` that carries them.
+
+  Every encode and decode path in the emitted file goes through `ashRpcJson`.
+  Before #54 four did not: `createHttpClient()` registered the
+  `SerializersModule`, while `RpcResult.dataAs()` and the Phoenix channel client
+  each built a `Json` of their own and every request payload encoded through the
+  `Json` companion — which is `Json.Default`, and carries no module. A
+  `@Contextual` field down any of those paths threw
+  `SerializationException: Serializer for class '...' is not found` at runtime,
+  on code the compiler had no complaint about.
+
+  `ashRpcJson` is public so consumers can decode with the same configuration the
+  client uses, and because `dataAs()` is `inline` — an inline function body can
+  only reach public declarations.
+
+  The settings are `createHttpClient()`'s. The channel client also set
+  `encodeDefaults = true`, which is deliberately not carried over: it changes
+  what `encodeToJsonElement` writes for a `@Serializable` class, the channel
+  client encodes none (it hands the encoder `Map<String, JsonPrimitive>` and
+  `JsonElement`), and turning it on for the HTTP payloads would start sending
+  every unset input field as an explicit `null` — which Ash reads as "set this
+  attribute to nil", not as "leave it alone".
   """
-  def generate_http_client_factory do
+  def generate_shared_json do
     {serializer_decls, serializers_module} =
       case AshKotlinMultiplatform.datetime_library() do
         :kotlinx_datetime -> kotlinx_datetime_serializers()
@@ -72,14 +93,25 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
       end
 
     """
-    #{serializer_decls}// HTTP Client factory
+    #{serializer_decls}// The one Json every generated encode and decode path uses. Public so a
+    // consumer decodes with the same configuration the client does (#54).
+    val ashRpcJson: Json = Json {
+        ignoreUnknownKeys = true
+        isLenient = true#{serializers_module}
+    }
+    """
+  end
+
+  @doc """
+  Generates a helper function to create a configured HttpClient.
+  """
+  def generate_http_client_factory do
+    """
+    // HTTP Client factory
     fun createHttpClient(): HttpClient {
         return HttpClient {
             install(ContentNegotiation) {
-                json(Json {
-                    ignoreUnknownKeys = true
-                    isLenient = true#{serializers_module}
-                })
+                json(ashRpcJson)
             }
         }
     }
@@ -114,8 +146,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
 
     """
 
-    {decl,
-     "\n                serializersModule = SerializersModule { contextual(InstantIso8601Serializer) }"}
+    {decl, "\n    serializersModule = SerializersModule { contextual(InstantIso8601Serializer) }"}
   end
 
   # kotlinx-serialization ships a serializer for no java.time type, so every date or
@@ -138,12 +169,10 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
 
     registrations =
       Enum.map_join(types, "\n", fn type ->
-        "                    contextual(#{java_time_serializer_name(type)})"
+        "        contextual(#{java_time_serializer_name(type)})"
       end)
 
-    module =
-      "\n                serializersModule = SerializersModule {\n" <>
-        registrations <> "\n                }"
+    module = "\n    serializersModule = SerializersModule {\n" <> registrations <> "\n    }"
 
     {decls, module}
   end
@@ -228,8 +257,11 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
         val data: JsonElement? = null,
         val errors: List<AshRpcError>? = null
     ) {
+        // Through `ashRpcJson`, not a fresh Json: this is the documented way to
+        // get a typed value out of a result, so a date or an untyped map here is
+        // the primary happy path, and its own Json carried no serializers (#54).
         inline fun <reified T> dataAs(): T? {
-            return data?.let { Json { ignoreUnknownKeys = true }.decodeFromJsonElement<T>(it) }
+            return data?.let { ashRpcJson.decodeFromJsonElement<T>(it) }
         }
 
         fun isSuccess(): Boolean = success

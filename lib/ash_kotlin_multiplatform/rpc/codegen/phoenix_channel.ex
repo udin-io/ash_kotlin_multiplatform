@@ -186,7 +186,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
             ).toString()
 
         fun decodeText(text: String): PhoenixMessage {
-            val fields = Json.parseToJsonElement(text) as? JsonArray
+            val fields = ashRpcJson.parseToJsonElement(text) as? JsonArray
                 ?: throw IllegalArgumentException("Phoenix v2 text frame is not a JSON array")
 
             require(fields.size >= 5) {
@@ -763,8 +763,6 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
         private val bindings = mutableMapOf<String, MutableList<(JsonElement) -> Unit>>()
         private val binaryBindings = mutableMapOf<String, MutableList<(ByteArray) -> Unit>>()
         private val pendingPushes = mutableListOf<Push>()
-        private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-
         fun channelState(): ChannelState = state
 
         fun isJoined(): Boolean = state == ChannelState.JOINED
@@ -802,7 +800,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
             state = ChannelState.JOINING
             joinRef = socket.generateRef()
 
-            val payloadJson = json.encodeToJsonElement(params.mapValues { (_, v) ->
+            val payloadJson = ashRpcJson.encodeToJsonElement(params.mapValues { (_, v) ->
                 when (v) {
                     is String -> JsonPrimitive(v)
                     is Number -> JsonPrimitive(v)
@@ -940,8 +938,6 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
         params: Map<String, Any?> = emptyMap()
     ) {
         private val channel = socket.channel(topic, params)
-        private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
-
         fun isJoined(): Boolean = channel.isJoined()
 
         fun channelState(): ChannelState = channel.channelState()
@@ -969,7 +965,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
             val payload = buildJsonObject {
                 put("action", action)
                 input?.let { inp ->
-                    put("input", json.encodeToJsonElement(inp.mapValues { (_, v) ->
+                    put("input", ashRpcJson.encodeToJsonElement(inp.mapValues { (_, v) ->
                         when (v) {
                             is String -> JsonPrimitive(v)
                             is Number -> JsonPrimitive(v)
@@ -983,7 +979,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
                     fields.forEach { field ->
                         when (field) {
                             is String -> add(field)
-                            else -> add(json.encodeToJsonElement(field))
+                            else -> add(ashRpcJson.encodeToJsonElement(field))
                         }
                     }
                 }
@@ -997,7 +993,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
                 PushStatus.OK -> {
                     response?.let { resp ->
                         try {
-                            json.decodeFromJsonElement<RpcResult>(resp)
+                            ashRpcJson.decodeFromJsonElement<RpcResult>(resp)
                         } catch (e: Exception) {
                             RpcResult(
                                 success = false,
@@ -1020,7 +1016,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
                 PushStatus.ERROR -> {
                     response?.let { resp ->
                         try {
-                            json.decodeFromJsonElement<RpcResult>(resp)
+                            ashRpcJson.decodeFromJsonElement<RpcResult>(resp)
                         } catch (e: Exception) {
                             RpcResult(
                                 success = false,
