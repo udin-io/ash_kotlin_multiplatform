@@ -53,6 +53,7 @@ defmodule AshKotlinMultiplatform.Resource do
     sections: [@kotlin_multiplatform],
     verifiers: [
       AshKotlinMultiplatform.Resource.Verifiers.VerifyFieldNames,
+      AshKotlinMultiplatform.Resource.Verifiers.VerifyUnionMemberNames,
       AshKotlinMultiplatform.Resource.Verifiers.VerifyUniqueTypeNames
     ]
 end

@@ -32,6 +32,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Union member names that Kotlin cannot compile are now caught at compile
+  time. A union attribute is the one place where a name inside
+  `constraints` becomes a Kotlin identifier: the sealed class turns each
+  member name into a subclass name and each field of a map member into a
+  property, so a member `is_valid?` emitted `data class IsValid?(` and a
+  member field `ok?` emitted `val ok?:`. Both are rejected now, with the
+  attribute, the member and a suggested name in the message. **Breaking
+  for existing users** whose union members carry such names — but their
+  generated Kotlin did not compile either. Names the generator erases (a
+  `:map` attribute's fields, a `:tuple`'s) are deliberately not checked.
+
 - A calculation declared `field?: false` no longer reaches the generated
   Kotlin. Ash keeps such a calculation's value in the record's
   `calculations` map instead of as a struct key, so the generator had
