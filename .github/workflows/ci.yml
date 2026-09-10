@@ -49,9 +49,18 @@ jobs:
       - name: Audit dependencies for known vulnerabilities
         run: mix deps.audit
 
-  # Hands the emitted Kotlin to a real Kotlin compiler. Every "generated code
-  # does not compile" defect so far (#20, #23, #24, #30, #33) was found by a
-  # human reading strings; this job is the machine that should have found them.
+  # Hands the emitted Kotlin to a real Kotlin compiler, then runs it against real
+  # Rpc.Runner responses. Every "generated code does not compile" defect so far
+  # (#20, #23, #30, #33, #44, #45) was found by a human reading strings, and the
+  # compile step is the machine that should have found them.
+  #
+  # Compiling is not enough on its own: #24, #51 and #54 all compiled and then
+  # threw or silently read null, because kotlinc has no opinion about whether a
+  # @SerialName matches the key the server sends. That is what the decode step
+  # measures (#58).
+  #
+  # The job id and its display name are unchanged on purpose, so a branch
+  # protection rule naming the required check keeps matching.
   kotlin-compile-gate:
     name: Compile the generated Kotlin
     runs-on: ubuntu-latest
@@ -85,6 +94,11 @@ jobs:
       - name: Generate the Kotlin fixture sources
         run: MIX_ENV=test mix ash_kotlin_multiplatform.gen_kotlin_fixture
 
+      # Real responses, produced by running the actions rather than describing
+      # them. The decode step below reads this file.
+      - name: Generate the round-trip response fixture
+        run: MIX_ENV=test mix ash_kotlin_multiplatform.gen_roundtrip_fixture
+
       - name: Set up JDK
         uses: actions/setup-java@v6
         with:
@@ -101,3 +115,10 @@ jobs:
       - name: Compile the generated Kotlin
         working-directory: test/fixtures/kotlin_compile
         run: gradle compileKotlin --console=plain
+
+      # Decodes every fixture response with the generated class meant to read it
+      # and exits non-zero on any throw or wrong value. Runs both
+      # :datetime_library subprojects.
+      - name: Decode real responses with the generated Kotlin
+        working-directory: test/fixtures/kotlin_compile
+        run: gradle run --console=plain

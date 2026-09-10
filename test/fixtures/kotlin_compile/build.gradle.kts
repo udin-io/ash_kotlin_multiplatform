@@ -53,5 +53,28 @@ subprojects {
 
     extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
         jvmToolchain(21)
+
+        // The round-trip harness, compiled into both subprojects from one source.
+        // It decodes real Rpc.Runner responses with the generated classes, so it
+        // has to sit in the same compilation unit as the AshRpc.kt it is testing —
+        // and it must compile under both :datetime_library settings, which is why
+        // it asserts on toString() rather than on a concrete date class.
+        sourceSets["main"].kotlin.srcDir(rootProject.file("roundtrip"))
+    }
+
+    // `gradle run` decodes; `gradle compileKotlin` only compiles. Six of this
+    // repository's defects were caught by compiling and three (#24, #51, #54) were
+    // not, because kotlinc has no opinion about what a server actually sends.
+    apply(plugin = "application")
+
+    extensions.configure<JavaApplication> {
+        mainClass.set("RoundtripKt")
+    }
+
+    tasks.withType<JavaExec>().configureEach {
+        systemProperty(
+            "ashRpcResponses",
+            rootProject.file("roundtrip/responses.json").absolutePath
+        )
     }
 }

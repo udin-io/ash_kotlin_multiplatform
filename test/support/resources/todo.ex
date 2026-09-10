@@ -90,7 +90,18 @@ defmodule AshKotlinMultiplatform.Test.Todo do
 
     create :create do
       primary? true
-      accept [:title, :description, :status, :priority, :due_date, :tags, :user_id]
+
+      accept [
+        :title,
+        :description,
+        :status,
+        :priority,
+        :due_date,
+        :tags,
+        :user_id,
+        :metadata,
+        :settings
+      ]
     end
 
     update :update do
