@@ -122,12 +122,70 @@ Cost: two lanes to keep in step. `await()` returns null for a reply the
 server sent as binary, and `awaitBinary()` returns null for a JSON one;
 `awaitPayload()` is the one that never hides a reply.
 
-## 2026-09-09 — Contextual serializers for every Kotlin `Any`
+## 2026-09-10 — `JsonElement` for every untyped shape, not an `Any` serializer
 
-Untyped maps, keywords, tuples, unions and unmapped Ash types all landed on
-a bare `Any` inside `@Serializable` classes, which does not compile.
-`@Contextual` defers the lookup to the `SerializersModule`.
+Untyped maps, keywords, tuples, unions and unmapped Ash types now reach
+Kotlin as `JsonElement` (`Map<String, JsonElement>`, `List<JsonElement>`).
+This replaces the 2026-09-09 decision to annotate them `@Contextual Any`,
+which bought the compile and nothing else: #51 measured a populated untyped
+map still throwing `SerializationException: Serializer for class 'Any' is
+not found`.
 
-Cost: the failure moves from compile time to run time. Issue #51 is exactly
-that: the code now compiles and a populated untyped map still fails to
-decode.
+The alternative was registering a hand-written `Any` serializer on the
+module. It was prototyped and measured against the real response on
+2026-09-10 rather than argued about, and it loses data: a JSON integer past
+`Long.MAX_VALUE` decodes to a `Double` and re-encodes as
+`1.2345678901234567E19`, a different number. Every integer lands as `Long`,
+so the obvious `as Int` throws. Encoding is a closed `when` over
+String/Number/Boolean/Map/List that throws on anything else, with no
+compile-time signal. And it works only while the value travels through the
+one configured `Json` — the type says `Any?`, and nothing in the type warns
+that `Json.decodeFromString<Todo>(text)` will throw.
+
+`JsonElement` has none of that. It needs no `SerializersModule`, so it
+decodes through any `Json` a consumer builds; `JsonPrimitive` keeps the
+literal a number arrived as; and the type states the truth, which is that the
+shape is unknown.
+
+Cost: breaking for anyone reading these fields today —
+`metadata["retries"] as Int` becomes
+`metadata["retries"]?.jsonPrimitive?.int` — and every call site is more
+verbose than an `Any` that happened to work. `:untyped_map_type` and
+`:type_mapping_overrides` still accept a value naming `Any`, and
+`annotate_contextual_types/1` still annotates it, so a consumer who wants
+the old shape keeps compiling and takes the decoding on themselves.
+
+## 2026-09-10 — One `Json` in the generated file, and it is public
+
+`val ashRpcJson` carries the `SerializersModule`, and every generated encode
+and decode path uses it: `createHttpClient()`, `RpcResult.dataAs()`, the
+Phoenix channel client, and all 46 request-payload encodes.
+
+Why: four paths each built their own, and only `createHttpClient()`
+registered the module (#54). Public rather than private because `dataAs()` is
+`inline` and an inline body can only reach public declarations — and because
+a consumer decoding by hand should be able to reach the same configuration
+rather than rebuild it wrong.
+
+Cost: the channel client's `encodeDefaults = true` is gone. That is
+deliberate, because carrying it to the HTTP payloads would send every unset
+input field as an explicit `null`, which Ash reads as "set this attribute to
+nil"; the channel encodes no `@Serializable` class, so it loses nothing. If a
+future path does need different settings it must copy `ashRpcJson` with
+`Json(from = ashRpcJson) { ... }`, never build a fresh one.
+
+## 2026-09-10 — The CI gate runs the generated Kotlin, not only compiles it
+
+`gradle run` decodes real `Rpc.Runner` responses with the generated classes,
+after `gradle compileKotlin` compiles them (#58).
+
+Why: `kotlinc` has no opinion about whether a `@SerialName` matches the key
+the server sends. Six filed defects were compile failures and the compile
+gate catches all six; three (#24, #51, #54) compiled and then threw or
+silently read `null`, and nothing caught those.
+
+Cost: a fixture that has to stay in step. The mix task writes responses and
+`roundtrip/Roundtrip.kt` reads them, and a response added without a matching
+check proves nothing. The harness is one source compiled into both
+`:datetime_library` subprojects, so every check has to assert on `toString()`
+rather than on a concrete date class.

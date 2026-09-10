@@ -19,10 +19,14 @@ Every generator returns a string and most tests are `assert result =~ "..."`.
 A test can pass on Kotlin that does not compile, and did — #20, #23, #24,
 #30 and #33 were all found by a human reading emitted strings.
 
-*Watch:* the `kotlin-compile-gate` CI job, blocking and green since #52.
-*Do:* run it locally before pushing any generator change. Its green is only
-worth what it covers: it compiles the test domain's resources, so a shape no
-test resource has is still unchecked.
+*Watch:* the `kotlin-compile-gate` CI job, blocking and green since #52. It
+compiles the emitted Kotlin and, since #58, runs it against real `Rpc.Runner`
+responses.
+*Do:* run both halves locally before pushing any generator change. Their
+green is only worth what they cover: they exercise the test domain's
+resources, so a shape no test resource has is still unchecked, and the decode
+half only checks the responses the fixture carries. A new response shape
+needs a new check in `roundtrip/Roundtrip.kt`, or it is unwatched.
 
 ### Swift is generated and never compiled
 
@@ -93,7 +97,7 @@ all of it works, and the package is on hex where anyone can depend on it.
 *Do:* keep the notice until #22, #24 and #31 close. Do not cut a release
 that quietly widens what is claimed.
 
-### The compile gate needs a JDK and a Gradle that CI installs each run
+### The gate needs a JDK and a Gradle that CI installs each run
 
 The fixture has no committed wrapper, so a local run needs JDK 21 and Gradle
 9.7 on the path, and CI resolves the Kotlin and Ktor artifacts from Maven
