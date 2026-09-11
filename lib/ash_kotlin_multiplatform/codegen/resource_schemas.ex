@@ -130,7 +130,7 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
 
     attribute_fields =
       attributes
-      |> Enum.map(&generate_field/1)
+      |> Enum.map(&generate_field(&1, resource))
 
     relationship_fields = generate_relationship_fields(resource, emitted_resources)
 
@@ -161,7 +161,7 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
     resource
     |> get_public_relationships()
     |> Enum.filter(&MapSet.member?(emitted, &1.destination))
-    |> Enum.map(&generate_relationship_field/1)
+    |> Enum.map(&generate_relationship_field(&1, resource))
   end
 
   defp get_public_relationships(resource) do
@@ -179,15 +179,9 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
     generate_data_class(resource, emitted_resources)
   end
 
-  defp generate_field(attribute) do
+  defp generate_field(attribute, resource) do
     kotlin_type = field_kotlin_type(attribute)
-    field_name = format_field_name(attribute.name)
-    original_name = Atom.to_string(attribute.name)
-
-    # Handle SerialName annotation based on output field formatter
-    # If server outputs camelCase (default), Kotlin property names already match
-    # If server outputs snake_case, we need @SerialName for the snake_case JSON key
-    serial_name = get_serial_name_annotation(original_name, field_name)
+    {serial_name, field_name} = property_name(resource, attribute.name)
 
     # Every field is nullable with a default, `id` included. RPC uses sparse
     # fieldsets, so any field the request did not ask for is absent from the
@@ -244,13 +238,9 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
 
   defp get_default_for_type(_kotlin_type), do: "null"
 
-  defp generate_relationship_field(rel) do
-    field_name = format_field_name(rel.name)
-    original_name = Atom.to_string(rel.name)
+  defp generate_relationship_field(rel, resource) do
     related_type_name = get_kotlin_type_name(rel.destination)
-
-    # Handle SerialName annotation based on output field formatter
-    serial_name = get_serial_name_annotation(original_name, field_name)
+    {serial_name, field_name} = property_name(resource, rel.name)
 
     # Determine the Kotlin type based on relationship type
     # Relationships are always nullable since they may not be loaded
@@ -425,26 +415,34 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
     |> Helpers.snake_to_camel_case()
   end
 
-  # Determines the correct @SerialName annotation based on output_field_formatter config
-  # When server outputs camelCase (default): no annotation needed, Kotlin properties already match
-  # When server outputs snake_case: need @SerialName("snake_case") since Kotlin properties are camelCase
-  defp get_serial_name_annotation(original_name, kotlin_field_name) do
-    output_formatter = AshKotlinMultiplatform.output_field_formatter()
+  # The Kotlin property declaration for one field: `{annotation, property_name}`.
+  #
+  # The wire key comes from `Resource.Info.client_field_name/3`, the same
+  # function `Rpc.Pipeline` asks when it writes the key — so the declaration
+  # cannot drift from what the server sends. This used to camelize the attribute
+  # name directly and never read `field_names`, so a resource with an override
+  # got Kotlin that decoded `null` the moment the server started honouring it
+  # (#71).
+  #
+  # Kotlin properties are always camelCase, whatever the wire key is, so the
+  # `@SerialName` is emitted exactly when the two differ. That subsumes the old
+  # `output_field_formatter` branch: under `:snake_case` the wire key is
+  # `address_line_1` and the property `addressLine1`, so it still annotates;
+  # under `:camel_case` with no override the two are equal and it still does not.
+  defp property_name(resource, field_name) do
+    wire_name =
+      AshKotlinMultiplatform.Resource.Info.client_field_name(
+        resource,
+        field_name,
+        AshKotlinMultiplatform.output_field_formatter()
+      )
 
-    case output_formatter do
-      :snake_case ->
-        # Server outputs snake_case, Kotlin properties are camelCase
-        # Need @SerialName to map snake_case JSON to camelCase property
-        if original_name != kotlin_field_name do
-          "@SerialName(\"#{original_name}\")\n    "
-        else
-          ""
-        end
+    property = Helpers.snake_to_camel_case(wire_name)
 
-      _camel_case ->
-        # Server outputs camelCase (default), Kotlin properties are camelCase
-        # No annotation needed - property names match JSON keys
-        ""
+    if wire_name == property do
+      {"", property}
+    else
+      {"@SerialName(\"#{wire_name}\")\n    ", property}
     end
   end
 

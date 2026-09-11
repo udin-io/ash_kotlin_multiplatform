@@ -172,28 +172,18 @@ defmodule AshKotlinMultiplatform.Rpc.Pipeline do
     _ -> nil
   end
 
-  # Formats a field name for Kotlin client consumption
-  defp format_field_for_client(field_name, resource, formatter) do
-    # First check if resource has a custom field name mapping
-    if resource do
-      case get_kotlin_field_name(resource, field_name) do
-        nil -> FieldFormatter.format_field_name(field_name, formatter)
-        client_name -> client_name
-      end
-    else
-      FieldFormatter.format_field_name(field_name, formatter)
-    end
+  # The wire name for one field. `Resource.Info.client_field_name/3` is the
+  # single answer codegen also asks, so the key written here and the key the
+  # generated Kotlin reads cannot drift apart. This used to keep its own copy of
+  # the lookup and returned the DSL's atom verbatim, which put an atom key in a
+  # payload of string keys (#71).
+  defp format_field_for_client(field_name, nil, formatter) do
+    FieldFormatter.format_field_name(field_name, formatter)
   end
 
-  defp get_kotlin_field_name(resource, field_name) do
-    case AshKotlinMultiplatform.Resource.Info.kotlin_field_names(resource) do
-      field_names when is_list(field_names) ->
-        Keyword.get(field_names, field_name)
-
-      _ ->
-        nil
-    end
+  defp format_field_for_client(field_name, resource, formatter) do
+    AshKotlinMultiplatform.Resource.Info.client_field_name(resource, field_name, formatter)
   rescue
-    _ -> nil
+    _ -> FieldFormatter.format_field_name(field_name, formatter)
   end
 end
