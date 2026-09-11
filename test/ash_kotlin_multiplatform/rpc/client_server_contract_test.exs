@@ -19,6 +19,7 @@ defmodule AshKotlinMultiplatform.Rpc.ClientServerContractTest do
   use ExUnit.Case, async: true
 
   alias AshKotlinMultiplatform.Codegen.ResourceSchemas
+  alias AshKotlinMultiplatform.Codegen.TypeMapper
   alias AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic
   alias AshKotlinMultiplatform.Rpc.Runner
   alias AshKotlinMultiplatform.Test.Author
@@ -111,6 +112,25 @@ defmodule AshKotlinMultiplatform.Rpc.ClientServerContractTest do
       assert %{"success" => true, "data" => data} = response
       refute Map.has_key?(response, "metadata")
       assert data["metadata"] == %{"registeredAt" => ~U[2026-01-01 00:00:00Z]}
+    end
+  end
+
+  # ash_money is not a dependency, so no `Runner` response here can carry a
+  # money value and the usual pairing is impossible. The contract comes from
+  # ash_money instead: `AshMoney.Types.Money.json_schema/1` documents
+  # `{amount: string, currency: string}`, with `amount` a decimal string, and
+  # its `Jason.Encoder` sends exactly those two keys. These assertions hold the
+  # generated class to it, and to the name the mapper emits — a field typed
+  # `AshMoney` with no `AshMoney` class does not compile (#30).
+  describe "AshMoney" do
+    test "the mapper names a class the generator declares" do
+      assert TypeMapper.get_kotlin_type_for_type(AshMoney.Types.Money) == "AshMoney"
+
+      kotlin = KotlinStatic.generate_money_type()
+
+      assert kotlin =~ "data class AshMoney("
+      assert kotlin =~ "val amount: String"
+      assert kotlin =~ "val currency: String"
     end
   end
 end

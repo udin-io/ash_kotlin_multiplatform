@@ -278,6 +278,12 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
   # absent: an atom needs no module behind it. Ported from ash_typescript
   # 3f02631 (#30).
   #
+  # `AshMoney` is the shared class
+  # `AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic.generate_money_type/0`
+  # declares. Naming a class the generated file does not declare is a compile
+  # error, so the two move together.
+  defp map_type(AshMoney.Types.Money, _constraints), do: "AshMoney"
+
   # An ltree value is a list of segment strings in memory, whatever `escape?`
   # says: `AshPostgres.Ltree.cast_input/2` splits a dotted string into one
   # (`lib/types/ltree.ex`). So the output type is `List<String>` under both

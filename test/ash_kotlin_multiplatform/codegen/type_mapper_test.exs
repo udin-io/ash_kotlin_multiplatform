@@ -124,9 +124,13 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapperTest do
                "List<List<Double>>"
     end
 
-    # The two below name modules this library does not depend on. Passing the
+    # The three below name modules this library does not depend on. Passing the
     # bare module atom is exactly what the generator does with a type it cannot
     # resolve, so it exercises the clauses without adding the packages.
+    test "maps AshMoney.Types.Money to the shared AshMoney class" do
+      assert TypeMapper.get_kotlin_type_for_type(AshMoney.Types.Money) == "AshMoney"
+    end
+
     test "maps AshPostgres.Ltree to segment strings under both escape? settings" do
       assert TypeMapper.get_kotlin_type_for_type(AshPostgres.Ltree) == "List<String>"
 
