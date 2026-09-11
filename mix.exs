@@ -104,6 +104,10 @@ defmodule AshKotlinMultiplatform.MixProject do
       # for a bare list and one for a page envelope (ash_introspection #57/#64).
       # Without it `Rpc.Runner` cannot adopt the type-aware formatter at all —
       # every list and page read would return internal atom keys (#71).
+      #
+      # 0.4.1 is what the lock resolves, and the manifest decoration this
+      # library declares needs it: `AshIntrospection.Manifest.Decorator` and
+      # `Manifest.Custom` ship in 0.4.1 (ash_introspection #23 stage 2).
       {:ash_introspection, "~> 0.4"},
       # Floors below are security floors, not preferences. A library's floor is
       # what its consumers inherit, so each one is the lowest release that
