@@ -272,6 +272,25 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
     end
   end
 
+  # Third-party Ash types this library does not depend on. They implement no
+  # `interop_field_names/0`, so the branches below would send each one to the
+  # unknown-type fallback. Naming the modules costs nothing when the package is
+  # absent: an atom needs no module behind it. Ported from ash_typescript
+  # 3f02631 (#30).
+  #
+  # An ltree value is a list of segment strings in memory, whatever `escape?`
+  # says: `AshPostgres.Ltree.cast_input/2` splits a dotted string into one
+  # (`lib/types/ltree.ex`). So the output type is `List<String>` under both
+  # settings. Upstream types the unescaped case `string | string[]` to accept
+  # the dotted form on input; Kotlin has no untagged union, and a typed client
+  # that always sends segments is the honest half of that.
+  defp map_type(AshPostgres.Ltree, _constraints), do: "List<String>"
+
+  # A ULID is a 26-character Crockford Base32 string
+  # (`ash_double_entry/lib/ulid.ex` `cast_input/2`), the same decision
+  # `Ash.Type.UUID` takes above.
+  defp map_type(AshDoubleEntry.ULID, _constraints), do: "String"
+
   # Check if it's an embedded resource
   defp map_type(type, constraints) when is_atom(type) do
     cond do

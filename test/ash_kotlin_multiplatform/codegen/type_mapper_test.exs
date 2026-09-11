@@ -123,6 +123,20 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapperTest do
       assert TypeMapper.get_kotlin_type_for_type({:array, Ash.Type.Vector}) ==
                "List<List<Double>>"
     end
+
+    # The two below name modules this library does not depend on. Passing the
+    # bare module atom is exactly what the generator does with a type it cannot
+    # resolve, so it exercises the clauses without adding the packages.
+    test "maps AshPostgres.Ltree to segment strings under both escape? settings" do
+      assert TypeMapper.get_kotlin_type_for_type(AshPostgres.Ltree) == "List<String>"
+
+      assert TypeMapper.get_kotlin_type_for_type(AshPostgres.Ltree, escape?: true) ==
+               "List<String>"
+    end
+
+    test "maps AshDoubleEntry.ULID to String" do
+      assert TypeMapper.get_kotlin_type_for_type(AshDoubleEntry.ULID) == "String"
+    end
   end
 
   describe "is_enum_type?/2" do
