@@ -36,8 +36,16 @@ private val responses: JsonObject =
 private fun response(name: String): JsonElement =
     responses[name] ?: error("no '$name' in the fixture; regenerate it")
 
-private fun result(name: String): RpcResult =
-    ashRpcJson.decodeFromJsonElement<RpcResult>(response(name))
+// An untyped result: what the Phoenix channel client returns, and what the
+// pre-#22 checks below were written against.
+private fun result(name: String): RpcResult<JsonElement> =
+    ashRpcJson.decodeFromJsonElement<RpcResult<JsonElement>>(response(name))
+
+// A typed result, named the way a generated function names it. `T` is reified,
+// so `serializer<RpcResult<T>>()` resolves at each call site — which is the
+// same resolution Ktor's `body()` performs from a function's return type.
+private inline fun <reified T> typed(name: String): RpcResult<T> =
+    ashRpcJson.decodeFromJsonElement<RpcResult<T>>(response(name))
 
 private var failures = 0
 
@@ -173,6 +181,122 @@ private fun actionMetadataLandsInsideData(): String {
     return "data keys=${data.keys}"
 }
 
+// #22: every generated function used to return the same untyped RpcResult. Each
+// check below decodes into the type `FunctionCore.determine_return_type/1` now
+// names for that action, from a response the server really sent.
+
+// create -> RpcResult<Author>.
+private fun typedCreateDecodes(): String {
+    val author = typed<Author>("typed_create").data!!
+
+    expect("name", author.name, "Typed One")
+    expect("email", author.email, "typed.one@e.com")
+
+    return "name=${author.name} email=${author.email}"
+}
+
+// read -> RpcResult<AshPage<Author>>, and the un-paginated call answers with a
+// bare JSON array, so AshPage has to read a list as well as a page object.
+private fun typedListDecodesABareArray(): String {
+    val page = typed<AshPage<Author>>("typed_list").data!!
+
+    expect("limit", page.limit, null)
+    expect("hasMore", page.hasMore, false)
+    expect("contains Typed One", page.results.any { it.name == "Typed One" }, true)
+
+    return "results=${page.results.size} names=${page.results.map { it.name }} limit=${page.limit}"
+}
+
+// The same function, the same return type, the other shape: `page` in the
+// request makes the server send an offset page object.
+private fun typedOffsetPageDecodes(): String {
+    val page = typed<AshPage<Author>>("typed_offset_page").data!!
+    val count = page.count
+
+    expect("limit", page.limit, 2)
+    expect("offset", page.offset, 0)
+    expect("hasMore", page.hasMore, true)
+    expect("results", page.results.size, 2)
+    expect("count is the whole table", count != null && count > 2, true)
+
+    return "limit=${page.limit} offset=${page.offset} count=$count hasMore=${page.hasMore}"
+}
+
+// Keyset sends cursors instead of an offset, and `after`/`before` come back null
+// unless the request carried them. `previousPage`/`nextPage` were declared
+// `String = ""` before #22 — non-nullable, against a server that sends null on
+// an empty page.
+private fun typedKeysetPageDecodes(): String {
+    val page = typed<AshPage<Author>>("typed_keyset_page").data!!
+
+    expect("offset", page.offset, null)
+    expect("after", page.after, null)
+    expect("before", page.before, null)
+    expect("results", page.results.size, 2)
+    expect("nextPage is a cursor", page.nextPage.isNullOrEmpty(), false)
+    expect("previousPage is a cursor", page.previousPage.isNullOrEmpty(), false)
+
+    return "results=${page.results.size} nextPage=${page.nextPage?.take(12)}… previousPage=${page.previousPage?.take(12)}…"
+}
+
+// A get action returns the record itself. `data` is already nullable on
+// RpcResult, so the type is `Author`, not `Author?`.
+private fun typedGetDecodes(): String {
+    val author = typed<Author>("typed_get").data!!
+
+    expect("name", author.name, "Typed One")
+
+    return "name=${author.name}"
+}
+
+// A miss is an error response, and it has to decode through the same typed
+// result the hit does: `data` absent, `errors` populated.
+private fun typedGetMissDecodes(): String {
+    val result = typed<Author>("typed_get_miss")
+    val error = result.errors!!.single()
+
+    expect("success", result.success, false)
+    expect("data", result.data, null)
+    expect("shortMessage", error.shortMessage, "Not found")
+
+    return "success=${result.success} data=${result.data} error=${error.shortMessage}"
+}
+
+// A destroy returns the destroyed record, not a boolean. `determine_return_type`
+// said "Boolean" until #22 and no caller ever found out, because nothing
+// referenced it.
+private fun typedDestroyDecodes(): String {
+    val author = typed<Author>("typed_destroy").data!!
+
+    expect("name", author.name, "Doomed")
+
+    return "name=${author.name}"
+}
+
+// A mutation that exposes metadata returns the record wrapped beside it.
+private fun typedMetadataEnvelopeDecodes(): String {
+    val envelope = typed<AshMetadata<Event, RegisterEventMetadata>>("action_metadata").data!!
+    val metadata = envelope.metadata!!
+
+    expect("data.name", envelope.data.name, "Launch")
+    expect("metadata.registeredAt", metadata.registeredAt.toString(), "2026-01-01T00:00:00Z")
+    expect("metadata.confirmationCode", metadata.confirmationCode, "AKM-1")
+
+    return "data.name=${envelope.data.name} registeredAt=${metadata.registeredAt} confirmationCode=${metadata.confirmationCode}"
+}
+
+// ...but only while some metadata survives the client's narrowing. With
+// `metadataFields: []` the server sends the bare record from the same function,
+// so the same type has to read that too.
+private fun typedMetadataEnvelopeReadsTheBareRecord(): String {
+    val envelope = typed<AshMetadata<Event, RegisterEventMetadata>>("metadata_narrowed_away").data!!
+
+    expect("metadata", envelope.metadata, null)
+    expect("data.name", envelope.data.name, "Launch")
+
+    return "data.name=${envelope.data.name} metadata=${envelope.metadata}"
+}
+
 fun main() {
     check("#51 populated untyped map via dataAs()", ::populatedUntypedMap)
     check("#51 untyped map keeps number literals", ::untypedMapKeepsNumberLiterals)
@@ -183,6 +307,15 @@ fun main() {
     check("#24 validation results decode", ::validationDecodes)
     check("#24 sparse fieldset decodes", ::sparseFieldsetDecodes)
     check("#24 action metadata lands inside data", ::actionMetadataLandsInsideData)
+    check("#22 create decodes into RpcResult<Author>", ::typedCreateDecodes)
+    check("#22 read decodes a bare array into AshPage<Author>", ::typedListDecodesABareArray)
+    check("#22 read decodes an offset page into AshPage<Author>", ::typedOffsetPageDecodes)
+    check("#22 read decodes a keyset page into AshPage<Author>", ::typedKeysetPageDecodes)
+    check("#22 get decodes into RpcResult<Author>", ::typedGetDecodes)
+    check("#22 a get miss decodes through the same typed result", ::typedGetMissDecodes)
+    check("#22 destroy decodes the destroyed record", ::typedDestroyDecodes)
+    check("#22 metadata envelope decodes into AshMetadata<Event, RegisterEventMetadata>", ::typedMetadataEnvelopeDecodes)
+    check("#22 the same envelope reads the bare record", ::typedMetadataEnvelopeReadsTheBareRecord)
 
     if (failures > 0) {
         println("$failures round-trip check(s) failed")

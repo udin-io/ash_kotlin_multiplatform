@@ -44,15 +44,23 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.GenRoundtripFixture do
   def run(_args) do
     Mix.Task.run("app.start")
 
-    responses = %{
-      "populated_untyped_map" => populated_untyped_map(),
-      "date_fields" => date_fields(),
-      "action_metadata" => action_metadata(),
-      "sparse_fieldset" => sparse_fieldset(),
-      "error" => error(),
-      "validation_valid" => validation_valid(),
-      "validation_invalid" => validation_invalid()
-    }
+    # A list, not a map literal: these run against one shared ETS table and the
+    # author checks count rows, so the order they run in is part of the fixture.
+    # `sparse_fieldset` asserts on a single author and must go before the typed
+    # entries add more.
+    responses =
+      [
+        {"populated_untyped_map", populated_untyped_map()},
+        {"date_fields", date_fields()},
+        {"action_metadata", action_metadata()},
+        {"metadata_narrowed_away", metadata_narrowed_away()},
+        {"sparse_fieldset", sparse_fieldset()},
+        {"error", error()},
+        {"validation_valid", validation_valid()},
+        {"validation_invalid", validation_invalid()}
+      ]
+      |> Kernel.++(typed_results())
+      |> Map.new()
 
     json = Phoenix.json_library().encode!(responses)
 
@@ -117,6 +125,48 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.GenRoundtripFixture do
 
     call(%{"action" => "list_authors", "fields" => ["name"]})
   end
+
+  # The same action as `action_metadata`, with the client narrowing the metadata
+  # away. `Pipeline.add_mutation_metadata/3` then returns the bare record rather
+  # than the `%{data:, metadata:}` envelope, so one generated function produces
+  # two shapes and `AshMetadata<T, M>` has to read both (#22).
+  defp metadata_narrowed_away do
+    call(%{
+      "action" => "register_event",
+      "input" => %{"name" => "Launch"},
+      "metadataFields" => []
+    })
+  end
+
+  # One response per branch of `FunctionCore.determine_return_type/1`, so every
+  # type a generated function can name is decoded from something the server
+  # really sent. Ordered: the reads count the rows the creates before them left.
+  defp typed_results do
+    author = call(%{"action" => "create_author", "input" => author_input("Typed One")})
+    call(%{"action" => "create_author", "input" => author_input("Typed Two")})
+    doomed = call(%{"action" => "create_author", "input" => author_input("Doomed")})
+
+    [
+      {"typed_create", author},
+      {"typed_list", call(%{"action" => "list_authors"})},
+      {"typed_offset_page",
+       call(%{"action" => "list_authors", "page" => %{"limit" => 2, "count" => true}})},
+      {"typed_keyset_page", call(%{"action" => "keyset_authors", "page" => %{"limit" => 2}})},
+      {"typed_get", call(%{"action" => "get_author", "input" => %{"id" => id(author)}})},
+      {"typed_get_miss",
+       call(%{
+         "action" => "get_author",
+         "input" => %{"id" => "00000000-0000-0000-0000-000000000000"}
+       })},
+      {"typed_destroy", call(%{"action" => "destroy_author", "identity" => id(doomed)})}
+    ]
+  end
+
+  defp author_input(name) do
+    %{"name" => name, "email" => "#{name |> String.downcase() |> String.replace(" ", ".")}@e.com"}
+  end
+
+  defp id(%{"data" => %{"id" => id}}), do: id
 
   defp error, do: call(%{"action" => "no_such_action"})
 
