@@ -12,8 +12,6 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
   - Enum classes for atom types with :one_of constraints
   - Sealed classes for union types
   - Input types for actions
-  - Result types (sealed classes for success/error)
-  - Pagination types (offset, keyset, mixed)
   - Metadata types for action metadata
   - RPC functions (both functional and object-oriented styles)
   - Validation functions (if enabled)
@@ -30,9 +28,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
 
   alias AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.{
     InputTypes,
-    MetadataTypes,
-    PaginationTypes,
-    ResultTypes
+    MetadataTypes
   }
 
   alias AshKotlinMultiplatform.Rpc.Codegen.FunctionGenerators.HttpRenderer
@@ -83,14 +79,8 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
     # Generate action-specific input types
     input_types = InputTypes.generate_input_types(rpc_configs)
 
-    # Generate action-specific result types
-    action_result_types = ResultTypes.generate_result_types(rpc_configs)
-
     # Generate metadata types for actions that expose metadata
     metadata_types = generate_metadata_types(resources_and_actions)
-
-    # Generate pagination types for actions that support pagination
-    pagination_types = generate_pagination_types(resources_and_actions)
 
     # Generate filter types if enabled
     filter_types =
@@ -131,12 +121,8 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
         KotlinStatic.generate_generic_result_types(),
         # Validation types (if enabled)
         non_empty_or_nil(validation_types, "// Validation Types"),
-        # Pagination types
-        non_empty_or_nil(pagination_types, "// Pagination Types"),
         # Metadata types
         non_empty_or_nil(metadata_types, "// Metadata Types"),
-        # Action-specific result types
-        non_empty_or_nil(action_result_types, "// Action Result Types"),
         # Input types for actions
         non_empty_or_nil(input_types, "// Action Input Types"),
         # Filter types (if enabled)
@@ -205,27 +191,6 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
       resource
       |> Module.split()
       |> List.last()
-  end
-
-  # Generate pagination types for all paginated actions
-  defp generate_pagination_types(resources_and_actions) do
-    resources_and_actions
-    |> Enum.filter(fn {_resource, action, _rpc_action} ->
-      action.type == :read and PaginationTypes.action_supports_pagination?(action)
-    end)
-    |> Enum.map(fn {resource, action, rpc_action} ->
-      resource_name = get_resource_type_name(resource)
-
-      PaginationTypes.generate_pagination_result_type(
-        resource,
-        action,
-        rpc_action.name,
-        resource_name,
-        false
-      )
-    end)
-    |> Enum.reject(&(&1 == ""))
-    |> Enum.join("\n\n")
   end
 
   # Generate metadata types for all actions that expose metadata
