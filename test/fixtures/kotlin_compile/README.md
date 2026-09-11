@@ -18,7 +18,7 @@ Two gates, because they catch different things:
 | Gate                | Catches                                           | Filed as                     |
 | ------------------- | ------------------------------------------------- | ---------------------------- |
 | `gradle compileKotlin` | The emitted Kotlin does not compile            | #20, #23, #30, #33, #44, #45 |
-| `gradle run`        | It compiles and then throws or reads `null`       | #24, #51, #54                |
+| `gradle run`        | It compiles and then throws or reads `null`       | #24, #51, #54, #22           |
 
 `kotlinc` has no opinion about whether a `@SerialName` matches the key the
 server sends, or whether a `SerializersModule` reaches the path that needs it.

@@ -117,6 +117,28 @@ without an owning attribute and unrecognised Ash types all take
 `JsonElement`. See `docs/decisions.md` for why an `Any` serializer was
 measured and refused.
 
+### A return type names what the REQUEST produces, not what the action suggests
+
+Three of the shapes `Rpc.Runner` sends are decided by the request rather than
+by the action, so a generated signature that names one of them is wrong half
+the time:
+
+* A read sends a bare JSON array when the request carried no `page` and a
+  page object when it did. Ash 3 defaults **every** read to
+  `offset? true, keyset? true`, so this is nearly every read.
+* A mutation that exposes metadata sends `%{data:, metadata:}` — but only
+  while some metadata survives the client's `metadataFields` narrowing, and
+  the bare record otherwise.
+* A destroy sends the destroyed record, not a boolean:
+  `AshIntrospection.Rpc.Pipeline.execute_destroy_action/3` passes
+  `return_records?: true`.
+
+`AshPage<T>` and `AshMetadata<T, M>` each carry a hand-written `KSerializer`
+that reads both of their shapes (#22). Before adding a branch to
+`FunctionCore.determine_return_type/1`, run the action through `Runner` and
+look at what comes back — `mix run` against the test domain takes a minute
+and the guess takes a release.
+
 ### Section generators share no state
 
 Each returns a string and none can see what another emitted, so "was this

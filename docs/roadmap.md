@@ -31,6 +31,7 @@ afterwards.
 | 2026-09-09 | This source of truth, the v2 channel protocol, and binary channel payloads (#49) |
 | 2026-09-09 | The generated Kotlin decodes the server's own responses (#24, PR #56) |
 | 2026-09-10 | One shared `Json`, `JsonElement` for untyped shapes, and a decode gate in CI (#51, #54, #58) |
+| 2026-09-11 | Typed results: every RPC function returns `RpcResult<T>` (#22) |
 
 ## In progress
 
@@ -43,7 +44,7 @@ Ordered by what unblocks the most.
 | Issue | What | Why now |
 | ----- | ---- | ------- |
 | #38 | Make `main` formatter-clean and put the check in CI | One mechanical commit; unblocks review signal |
-| #22 | Typed results | The type safety the README leads with |
+| new | Typed `filter` and `page` in the request config | The response is typed now; the request still takes untyped maps |
 | #48, #53 | The runner mangles unconstrained map keys; FilterTypes emits unpublished resources | Both leak shapes the client cannot use |
 | #57 | Error keys ignore the output field formatter | The decode gate now reads those keys |
 | #17, #43 | Unstable output order across builds | A regenerated file should diff empty |

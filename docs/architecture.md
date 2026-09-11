@@ -94,9 +94,9 @@ flowchart TD
 
     coll --> tuples["{resource, action, rpc_action}"]
 
-    tuples --> static["KotlinStatic<br/>imports, type aliases, the shared ashRpcJson,<br/>HttpClient factory, error and result types"]
+    tuples --> static["KotlinStatic<br/>imports, type aliases, the shared ashRpcJson,<br/>HttpClient factory, AshRpcError, RpcResult&lt;T&gt;"]
     tuples --> schemas["Codegen.ResourceSchemas<br/>data classes, enums,<br/>sealed unions, embedded"]
-    tuples --> types["TypeGenerators.*<br/>InputTypes, ResultTypes,<br/>MetadataTypes, PaginationTypes"]
+    tuples --> types["TypeGenerators.*<br/>InputTypes, MetadataTypes (+ AshMetadata&lt;T, M&gt;),<br/>PaginationTypes (AshPage&lt;T&gt;)"]
     tuples --> filters["Codegen.FilterTypes<br/>Codegen.TypedQueries"]
     tuples --> fns["FunctionGenerators.HttpRenderer<br/>+ FunctionCore, ConfigBuilder,<br/>ActionIntrospection, PayloadBuilder"]
     tuples --> chan["Rpc.Codegen.PhoenixChannel<br/>PhoenixSerializer, PhoenixSocket,<br/>PhoenixChannel, AshRpcChannel"]
@@ -112,6 +112,13 @@ flowchart TD
     fns --> out
     chan --> out
 ```
+
+`HttpRenderer` and `FunctionCore` are drawn in one box, but the arrow that
+matters runs between them: `FunctionCore.determine_return_type/1` names the
+`T` in the `RpcResult<T>` the function returns, and `HttpRenderer` prints it
+into the signature. Ktor resolves `.body()` from that declared type, so this
+one string is what makes a response decode into a resource class rather than
+a `JsonElement` (#22).
 
 Two things about `PhoenixChannel` that the box does not show. It is
 **static**: it takes no resource and no action, so the same text is emitted

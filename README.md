@@ -221,23 +221,33 @@ data class Todo(
 )
 
 // Configuration for actions
-@Serializable
 data class CreateTodoConfig(
-    val title: String,
-    val isDone: Boolean? = null
+    val input: CreateTodoInput,
+    val fields: List<Any> = emptyList(),
+    val headers: Map<String, String> = emptyMap()
 )
 
-// Sealed class for type-safe results
-sealed class CreateTodoResult {
-    data class Ok(val data: Todo) : CreateTodoResult()
-    data class Error(val errors: List<RpcError>) : CreateTodoResult()
-}
+// One result wrapper, typed on what the action returns
+@Serializable
+data class RpcResult<T>(
+    val success: Boolean,
+    val data: T? = null,
+    val errors: List<AshRpcError>? = null
+)
 
-// Functional API
+// Functional API. The return type names what this action sends back, so
+// `result.data` is already a Todo.
 suspend fun createTodo(
     client: HttpClient,
     config: CreateTodoConfig
-): CreateTodoResult { ... }
+): RpcResult<Todo> { ... }
+
+// A read returns a page, which reads both shapes the server sends: a bare
+// list when the request carried no `page`, a page object when it did.
+suspend fun listTodos(
+    client: HttpClient,
+    config: ListTodosConfig
+): RpcResult<AshPage<Todo>> { ... }
 
 // Object-oriented API wrapper
 object TodoRpc {
