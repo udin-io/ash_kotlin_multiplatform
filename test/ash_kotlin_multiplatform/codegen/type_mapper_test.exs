@@ -111,6 +111,38 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapperTest do
     end
   end
 
+  # #30. Each of these reached the unknown-type fallback, so the field arrived in
+  # a generated client as an opaque `JsonElement` the caller unpacked by hand.
+  describe "types that fell through to the unknown-type fallback" do
+    test "maps Ash.Type.Vector to a list of doubles" do
+      attr = %{type: Ash.Type.Vector, constraints: [dimensions: 3], allow_nil?: true}
+      assert TypeMapper.get_kotlin_type(attr) == "List<Double>?"
+    end
+
+    test "maps an array of vectors" do
+      assert TypeMapper.get_kotlin_type_for_type({:array, Ash.Type.Vector}) ==
+               "List<List<Double>>"
+    end
+
+    # The three below name modules this library does not depend on. Passing the
+    # bare module atom is exactly what the generator does with a type it cannot
+    # resolve, so it exercises the clauses without adding the packages.
+    test "maps AshMoney.Types.Money to the shared AshMoney class" do
+      assert TypeMapper.get_kotlin_type_for_type(AshMoney.Types.Money) == "AshMoney"
+    end
+
+    test "maps AshPostgres.Ltree to segment strings under both escape? settings" do
+      assert TypeMapper.get_kotlin_type_for_type(AshPostgres.Ltree) == "List<String>"
+
+      assert TypeMapper.get_kotlin_type_for_type(AshPostgres.Ltree, escape?: true) ==
+               "List<String>"
+    end
+
+    test "maps AshDoubleEntry.ULID to String" do
+      assert TypeMapper.get_kotlin_type_for_type(AshDoubleEntry.ULID) == "String"
+    end
+  end
+
   describe "is_enum_type?/2" do
     test "is true for an atom constrained to a list of values" do
       assert TypeMapper.is_enum_type?(Ash.Type.Atom, one_of: [:a, :b])

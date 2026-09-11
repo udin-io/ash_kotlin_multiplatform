@@ -28,6 +28,24 @@ resources, so a shape no test resource has is still unchecked, and the decode
 half only checks the responses the fixture carries. A new response shape
 needs a new check in `roundtrip/Roundtrip.kt`, or it is unwatched.
 
+### The shared core formats values by type, and this library never asks it to
+
+`Rpc.Runner.execute_action/7` formats a response with
+`AshIntrospection.Rpc.Pipeline.format_output/1`, which formats field names and
+nothing else. Nothing in `lib/` calls `AshIntrospection.Rpc.ValueFormatter`, so
+every value the shared core would format by type reaches the JSON encoder raw.
+Measured 2026-09-11: a `:vector` attribute arrives as `%Ash.Vector{}`'s packed
+binary and raises `Jason.EncodeError`, which is #71. The same path carries
+unions, typed maps and custom types with map storage.
+
+*Watch:* the round-trip gate, but only where the fixture goes — it carries no
+vector response, because the server cannot produce one.
+*Do:* fix #71 with a round-trip entry per shape. The type-aware entry point
+`Pipeline.format_output_with_request/3` is not a drop-in: it builds the
+`%{success:, data:}` envelope `Runner.build_success_response/1` already builds,
+and its `ValueFormatter.format/5` passes a list of records through untouched,
+so a list read would lose the field-name formatting it has today.
+
 ### Swift is generated and never compiled
 
 `Swift.Codegen` is 742 lines with two test files and no compiler anywhere in

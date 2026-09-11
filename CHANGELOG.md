@@ -49,6 +49,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bulk-destroys with `return_records?: true`. Nothing had noticed, because
   `FunctionCore.determine_return_type/1` had no caller.
 
+- Four Ash types no longer reach Kotlin as an opaque `JsonElement`
+  ([#30](https://github.com/udin-io/ash_kotlin_multiplatform/issues/30)).
+  `Ash.Type.Vector` maps to `List<Double>`, `AshPostgres.Ltree` to
+  `List<String>`, `AshDoubleEntry.ULID` to `String`, and
+  `AshMoney.Types.Money` to `AshMoney`, a new `@Serializable` data class the
+  generator emits into every file with an `amount: String` and a
+  `currency: String`, because a field naming a class the file does not
+  declare does not compile. That shape is what ash_money sends: a decimal
+  string and a currency code.
+
+  A money, ltree or ULID field that a client unpacked from `JsonElement` by
+  hand now arrives typed; that call site has to change. Vectors are typed but
+  not yet transportable — a vector response still raises `Jason.EncodeError`
+  ([#71](https://github.com/udin-io/ash_kotlin_multiplatform/issues/71)).
+
 ### Added
 
 - Six `rpc_action` options, all additive — an `rpc_action` that sets none of

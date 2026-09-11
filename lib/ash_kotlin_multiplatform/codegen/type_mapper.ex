@@ -166,6 +166,20 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
   # UUID types - use String for KMP compatibility
   defp map_type(Ash.Type.UUID, _constraints), do: "String"
 
+  # A vector belongs on the wire as a JSON array of numbers, never as the packed
+  # binary `%Ash.Vector{}` carries. `AshIntrospection.Rpc.ValueFormatter` expands
+  # it with `Ash.Vector.to_list/1`
+  # (`deps/ash_introspection/lib/ash_introspection/rpc/value_formatter.ex:206`),
+  # but `Rpc.Runner` never calls that formatter, so a vector *response* still
+  # raises `Jason.EncodeError` today — #71. This type already serves a request
+  # payload, because `Ash.Type.Vector.cast_input/2` accepts a list, and it is
+  # what the array decodes into once #71 lands.
+  #
+  # `Double` and not `Float`, because kotlinx-serialization reads a JSON number
+  # into whichever the field declares and `Double` cannot lose a value the
+  # encoder wrote (#30).
+  defp map_type(Ash.Type.Vector, _constraints), do: "List<Double>"
+
   # Date/time types
   defp map_type(Ash.Type.Date, _constraints) do
     case AshKotlinMultiplatform.datetime_library() do
@@ -257,6 +271,31 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
       module -> get_kotlin_class_name(module)
     end
   end
+
+  # Third-party Ash types this library does not depend on. They implement no
+  # `interop_field_names/0`, so the branches below would send each one to the
+  # unknown-type fallback. Naming the modules costs nothing when the package is
+  # absent: an atom needs no module behind it. Ported from ash_typescript
+  # 3f02631 (#30).
+  #
+  # `AshMoney` is the shared class
+  # `AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic.generate_money_type/0`
+  # declares. Naming a class the generated file does not declare is a compile
+  # error, so the two move together.
+  defp map_type(AshMoney.Types.Money, _constraints), do: "AshMoney"
+
+  # An ltree value is a list of segment strings in memory, whatever `escape?`
+  # says: `AshPostgres.Ltree.cast_input/2` splits a dotted string into one
+  # (`lib/types/ltree.ex`). So the output type is `List<String>` under both
+  # settings. Upstream types the unescaped case `string | string[]` to accept
+  # the dotted form on input; Kotlin has no untagged union, and a typed client
+  # that always sends segments is the honest half of that.
+  defp map_type(AshPostgres.Ltree, _constraints), do: "List<String>"
+
+  # A ULID is a 26-character Crockford Base32 string
+  # (`ash_double_entry/lib/ulid.ex` `cast_input/2`), the same decision
+  # `Ash.Type.UUID` takes above.
+  defp map_type(AshDoubleEntry.ULID, _constraints), do: "String"
 
   # Check if it's an embedded resource
   defp map_type(type, constraints) when is_atom(type) do

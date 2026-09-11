@@ -217,6 +217,35 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
   end
 
   @doc """
+  Generates the shared class a money value decodes into.
+
+  `AshKotlinMultiplatform.Codegen.TypeMapper` types `AshMoney.Types.Money` as
+  `AshMoney`, and a field typed `AshMoney` in a file that declares no such class
+  does not compile — so the mapping and this declaration are one decision (#30).
+
+  Emitted for every application, like the type aliases above, because the
+  generator cannot tell whether a consumer's resources use money without
+  ash_money as a dependency, and an unused class costs a consumer nothing.
+
+  The two fields are what ash_money puts on the wire: its `Jason.Encoder` sends
+  `currency` and `amount` and nothing else, and `AshMoney.Types.Money`'s
+  `json_schema/1` documents both as strings. `amount` is a `String` for the
+  reason `Ash.Type.Decimal` is one — `Decimal`'s JSON encoder writes a quoted
+  decimal string, and reading it into a `Double` would round a currency amount.
+  """
+  def generate_money_type do
+    """
+    // A money value, as ash_money sends it: a decimal string and a currency
+    // code (#30).
+    @Serializable
+    data class AshMoney(
+        val amount: String,
+        val currency: String
+    )
+    """
+  end
+
+  @doc """
   Generates the RPC error types.
   """
   # `shortMessage` carries no `@SerialName`. Every error map `Rpc.Runner` builds

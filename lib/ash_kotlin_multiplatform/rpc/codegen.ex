@@ -110,6 +110,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
         generate_header(package_name),
         KotlinStatic.generate_imports(opts),
         KotlinStatic.generate_type_aliases(),
+        KotlinStatic.generate_money_type(),
         KotlinStatic.generate_shared_json(),
         KotlinStatic.generate_http_client_factory(),
         KotlinStatic.generate_error_types(),
