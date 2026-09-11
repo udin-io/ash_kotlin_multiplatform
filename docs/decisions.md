@@ -293,3 +293,33 @@ generators have to spell the same way. `@SerialName` carries the resource's
 own field name to match `InputTypes.generate_input_type/2`, and the round-trip
 check `#25 getBy encodes the key the server reads` re-encodes the class and
 compares it to the payload the fixture's hit was produced by.
+
+## 2026-09-11 — A shared `AshMoney` class, and no union for an ltree
+
+Four types left the unknown-type fallback in #30. Three map to a built-in:
+`Ash.Type.Vector` to `List<Double>`, `AshPostgres.Ltree` to `List<String>`,
+`AshDoubleEntry.ULID` to `String`. `AshMoney.Types.Money` maps to `AshMoney`,
+a `@Serializable data class` `KotlinStatic.generate_money_type/0` emits into
+every generated file.
+
+Why a class and not an alias: money is two values. `amount` is a decimal
+string and `currency` a code, which is what ash_money's `Jason.Encoder` sends
+and what `AshMoney.Types.Money.json_schema/1` documents. `amount` stays a
+`String` for the reason `Ash.Type.Decimal` does — reading a currency amount
+into a `Double` would round it.
+
+Why `AshMoney` and not upstream's `Money`: the generated file already prefixes
+its own shared classes `Ash` — `AshRpcError`, `AshPage`, `AshMetadata` —
+and a consumer's own `Money` class is likelier than a clash on that prefix.
+
+Why `List<String>` for an ltree under both `escape?` settings: upstream types
+the unescaped case `string | string[]`, because `AshPostgres.Ltree.cast_input/2`
+also accepts a dotted string. Kotlin has no untagged union, and the value is a
+list of segments in memory either way, so the output type is the same under
+both and a generated client always sends segments.
+
+Cost: `AshMoney` is emitted whether or not a consumer uses money, because the
+generator cannot see ash_money without depending on it. A Money field cannot
+be checked end to end here for the same reason — the round-trip gate has no
+money response to decode, so `client_server_contract_test.exs` holds the class
+to ash_money's documented shape instead.

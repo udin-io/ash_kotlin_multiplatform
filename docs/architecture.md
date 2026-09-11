@@ -94,7 +94,7 @@ flowchart TD
 
     coll --> tuples["{resource, action, rpc_action}"]
 
-    tuples --> static["KotlinStatic<br/>imports, type aliases, the shared ashRpcJson,<br/>HttpClient factory, AshRpcError, RpcResult&lt;T&gt;"]
+    tuples --> static["KotlinStatic<br/>imports, type aliases, AshMoney,<br/>the shared ashRpcJson,<br/>HttpClient factory, AshRpcError, RpcResult&lt;T&gt;"]
     tuples --> schemas["Codegen.ResourceSchemas<br/>data classes, enums,<br/>sealed unions, embedded"]
     tuples --> types["TypeGenerators.*<br/>InputTypes, MetadataTypes (+ AshMetadata&lt;T, M&gt;),<br/>PaginationTypes (AshPage&lt;T&gt;)"]
     tuples --> filters["Codegen.FilterTypes<br/>Codegen.TypedQueries"]
@@ -119,6 +119,13 @@ matters runs between them: `FunctionCore.determine_return_type/1` names the
 into the signature. Ktor resolves `.body()` from that declared type, so this
 one string is what makes a response decode into a resource class rather than
 a `JsonElement` (#22).
+
+`TypeMapper` and `KotlinStatic` are a pair wherever the mapper names a class
+rather than a built-in. `AshMoney.Types.Money` maps to `AshMoney`, and
+`KotlinStatic.generate_money_type/0` declares that class in every generated
+file — a field typed `AshMoney` in a file that declares none does not compile
+(#30). `Ash.Type.Vector`, `AshPostgres.Ltree` and `AshDoubleEntry.ULID` need no
+declaration: they map to `List<Double>`, `List<String>` and `String`.
 
 `ConfigBuilder.get_action_context/3` turns the `rpc_action` options into the
 context that both `ConfigBuilder` and `PayloadBuilder` read, and the two have

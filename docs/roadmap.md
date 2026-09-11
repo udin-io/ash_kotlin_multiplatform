@@ -33,6 +33,7 @@ afterwards.
 | 2026-09-10 | One shared `Json`, `JsonElement` for untyped shapes, and a decode gate in CI (#51, #54, #58) |
 | 2026-09-11 | Typed results: every RPC function returns `RpcResult<T>` (#22) |
 | 2026-09-11 | Six `rpc_action` options the shared core already honoured: `get?`, `get_by`, `identities`, `not_found_error?`, `enable_filter?`, `enable_sort?` (#25, PR #66) |
+| 2026-09-11 | Kotlin types for vector, money, ltree and ULID, plus the `AshMoney` class a money field needs (#30) |
 
 ## In progress
 
@@ -44,6 +45,7 @@ Ordered by what unblocks the most.
 
 | Issue | What | Why now |
 | ----- | ---- | ------- |
+| #71 | A vector response raises `Jason.EncodeError`: the runner never runs the shared core's type-aware output formatter | #30 named the Kotlin type; the server cannot send one yet |
 | #38 | Make `main` formatter-clean and put the check in CI | One mechanical commit; unblocks review signal |
 | #65, #53 | Typed `filter` and `page` in the request config | The response is typed now; the request still takes untyped maps, so `FilterTypes` is dead code |
 | #48, #53 | The runner mangles unconstrained map keys; FilterTypes emits unpublished resources | Both leak shapes the client cannot use |
