@@ -148,3 +148,19 @@ nowhere to live. That is the shape (see `docs/decisions.md`), and it is where
 `Rpc.Codegen`, not looked up inside a generator: #52 fixed #44 by passing
 `ResourceSchemas.generate_data_class/2` the set of resources the same pass
 emits a class for. Follow that pattern.
+
+### The runner formats field names, not values
+
+`Rpc.Runner.execute_action/7` calls
+`AshIntrospection.Rpc.Pipeline.format_output/1`, which renames keys and stops
+there. Nothing in `lib/` calls `AshIntrospection.Rpc.ValueFormatter`, so the
+shared core's type-aware formatting — the clause that turns `%Ash.Vector{}`
+into a list of numbers, and everything beside it — never runs. A value whose
+in-memory form is not JSON-encodable therefore reaches the encoder raw and
+raises: measured 2026-09-11, a `:vector` attribute raises
+`Jason.EncodeError` on the packed binary (#71).
+
+So a new type needs both halves checked. A Kotlin type that reads the wire
+format proves nothing about whether this library can produce that wire
+format; run the action through `Runner` and encode the result before
+believing it.
