@@ -44,7 +44,7 @@ Ordered by what unblocks the most.
 | Issue | What | Why now |
 | ----- | ---- | ------- |
 | #38 | Make `main` formatter-clean and put the check in CI | One mechanical commit; unblocks review signal |
-| new | Typed `filter` and `page` in the request config | The response is typed now; the request still takes untyped maps |
+| #65, #53 | Typed `filter` and `page` in the request config | The response is typed now; the request still takes untyped maps, so `FilterTypes` is dead code |
 | #48, #53 | The runner mangles unconstrained map keys; FilterTypes emits unpublished resources | Both leak shapes the client cannot use |
 | #57 | Error keys ignore the output field formatter | The decode gate now reads those keys |
 | #17, #43 | Unstable output order across builds | A regenerated file should diff empty |

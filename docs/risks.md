@@ -117,8 +117,8 @@ dependency jars rather than committing a wrapper.
 per resource that nothing references, so `generate_filter_types: true`
 produces dead code.
 
-*Watch:* whether a consumer hand-builds a filter map and gets it wrong with
-no compile error.
+*Watch:* #65, and whether a consumer hand-builds a filter map and gets it
+wrong with no compile error.
 *Do:* type `filter` as `{Resource}FilterInput?` and `page` as a page config,
 gated on `generate_filter_types?/0` so the flag keeps meaning something.
 
