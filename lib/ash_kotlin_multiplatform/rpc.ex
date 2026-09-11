@@ -19,7 +19,10 @@ defmodule AshKotlinMultiplatform.Rpc do
       resource MyApp.Todo do
         rpc_action :list_todos, :read
         rpc_action :create_todo, :create
-        rpc_action :get_todo, :read
+
+        rpc_action :get_todo, :read do
+          get_by [:id]
+        end
 
         typed_query :my_query, :read,
           fields: ["id", "title"],
@@ -36,6 +39,11 @@ defmodule AshKotlinMultiplatform.Rpc do
     Struct representing an RPC action configuration.
 
     Defines the mapping between a named RPC endpoint and an Ash action.
+
+    The defaults here are the shape the client had before any of these options
+    existed, so an `rpc_action` that sets none of them behaves exactly as it did:
+    a read returns a list and accepts `filter` and `sort`, an update or destroy
+    is found by primary key, and a `get?` read that matches nothing is an error.
     """
     defstruct [
       :name,
@@ -43,6 +51,12 @@ defmodule AshKotlinMultiplatform.Rpc do
       :read_action,
       :show_metadata,
       :metadata_field_names,
+      identities: [:_primary_key],
+      get?: false,
+      get_by: [],
+      not_found_error?: true,
+      enable_filter?: true,
+      enable_sort?: true,
       __spark_metadata__: nil
     ]
   end
@@ -117,6 +131,30 @@ defmodule AshKotlinMultiplatform.Rpc do
     Metadata field naming: Use `metadata_field_names` to map invalid metadata field names
     (e.g., `field_1`, `is_valid?`) to valid Kotlin identifiers.
     Example: `metadata_field_names [field_1: :field1, is_valid?: :isValid]`
+
+    Single-record reads: `get?` makes a read return one record or nothing instead
+    of a list, and `get_by` names the fields the client sends to select it.
+    `get_by` implies `get?`. The generated function returns a nullable resource
+    and drops `filter`, `sort` and `page` from its config.
+
+        rpc_action :get_author, :read do
+          get_by [:id]
+        end
+
+    Record lookup for writes: `identities` lists the identities an update or
+    destroy may be addressed by. `[:_primary_key]` (the default) means the
+    primary key; a named identity must be defined on the resource; `[]` means
+    the action takes no identity at all and finds its record some other way,
+    such as from the actor.
+
+    Read surface: `enable_filter?` and `enable_sort?` both default to `true`.
+    Setting either to `false` removes that parameter from the generated config
+    class and makes the server reject a request that sends it anyway — a stale
+    client is told, rather than quietly handed the unfiltered table.
+
+    These options shape the API surface of an action. They are **not**
+    authorization. Ash policies run on every request regardless of what the DSL
+    exposes, and narrowing the surface here neither adds nor removes a check.
     """,
     schema: [
       name: [
@@ -141,6 +179,37 @@ defmodule AshKotlinMultiplatform.Rpc do
         type: {:list, {:tuple, [:atom, :atom]}},
         doc: "Map metadata field names to valid Kotlin identifiers",
         default: []
+      ],
+      identities: [
+        type: {:list, :atom},
+        doc:
+          "Identities an update or destroy may be addressed by. `:_primary_key` names the primary key; `[]` means the action takes no identity",
+        default: [:_primary_key]
+      ],
+      get?: [
+        type: :boolean,
+        doc: "Return a single record or nothing instead of a list. Read actions only",
+        default: false
+      ],
+      get_by: [
+        type: {:wrap_list, :atom},
+        doc: "Fields the client sends to select one record. Implies `get?`. Read actions only",
+        default: []
+      ],
+      not_found_error?: [
+        type: :boolean,
+        doc: "Whether a `get?` read matching no record is an error rather than a null result",
+        default: true
+      ],
+      enable_filter?: [
+        type: :boolean,
+        doc: "Whether the client may send `filter` on a list read",
+        default: true
+      ],
+      enable_sort?: [
+        type: :boolean,
+        doc: "Whether the client may send `sort` on a list read",
+        default: true
       ]
     ],
     args: [:name, :action]
