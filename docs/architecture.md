@@ -90,7 +90,7 @@ flowchart TD
     task["Mix.Tasks.AshKotlinMultiplatform.Codegen"] --> cg["Rpc.Codegen.generate_kotlin_code/2"]
 
     cg --> coll["Rpc.Codegen.RpcConfigCollector<br/>reads Rpc.Info off each domain"]
-    cg --> vc["VerifierChecker<br/>VerifyIdentities, VerifyActionTypes,<br/>VerifyFieldNames, VerifyUniqueTypeNames"]
+    cg --> vc["VerifierChecker<br/>VerifyIdentities (identities and get_by),<br/>VerifyActionTypes,<br/>VerifyFieldNames, VerifyUniqueTypeNames"]
 
     coll --> tuples["{resource, action, rpc_action}"]
 
@@ -120,6 +120,24 @@ into the signature. Ktor resolves `.body()` from that declared type, so this
 one string is what makes a response decode into a resource class rather than
 a `JsonElement` (#22).
 
+`ConfigBuilder.get_action_context/3` turns the `rpc_action` options into the
+context that both `ConfigBuilder` and `PayloadBuilder` read, and the two have
+to agree key for key (#25). `get_by` adds a `@Serializable` lookup class —
+`FetchAuthorGetBy` for the test domain's `rpc_action :fetch_author` — and a
+matching `getBy` line in the payload. `supports_filtering` and
+`supports_sorting` are separate context keys, so `enable_filter? false` leaves
+`sort` alone. When the two builders disagreed, the emitted Kotlin referenced a
+property that was never declared, which is why
+`test/ash_kotlin_multiplatform/rpc/codegen/rpc_action_options_codegen_test.exs`
+asserts the config class and the payload together.
+
+`VerifyIdentities` checks both ways an `rpc_action` can name a record. On an
+update or destroy, every entry in `identities` must be `:_primary_key` or an
+identity on the resource; on a read, every field in `get_by` must be a public
+attribute, because `ConfigBuilder` takes the lookup class's Kotlin type from
+that attribute. Before #25 the DSL had no way to set `identities`, so the
+verifier could never fail.
+
 Two things about `PhoenixChannel` that the box does not show. It is
 **static**: it takes no resource and no action, so the same text is emitted
 for every application, which is issue #35. And it is the only generated code
@@ -142,10 +160,11 @@ sequenceDiagram
     participant Pipe as Rpc.Pipeline
     participant Ash as Ash domain
 
-    App->>Ctl: POST /rpc/run {action, input, fields}
+    App->>Ctl: POST /rpc/run {action, input, fields, getBy}
     Ctl->>Run: run_action(otp_app, params, actor:, tenant:)
+    Note over Run: rpc_action options, before the pipeline (issue 25) —<br/>refuse a filter or sort the DSL switched off,<br/>require exactly the configured getBy fields,<br/>set the Ash action's get? from get? or get_by
     Run->>Pipe: parse_request, execute, format_output
-    Pipe->>Ash: Ash.read / create / update / destroy
+    Pipe->>Ash: Ash.read_one when get?, else Ash.read / create / update / destroy
     Ash-->>Pipe: records
     Pipe-->>Run: field-selected map
     Run-->>Ctl: %{success: true, data: ...}
@@ -157,6 +176,23 @@ sequenceDiagram
     Run-->>Ch: result map
     Ch-->>App: phx_reply
 ```
+
+The two parameter checks in the note run in `Rpc.Runner.build_request/8`,
+before anything reaches the shared core, and each answers with an ordinary
+error response rather than a raise. The third is applied a level up, in
+`Rpc.Runner.execute_action/7`, and it works differently: a DSL-level `get?`
+reaches the core as the *Ash* action's own `get?` field, because
+`AshIntrospection.Rpc.Pipeline.execute_read_action/3` branches on that to pick
+`Ash.read_one/1` over `Ash.read/1` and builds the query from `action.name`.
+Overriding that one field selects the single-record path and nothing else.
+
+`Rpc.Pipeline.build_config/1` is the per-action half of the pipeline config,
+and `not_found_error?` is the only key that varies by action. `build_config/0`
+used to read that key from
+`AshKotlinMultiplatform.warn_on_missing_rpc_config?/0`, a codegen-time warning
+switch, so a project that silenced codegen warnings also turned every
+not-found into a successful `null`. The field selector and the error builder
+still call `build_config/0`; neither reads the key.
 
 ## 5. The Phoenix channel wire format
 
