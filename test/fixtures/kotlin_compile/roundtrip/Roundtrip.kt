@@ -95,6 +95,23 @@ private fun untypedMapKeepsNumberLiterals(): String {
     return "re-encoded unchanged: $sent"
 }
 
+// #30: `:vector` reached Kotlin as JsonElement, so a caller unpacked the numbers
+// by hand. It is `List<Double>` now.
+//
+// A literal, not a fixture entry, because no Runner response can carry a vector
+// yet: #71 measured that `%Ash.Vector{}` reaches the encoder as its packed
+// binary and raises Jason.EncodeError. This is the number array the server will
+// send once it does, so the Kotlin half is checked now and the fixture entry
+// lands with #71.
+private fun vectorDecodesAsDoubles(): String {
+    val sent = """{"id":"1","embedding":[0.25,-1.5,3.0]}"""
+    val todo = ashRpcJson.decodeFromString<Todo>(sent)
+
+    expect("embedding", todo.embedding, listOf(0.25, -1.5, 3.0))
+
+    return "embedding=${todo.embedding}"
+}
+
 // #54: dataAs() is the documented way to get a typed value out of a result, and
 // it built a Json of its own that carried no SerializersModule.
 private fun dateFieldsViaDataAs(): String {
@@ -367,6 +384,7 @@ private fun refusedReadParametersDecode(): String {
 fun main() {
     check("#51 populated untyped map via dataAs()", ::populatedUntypedMap)
     check("#51 untyped map keeps number literals", ::untypedMapKeepsNumberLiterals)
+    check("#30 a vector decodes as a list of doubles", ::vectorDecodesAsDoubles)
     check("#54 date fields via dataAs()", ::dateFieldsViaDataAs)
     check("#54 date fields through the channel client's Json", ::dateFieldsThroughTheChannelJson)
     check("#54 input encoding through the shared Json", ::inputEncoding)

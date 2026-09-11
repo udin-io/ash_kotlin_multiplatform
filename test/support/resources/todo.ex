@@ -7,11 +7,13 @@ defmodule AshKotlinMultiplatform.Test.Todo do
   Carries the attribute types that have no direct Kotlin equivalent.
 
   `Ash.Type.Map`, `Ash.Type.Keyword`, `Ash.Type.Tuple`, `Ash.Type.Union` and any
-  Ash type the mapper does not recognise all reach Kotlin as `Any`, which
-  kotlinx-serialization refuses inside a `@Serializable` class ("Serializer has
-  not been found for type 'Any'"). `:status` is public for the matching reason on
-  the other side: an `:atom` with `one_of` has an enum class generated for it, so
-  the field has to name that class rather than `String`.
+  Ash type the mapper does not recognise all reach Kotlin as `JsonElement`, which
+  is what they took after `Any` proved to be a compile error inside a
+  `@Serializable` class and then a decode-time throw (#50, #51). `:embedding` is
+  the other side of that: a type the mapper used to miss and now names. `:status`
+  is public for a different reason again — an `:atom` with `one_of` has an enum
+  class generated for it, so the field has to name that class rather than
+  `String`.
 
   Only `Ash.Resource.Info.public_attributes/1` reaches the generator, hence
   `public? true` on every attribute that is here to be generated.
@@ -69,6 +71,15 @@ defmodule AshKotlinMultiplatform.Test.Todo do
     # unknown-type fallback rather than any of the branches above.
     attribute :scratch, Ash.Type.Term, public?: true
 
+    # A pgvector embedding: the attribute that puts `List<Double>` in the
+    # generated Kotlin, so the compile gate covers it (#30). It carries no value
+    # in the round-trip fixture, because a vector response raises
+    # `Jason.EncodeError` until #71 lands.
+    attribute :embedding, :vector do
+      constraints dimensions: 3
+      public? true
+    end
+
     attribute :due_date, :date
 
     attribute :completed_at, :utc_datetime
@@ -100,7 +111,8 @@ defmodule AshKotlinMultiplatform.Test.Todo do
         :tags,
         :user_id,
         :metadata,
-        :settings
+        :settings,
+        :embedding
       ]
     end
 

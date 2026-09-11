@@ -111,6 +111,20 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapperTest do
     end
   end
 
+  # #30. Each of these reached the unknown-type fallback, so the field arrived in
+  # a generated client as an opaque `JsonElement` the caller unpacked by hand.
+  describe "types that fell through to the unknown-type fallback" do
+    test "maps Ash.Type.Vector to a list of doubles" do
+      attr = %{type: Ash.Type.Vector, constraints: [dimensions: 3], allow_nil?: true}
+      assert TypeMapper.get_kotlin_type(attr) == "List<Double>?"
+    end
+
+    test "maps an array of vectors" do
+      assert TypeMapper.get_kotlin_type_for_type({:array, Ash.Type.Vector}) ==
+               "List<List<Double>>"
+    end
+  end
+
   describe "is_enum_type?/2" do
     test "is true for an atom constrained to a list of values" do
       assert TypeMapper.is_enum_type?(Ash.Type.Atom, one_of: [:a, :b])

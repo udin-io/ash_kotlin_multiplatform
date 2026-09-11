@@ -166,6 +166,20 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
   # UUID types - use String for KMP compatibility
   defp map_type(Ash.Type.UUID, _constraints), do: "String"
 
+  # A vector belongs on the wire as a JSON array of numbers, never as the packed
+  # binary `%Ash.Vector{}` carries. `AshIntrospection.Rpc.ValueFormatter` expands
+  # it with `Ash.Vector.to_list/1`
+  # (`deps/ash_introspection/lib/ash_introspection/rpc/value_formatter.ex:206`),
+  # but `Rpc.Runner` never calls that formatter, so a vector *response* still
+  # raises `Jason.EncodeError` today — #71. This type already serves a request
+  # payload, because `Ash.Type.Vector.cast_input/2` accepts a list, and it is
+  # what the array decodes into once #71 lands.
+  #
+  # `Double` and not `Float`, because kotlinx-serialization reads a JSON number
+  # into whichever the field declares and `Double` cannot lose a value the
+  # encoder wrote (#30).
+  defp map_type(Ash.Type.Vector, _constraints), do: "List<Double>"
+
   # Date/time types
   defp map_type(Ash.Type.Date, _constraints) do
     case AshKotlinMultiplatform.datetime_library() do
