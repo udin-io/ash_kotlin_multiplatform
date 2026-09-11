@@ -234,3 +234,62 @@ envelope, which misreads a resource that publishes attributes with both of
 those names when the metadata has been narrowed away. Nothing else produces
 that pair. Both are decoded from real `Runner` responses by the round-trip
 gate, including the narrowed-away case.
+
+## 2026-09-11 — The DSL's `get?` reaches the core as the Ash action's `get?`
+
+`Rpc.Runner.execute_action/7` copies the `rpc_action`'s `get?` onto the
+introspected `Ash.Resource.Actions.Read` struct before the pipeline sees it
+(#25). `get_by` implies `get?`, so naming the lookup fields is the whole
+statement and no config can ask for a key and a list in the same breath.
+
+Why: `AshIntrospection.Rpc.Pipeline.execute_read_action/3` reads `action.get?`
+for one thing only — choosing `Ash.read_one/1` over `Ash.read/1` — and
+builds the query from `action.name`. Setting that one field selects the
+single-record path and changes nothing else. The alternative was a new config
+key in the shared core, which is a release of `ash_introspection` before this
+library could ship the option at all.
+
+Cost: the runner writes to a struct Ash owns. If the core ever reads `get?`
+for something besides that branch, the override does more than this library
+intends, with no signal. `mix.exs` pins `ash_introspection ~> 0.3`, so that is
+the line to re-read on a bump.
+
+## 2026-09-11 — A switched-off read parameter is refused, not dropped
+
+`enable_filter? false` and `enable_sort? false` remove the property from the
+generated config class *and* make `Rpc.Runner.check_read_surface/3` reject a
+request that sends it anyway (#25).
+
+Why: no current client can send the parameter, so only a stale one reaches
+this error — and dropping it in silence would hand that client the whole
+table with no way to know it had asked for a subset. The shared core already
+reasoned this way about `identity` on a read.
+
+These options shape an action's API surface. They are not authorization. Ash
+policies run on every request regardless of what the DSL exposes, and
+`enable_filter? false` hides no rows — it removes the client's ability to ask
+for fewer. The README and the `rpc_action` moduledoc both say so, because
+someone will otherwise reach for it as a security control.
+
+Cost: one error type per switched-off parameter, `filter_not_supported` and
+`sort_not_supported`, that every client has to be able to read. Both are
+decoded by the round-trip gate.
+
+## 2026-09-11 — `getBy` is a generated lookup class, not a map
+
+A `get_by` read gets its own `@Serializable` data class — `FetchAuthorGetBy`
+for the test domain's `rpc_action :fetch_author` — rather than the
+`Map<String, JsonElement>` the config's `filter` still uses.
+
+Why: the server requires exactly the configured fields and refuses anything
+else, so a client assembling that map by hand would learn at runtime what the
+compiler could have told it. A missing field widens the lookup into a
+`MultipleResults` naming nothing the caller can act on; an extra one reaches
+`Ash.Query.do_filter/2`, which reads a map operand as an operator expression
+and turns an exact lookup into an arbitrary predicate.
+
+Cost: one more generated class per `get_by` action, and a wire key two
+generators have to spell the same way. `@SerialName` carries the resource's
+own field name to match `InputTypes.generate_input_type/2`, and the round-trip
+check `#25 getBy encodes the key the server reads` re-encodes the class and
+compares it to the payload the fixture's hit was produced by.
