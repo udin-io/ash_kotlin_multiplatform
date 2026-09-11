@@ -170,10 +170,13 @@ sequenceDiagram
     App->>Ctl: POST /rpc/run {action, input, fields, getBy}
     Ctl->>Run: run_action(otp_app, params, actor:, tenant:)
     Note over Run: rpc_action options, before the pipeline (issue 25) —<br/>refuse a filter or sort the DSL switched off,<br/>require exactly the configured getBy fields,<br/>set the Ash action's get? from get? or get_by
-    Run->>Pipe: parse_request, execute, format_output
+    Run->>Pipe: parse_request, execute, process_result
     Pipe->>Ash: Ash.read_one when get?, else Ash.read / create / update / destroy
     Ash-->>Pipe: records
-    Pipe-->>Run: field-selected map
+    Pipe-->>Run: field-selected map, values still internal
+    Run->>Pipe: format_data(processed, request)
+    Note over Pipe: Stage 4 formats by Ash type, not by name alone —<br/>a vector becomes a list of floats, an untyped map's<br/>keys survive as written, a field_names override wins
+    Pipe-->>Run: payload with client field names and wire values
     Run-->>Ctl: %{success: true, data: ...}
     Ctl-->>App: JSON
 
