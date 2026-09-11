@@ -76,6 +76,21 @@ declares only the v1 serializer.
 *Do:* nothing for the stock Phoenix socket, which offers both. A host that
 narrowed `serializer:` to v1 must add v2.
 
+### `get_by` on an action that is not a read fails only at runtime
+
+`VerifyIdentities` checks `get_by` on read actions only, and
+`ConfigBuilder.get_action_context/3` zeroes it for every other type. So
+`get_by [:id]` on a create, update or destroy compiles clean and generates a
+config class with no lookup field — and then `Rpc.Runner`'s `parse_get_by`,
+which runs on every action type, finds the configured field missing from the
+request and refuses the call. Every call to that action fails, and nothing
+said so at compile time.
+
+*Watch:* nothing. No test covers the combination.
+*Do:* extend the read branch of `VerifyIdentities` to reject a non-empty
+`get_by` on any action that is not a read, so the DSL entry breaks the build
+instead of the client.
+
 ### `main` is not formatter-clean
 
 `mix format --check-formatted` fails on ten files that predate the current
@@ -108,6 +123,20 @@ Central.
 dependency jars rather than committing a wrapper.
 
 ## Product
+
+### The rpc_action surface options read like authorization
+
+`get_by`, `enable_filter?` and `enable_sort?` narrow what an endpoint accepts,
+which is what a permission looks like from the outside. They are not one (#25).
+Ash policies run on every request regardless of what the DSL exposes, and
+`enable_filter? false` hides no rows — it removes the client's ability to ask
+for fewer, so the action answers with the whole table.
+
+*Watch:* the "not authorization" paragraph under the DSL example in the README,
+and the same words in the `rpc_action` moduledoc in
+`lib/ash_kotlin_multiplatform/rpc.ex`.
+*Do:* repeat that framing on every option added to this group, and answer an
+access question with a policy, never a DSL switch.
 
 ### The request half of the client is still untyped
 

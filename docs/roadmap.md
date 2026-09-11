@@ -32,6 +32,7 @@ afterwards.
 | 2026-09-09 | The generated Kotlin decodes the server's own responses (#24, PR #56) |
 | 2026-09-10 | One shared `Json`, `JsonElement` for untyped shapes, and a decode gate in CI (#51, #54, #58) |
 | 2026-09-11 | Typed results: every RPC function returns `RpcResult<T>` (#22) |
+| 2026-09-11 | Six `rpc_action` options the shared core already honoured: `get?`, `get_by`, `identities`, `not_found_error?`, `enable_filter?`, `enable_sort?` (#25, PR #66) |
 
 ## In progress
 
