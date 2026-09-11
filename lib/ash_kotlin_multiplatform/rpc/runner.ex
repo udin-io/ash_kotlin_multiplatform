@@ -138,7 +138,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
 
   defp execute_action(domain, resource, rpc_action, params, actor, tenant, context) do
     action_name = rpc_action.action
-    action_info = Ash.Resource.Info.action(resource, action_name)
+    action_info = resource |> Ash.Resource.Info.action(action_name) |> apply_get?(rpc_action)
 
     with {:ok, request} <-
            build_request(
@@ -175,7 +175,9 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
       |> dsl_metadata_fields(rpc_action)
       |> narrow_metadata_fields(parse_metadata_fields(params))
 
-    with {:ok, {select, load, extraction_template}} <-
+    with :ok <- check_read_surface(rpc_action, filter, sort),
+         {:ok, get_by} <- parse_get_by(params, rpc_action),
+         {:ok, {select, load, extraction_template}} <-
            select_fields(resource, action, fields) do
       {:ok,
        %Request{
@@ -185,6 +187,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
          rpc_action: rpc_action,
          input: input,
          identity: identity,
+         get_by: get_by,
          filter: filter,
          sort: sort,
          pagination: page,
@@ -258,6 +261,78 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
 
   defp get_record_for_validation(_resource, nil, _opts) do
     {:error, {:missing_required_parameter, :identity}}
+  end
+
+  # ---------------------------------------------------------------------------
+  # Single-Record Reads
+  # ---------------------------------------------------------------------------
+
+  # `AshIntrospection.Rpc.Pipeline.execute_read_action/3` branches on the *Ash*
+  # action's `get?`, so a DSL-level `get?` has to reach it as one. Only the
+  # branch decision reads the field — the query is built from `action.name` —
+  # so overriding it here selects `Ash.read_one/1` and nothing else.
+  #
+  # `get_by` implies `get?`: naming the fields that select one record is the
+  # whole statement, and requiring both would let a config ask for a lookup key
+  # and a list in the same breath.
+  defp apply_get?(%{type: :read} = action, rpc_action) do
+    if Map.get(rpc_action, :get?, false) or configured_get_by(rpc_action) != [] do
+      %{action | get?: true}
+    else
+      action
+    end
+  end
+
+  defp apply_get?(action, _rpc_action), do: action
+
+  defp configured_get_by(rpc_action), do: Map.get(rpc_action, :get_by) || []
+
+  # The client must send exactly the fields the DSL configured — no more, no
+  # fewer. A missing field would widen the lookup to every record matching the
+  # rest, and `Ash.read_one/1` answers that with a `MultipleResults` naming
+  # nothing the caller can act on; an extra field would reach
+  # `Ash.Query.do_filter/2` as an arbitrary predicate.
+  defp parse_get_by(params, rpc_action) do
+    allowed = configured_get_by(rpc_action)
+    sent = normalize_get_by(params["getBy"])
+
+    sent_keys = sent |> Map.keys() |> MapSet.new()
+    allowed_keys = MapSet.new(allowed)
+
+    missing = allowed_keys |> MapSet.difference(sent_keys) |> Enum.sort()
+    extra = sent_keys |> MapSet.difference(allowed_keys) |> Enum.sort()
+
+    cond do
+      extra != [] -> {:error, {:unexpected_get_by_fields, extra, allowed}}
+      missing != [] -> {:error, {:missing_get_by_fields, missing}}
+      allowed == [] -> {:ok, nil}
+      true -> {:ok, sent}
+    end
+  end
+
+  defp normalize_get_by(get_by) when is_map(get_by), do: convert_keys_to_atoms(get_by)
+  defp normalize_get_by(_), do: %{}
+
+  # ---------------------------------------------------------------------------
+  # Read Surface
+  # ---------------------------------------------------------------------------
+
+  # `enable_filter?: false` and `enable_sort?: false` drop the parameter from the
+  # generated config class, so no current client can send it. Rejecting rather
+  # than dropping is the point: a stale client that still sends `filter` would
+  # otherwise be handed the whole table and have no way to know it asked for a
+  # subset. Same reasoning the core applied to `identity` on reads.
+  defp check_read_surface(rpc_action, filter, sort) do
+    cond do
+      not is_nil(filter) and not Map.get(rpc_action, :enable_filter?, true) ->
+        {:error, {:filter_not_supported, rpc_action.name}}
+
+      not is_nil(sort) and not Map.get(rpc_action, :enable_sort?, true) ->
+        {:error, {:sort_not_supported, rpc_action.name}}
+
+      true ->
+        :ok
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -478,25 +553,34 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     end)
   end
 
-  # Field selection errors carry a field path and a suggestion the client can
-  # act on, so they are rendered from the shared `ErrorBuilder` rather than
-  # flattened into a generic "error". The message arrives as a template plus
-  # vars, which `render_message/2` fills in.
-  defp build_error_response({:invalid_fields, reason}) do
-    errors =
-      {:invalid_fields, reason}
-      |> ErrorBuilder.build_error_response(Pipeline.build_config())
-      |> List.wrap()
-      |> Enum.map(fn error ->
-        %{
-          "type" => to_string(error.type),
-          "message" => render_message(error.message, Map.get(error, :vars, %{})),
-          "shortMessage" => error.short_message,
-          "field" => error |> Map.get(:fields, []) |> List.first()
-        }
-      end)
+  # Field selection and getBy errors carry a field path and a suggestion the
+  # client can act on, so they are rendered from the shared `ErrorBuilder`
+  # rather than flattened into a generic "error". The message arrives as a
+  # template plus vars, which `render_message/2` fills in.
+  defp build_error_response({:invalid_fields, _reason} = error),
+    do: build_error_response_from_builder(error)
 
-    %{"success" => false, "errors" => errors}
+  defp build_error_response({:missing_get_by_fields, _missing} = error),
+    do: build_error_response_from_builder(error)
+
+  defp build_error_response({:unexpected_get_by_fields, _extra, _allowed} = error),
+    do: build_error_response_from_builder(error)
+
+  defp build_error_response({:invalid_get_by, _details} = error),
+    do: build_error_response_from_builder(error)
+
+  # Raised by the core pipeline, not here: a read that is sent an `identity` is
+  # refused. The shared message names `get_by` as the replacement, which is the
+  # reason this clause is worth having over the generic `inspect/1` fallback.
+  defp build_error_response({:identity_not_supported, _details} = error),
+    do: build_error_response_from_builder(error)
+
+  defp build_error_response({:filter_not_supported, rpc_action_name}) do
+    unsupported_read_parameter_response("filter", rpc_action_name, "enable_filter?")
+  end
+
+  defp build_error_response({:sort_not_supported, rpc_action_name}) do
+    unsupported_read_parameter_response("sort", rpc_action_name, "enable_sort?")
   end
 
   defp build_error_response({:action_not_found, action_name}) do
@@ -630,6 +714,43 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     Enum.reduce(vars, message, fn {key, value}, acc ->
       String.replace(acc, "%{#{key}}", to_string(value))
     end)
+  end
+
+  defp build_error_response_from_builder(reason) do
+    errors =
+      reason
+      |> ErrorBuilder.build_error_response(Pipeline.build_config())
+      |> List.wrap()
+      |> Enum.map(fn error ->
+        %{
+          "type" => to_string(error.type),
+          "message" => render_message(error.message, Map.get(error, :vars, %{})),
+          "shortMessage" => error.short_message,
+          "field" => error |> Map.get(:fields, []) |> List.first() |> field_name_or_nil()
+        }
+      end)
+
+    %{"success" => false, "errors" => errors}
+  end
+
+  # `fields` reaches here as strings from field selection and as atoms from the
+  # getBy checks, and the client reads one shape.
+  defp field_name_or_nil(nil), do: nil
+  defp field_name_or_nil(field), do: to_string(field)
+
+  defp unsupported_read_parameter_response(parameter, rpc_action_name, dsl_option) do
+    %{
+      "success" => false,
+      "errors" => [
+        %{
+          "type" => "#{parameter}_not_supported",
+          "message" =>
+            "RPC action '#{rpc_action_name}' does not accept '#{parameter}'. " <>
+              "Set `#{dsl_option} true` on the rpc_action to enable it, or regenerate the client.",
+          "shortMessage" => "#{String.capitalize(parameter)} not supported"
+        }
+      ]
+    }
   end
 
   defp format_single_error(error) when is_exception(error) do

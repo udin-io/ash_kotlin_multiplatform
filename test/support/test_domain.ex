@@ -31,11 +31,34 @@ defmodule AshKotlinMultiplatform.Test.Domain do
       rpc_action :destroy_author, :destroy
       rpc_action :get_author, :by_id
       rpc_action :keyset_authors, :keyset_paged
+
+      # The DSL's own single-record options, over the plain `:read` action that
+      # knows nothing about them — so what is under test is the wiring, not
+      # Ash's `get? true`, which `get_author` above already covers.
+      rpc_action :fetch_author, :read do
+        get_by [:id]
+      end
+
+      # The other half of not-found: a null result rather than an error.
+      rpc_action :find_author, :read do
+        get_by [:email]
+        not_found_error? false
+      end
     end
 
     resource AshKotlinMultiplatform.Test.Book do
       rpc_action :list_books, :read
       rpc_action :create_book, :create
+
+      # Each of the two read-surface switches on its own, so a test can tell
+      # which one dropped which parameter.
+      rpc_action :list_books_fixed_order, :read do
+        enable_sort? false
+      end
+
+      rpc_action :list_books_unfiltered, :read do
+        enable_filter? false
+      end
     end
 
     resource AshKotlinMultiplatform.Test.Event do
