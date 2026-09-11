@@ -20,7 +20,7 @@ defmodule AshKotlinMultiplatform.Rpc.Pipeline do
   with {:ok, request} <- Pipeline.parse_request(otp_app, conn, params),
        {:ok, result} <- Pipeline.execute_ash_action(request),
        {:ok, processed} <- Pipeline.process_result(result, request) do
-    Pipeline.format_output(processed, request)
+    Pipeline.format_data(processed, request)
   end
   ```
 
@@ -99,13 +99,46 @@ defmodule AshKotlinMultiplatform.Rpc.Pipeline do
   end
 
   @doc """
-  Stage 4: Format output with type awareness.
+  Stage 4: Format one response payload by the Ash types the request names.
 
-  Applies type-aware Kotlin field formatting.
+  Returns the payload alone. `AshKotlinMultiplatform.Rpc.Runner` wraps it in
+  this library's `%{"success" => true, "data" => ...}` envelope, and that split
+  is the whole reason this function exists rather than a direct call to
+  `AshIntrospection.Rpc.Pipeline.format_output_with_request/3`.
+
+  Two things separate the two. The shared function builds its own envelope, so
+  calling it would duplicate `Runner.build_success_response/1`. And it hoists
+  action metadata to a sibling of `data`, while this library nests it —
+  `%{"data" => %{"data" => record, "metadata" => meta}}` — which is the shape
+  #24 decided, `ClientServerContractTest` pins and the generated Kotlin decodes
+  (`KotlinStatic.generate_generic_result_types/0` declares no top-level
+  `metadata`). Measured 2026-09-11: routing stage 4 straight through the shared
+  function failed seven tests, all of them that hoist.
+
+  So the mutation-metadata shape stage 3 produces, `%{data: ..., metadata: ...}`,
+  is matched here and recursed into. Metadata values are already formatted by
+  type in stage 3 (`Pipeline.extract_metadata_fields/4`), so only their names
+  are formatted here, once.
+
+  Unlike `format_output/1` this formats **values** as well as names: it is what
+  turns `%Ash.Vector{}` into `[0.25, -1.5, 3.0]` rather than shipping the packed
+  binary `Jason` refuses (#71).
   """
-  @spec format_output(term(), Request.t()) :: term()
-  def format_output(filtered_result, %Request{} = request) do
-    SharedPipeline.format_output_with_request(filtered_result, request, build_config())
+  @spec format_data(term(), Request.t()) :: term()
+  def format_data(%{data: data, metadata: metadata}, %Request{} = request) do
+    %{
+      envelope_key("data") => format_data(data, request),
+      envelope_key("metadata") => format_output(metadata)
+    }
+  end
+
+  def format_data(payload, %Request{} = request) do
+    # The shared function is the only public entry point to type-aware
+    # formatting, and it always wraps. Unwrapping its envelope costs one
+    # `Map.fetch!/2` and keeps this library off a private API.
+    %{success: true, data: payload}
+    |> SharedPipeline.format_output_with_request(request, build_config())
+    |> Map.fetch!(envelope_key("data"))
   end
 
   @doc """
@@ -117,6 +150,12 @@ defmodule AshKotlinMultiplatform.Rpc.Pipeline do
     formatter = Rpc.input_field_formatter()
     SharedPipeline.format_sort_string(sort_string, formatter)
   end
+
+  # The envelope's own keys go through the output formatter like any other
+  # field name, so a project running `output_field_formatter :snake_case` gets
+  # the same key here that `Runner.build_success_response/1` writes.
+  defp envelope_key(name),
+    do: FieldFormatter.format_field_name(name, Rpc.output_field_formatter())
 
   # ---------------------------------------------------------------------------
   # Kotlin-specific callbacks

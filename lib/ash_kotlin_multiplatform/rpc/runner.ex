@@ -153,9 +153,13 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
            ),
          {:ok, ash_result} <- Pipeline.execute_ash_action(request),
          {:ok, processed} <- Pipeline.process_result(ash_result, request) do
-      # Use format_output/1 which just formats field names without expecting a wrapped response
-      formatted = Pipeline.format_output(processed)
-      build_success_response(formatted)
+      # `format_data/2` and not `format_output/1`: the latter renames field names
+      # and never looks at a value, so a vector left here as the packed binary
+      # `Jason` refuses (#71). `format_data/2` returns the payload alone, which
+      # is what lets this library keep its own envelope below.
+      processed
+      |> Pipeline.format_data(request)
+      |> build_success_response()
     else
       {:error, error} ->
         build_error_response(error)
