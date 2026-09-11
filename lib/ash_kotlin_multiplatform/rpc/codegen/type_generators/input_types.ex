@@ -43,7 +43,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.InputTypes do
 
       fields =
         all_inputs
-        |> Enum.map(fn input -> generate_input_field(input, action) end)
+        |> Enum.map(fn input -> generate_input_field(input, action, resource) end)
         |> Enum.join(",\n    ")
 
       if fields == "" do
@@ -84,12 +84,12 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.InputTypes do
   end
 
   # Generate field for an input (either argument or attribute)
-  defp generate_input_field({:argument, argument}, action) do
+  defp generate_input_field({:argument, argument}, action, _resource) do
     generate_argument_field(argument, action)
   end
 
-  defp generate_input_field({:attribute, attribute}, action) do
-    generate_attribute_field(attribute, action)
+  defp generate_input_field({:attribute, attribute}, action, resource) do
+    generate_attribute_field(attribute, action, resource)
   end
 
   defp generate_argument_field(argument, _action) do
@@ -121,18 +121,9 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.InputTypes do
     "#{serial_name}val #{field_name}: #{TypeMapper.annotate_contextual_types(type_with_nullability)}#{default}"
   end
 
-  defp generate_attribute_field(attribute, action) do
+  defp generate_attribute_field(attribute, action, resource) do
     kotlin_type = get_attribute_kotlin_type(attribute)
-    field_name = format_field_name(attribute.name)
-    original_name = Atom.to_string(attribute.name)
-
-    # Handle SerialName annotation if names differ
-    serial_name =
-      if original_name != field_name do
-        "@SerialName(\"#{original_name}\")\n    "
-      else
-        ""
-      end
+    {serial_name, field_name} = input_property_name(resource, attribute.name)
 
     # Determine if this attribute is required or optional for this action
     is_optional = is_attribute_optional?(attribute, action)
@@ -208,6 +199,45 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.InputTypes do
     name
     |> Atom.to_string()
     |> Helpers.snake_to_camel_case()
+  end
+
+  # The Kotlin property declaration for one accepted attribute:
+  # `{annotation, property_name}`.
+  #
+  # Only a `field_names` override changes anything here. Without one an input
+  # field keeps the attribute's own name on the wire — `starts_on`, not
+  # `startsOn` — which is what `Runner`'s input parser has always accepted and
+  # what the round-trip gate's `inputEncoding` check pins by decoding a literal
+  # and re-encoding it unchanged. #71 touches the response contract, not this
+  # one, so this stays as it was.
+  #
+  # With an override the override is the wire key, because the server resolves
+  # it too: `Runner`'s input parser consults `field_names` before the generic
+  # camelCase parser, so a client sending `address_line_1` and one sending
+  # `addressLine1` must not both be generated for the same field.
+  #
+  # Arguments do not come through here. `field_names` maps resource fields and
+  # an action argument is not one; the DSL's separate `argument_names` option
+  # covers those.
+  defp input_property_name(resource, field_name) do
+    wire_name = input_wire_name(resource, field_name)
+    property = Helpers.snake_to_camel_case(wire_name)
+
+    if wire_name == property do
+      {"", property}
+    else
+      {"@SerialName(\"#{wire_name}\")\n    ", property}
+    end
+  end
+
+  defp input_wire_name(resource, field_name) do
+    case Keyword.get(
+           AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_field_names(resource),
+           field_name
+         ) do
+      nil -> Atom.to_string(field_name)
+      override -> to_string(override)
+    end
   end
 
   defp format_default_value(default, _type) when is_binary(default), do: "\"#{default}\""
