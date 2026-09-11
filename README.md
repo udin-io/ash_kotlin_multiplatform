@@ -394,7 +394,33 @@ kotlin_rpc do
 
     # Expose metadata fields
     rpc_action :list_items, :read do
-      expose_metadata [:total_count]
+      show_metadata [:total_count]
+    end
+
+    # Return one record instead of a list. `get_by` names the fields the
+    # client sends to select it, and implies `get?`.
+    rpc_action :get_item, :read do
+      get_by [:id]
+    end
+
+    # A miss answers with a null payload instead of a not-found error.
+    rpc_action :find_item, :read do
+      get_by [:slug]
+      not_found_error? false
+    end
+
+    # Address an update or destroy by a named identity rather than the
+    # primary key. `[]` means the action takes no identity at all.
+    rpc_action :rename_item, :rename do
+      identities [:unique_slug]
+    end
+
+    # Drop `filter` and `sort` from the generated config. The server refuses
+    # them too, so a stale client is told rather than quietly handed the
+    # unfiltered table.
+    rpc_action :recent_items, :recent do
+      enable_filter? false
+      enable_sort? false
     end
 
     # Define typed queries with preset filters
@@ -404,6 +430,11 @@ kotlin_rpc do
   end
 end
 ```
+
+These options shape the **API surface** of an action — typically to keep a
+parameter off an endpoint that has no use for it. They are **not**
+authorization. Ash policies run on every request regardless of what the DSL
+exposes, and narrowing the surface here neither adds nor removes a check.
 
 ## Phoenix Channel Support
 

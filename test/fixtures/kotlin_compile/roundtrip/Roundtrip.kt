@@ -297,6 +297,73 @@ private fun typedMetadataEnvelopeReadsTheBareRecord(): String {
     return "data.name=${envelope.data.name} metadata=${envelope.metadata}"
 }
 
+// #25: the rpc_action options the shared core already honoured and the DSL
+// never declared. Every shape below is new to the wire, because a get? read had
+// no way to say which record it wanted and so ran as a list read.
+
+// The lookup class the config declares is what puts the key on the wire, and
+// the server accepts exactly one spelling of it. The fixture's `get_by_hit` was
+// produced by sending this object, so if @SerialName drifted the key here would
+// stop matching what the server answered to.
+private fun getByEncodesTheKeyTheServerReads(): String {
+    val sent = """{"id":"11111111-1111-1111-1111-111111111111"}"""
+    val getBy = ashRpcJson.decodeFromString<FetchAuthorGetBy>(sent)
+
+    expect("re-encoded", ashRpcJson.encodeToString(getBy), sent)
+
+    return "re-encoded unchanged: $sent"
+}
+
+// A get_by read returns the one record, not a list. Decoding it as
+// RpcResult<Author> is the measurement: before #25 this action answered with
+// the whole table, which this type cannot read at all.
+private fun getByHitDecodesOneRecord(): String {
+    val author = typed<Author>("get_by_hit").data!!
+
+    expect("name", author.name, "Typed One")
+    expect("data is an object", response("get_by_hit").jsonObject["data"] is JsonObject, true)
+
+    return "name=${author.name}"
+}
+
+// not_found_error? false: a successful response whose data is null — a
+// different shape from the not-found error `typed_get_miss` carries.
+private fun notFoundErrorFalseDecodesANull(): String {
+    val result = typed<Author>("get_by_null")
+
+    expect("success", result.success, true)
+    expect("data", result.data, null)
+    expect("errors", result.errors, null)
+
+    return "success=${result.success} data=${result.data}"
+}
+
+// The getBy checks reach the client as ordinary errors, so the generated error
+// class has to read them. `field` names the offending key.
+private fun getByValidationErrorsDecode(): String {
+    val missing = typed<Author>("get_by_missing_field").errors!!.single()
+    val unexpected = typed<Author>("get_by_unexpected_field").errors!!.single()
+
+    expect("missing.shortMessage", missing.shortMessage, "Missing required getBy fields")
+    expect("unexpected.type", unexpected.type, "unexpected_get_by_fields")
+
+    return "missing=${missing.type} unexpected=${unexpected.type}"
+}
+
+// enable_filter? / enable_sort? false refuse the parameter rather than dropping
+// it. The generated config for these actions declares no such property, so only
+// a stale client can produce these — and it has to be able to read the answer.
+private fun refusedReadParametersDecode(): String {
+    val filter = typed<AshPage<Book>>("filter_refused").errors!!.single()
+    val sort = typed<AshPage<Book>>("sort_refused").errors!!.single()
+
+    expect("filter.type", filter.type, "filter_not_supported")
+    expect("filter.shortMessage", filter.shortMessage, "Filter not supported")
+    expect("sort.type", sort.type, "sort_not_supported")
+
+    return "filter=${filter.type} sort=${sort.type}"
+}
+
 fun main() {
     check("#51 populated untyped map via dataAs()", ::populatedUntypedMap)
     check("#51 untyped map keeps number literals", ::untypedMapKeepsNumberLiterals)
@@ -316,6 +383,11 @@ fun main() {
     check("#22 destroy decodes the destroyed record", ::typedDestroyDecodes)
     check("#22 metadata envelope decodes into AshMetadata<Event, RegisterEventMetadata>", ::typedMetadataEnvelopeDecodes)
     check("#22 the same envelope reads the bare record", ::typedMetadataEnvelopeReadsTheBareRecord)
+    check("#25 getBy encodes the key the server reads", ::getByEncodesTheKeyTheServerReads)
+    check("#25 a get_by read decodes one record, not a list", ::getByHitDecodesOneRecord)
+    check("#25 not_found_error? false decodes a null", ::notFoundErrorFalseDecodesANull)
+    check("#25 getBy validation errors decode", ::getByValidationErrorsDecode)
+    check("#25 a refused filter or sort decodes", ::refusedReadParametersDecode)
 
     if (failures > 0) {
         println("$failures round-trip check(s) failed")

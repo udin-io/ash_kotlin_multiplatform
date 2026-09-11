@@ -70,10 +70,11 @@ defmodule AshKotlinMultiplatform.Test.Author do
       accept [:name, :email]
     end
 
-    # `get? true` is the only way an action reaches the get branch of
-    # `FunctionCore.determine_return_type/1`: the `kotlin_rpc` DSL has no `get?`
-    # or `get_by` option, so `ConfigBuilder.get_action_context/3` can only read
-    # it off the Ash action.
+    # An Ash-level `get? true`, which `ConfigBuilder.get_action_context/3` reads
+    # off the action itself. The `kotlin_rpc` DSL reaches the same branch through
+    # its own `get?` and `get_by` options (#25), and the domain's `fetch_author`
+    # covers that path; both need covering because they arrive from different
+    # places.
     read :by_id do
       get? true
 

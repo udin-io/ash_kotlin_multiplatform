@@ -4,10 +4,17 @@
 
 defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
   @moduledoc """
-  Verifies that all identities listed in RPC actions actually exist on the resource.
+  Verifies the lookup keys an RPC action names actually exist on the resource.
 
-  This catches configuration errors at compile time where an RPC action references
-  an identity that doesn't exist on the resource.
+  Two options name a way to select a record, and both are checked here because a
+  wrong name otherwise fails at runtime with an Ash error the client author
+  cannot trace back to the DSL entry that caused it:
+
+  * `identities` on an update or destroy — each must be `:_primary_key` or an
+    identity defined on the resource.
+  * `get_by` on a read — each must be a public attribute. The generated `GetBy`
+    data class takes its Kotlin type from that attribute, so a name that is not
+    one has no type to emit.
   """
   use Spark.Dsl.Verifier
   alias Spark.Dsl.Verifier
@@ -37,15 +44,38 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
   end
 
   defp validate_rpc_action_identities(resource, rpc_action, errors) do
-    # Get the action to check if it's update/destroy (identities only apply to these)
     action = Ash.Resource.Info.action(resource, rpc_action.action)
 
-    if action && action.type in [:update, :destroy] do
-      identities = Map.get(rpc_action, :identities, [:_primary_key])
-      validate_identities_exist(resource, rpc_action, identities, errors)
-    else
-      errors
+    cond do
+      is_nil(action) ->
+        errors
+
+      action.type in [:update, :destroy] ->
+        identities = Map.get(rpc_action, :identities, [:_primary_key])
+        validate_identities_exist(resource, rpc_action, identities, errors)
+
+      action.type == :read ->
+        validate_get_by_fields(resource, rpc_action, errors)
+
+      true ->
+        errors
     end
+  end
+
+  defp validate_get_by_fields(resource, rpc_action, errors) do
+    public_attributes =
+      resource |> Ash.Resource.Info.public_attributes() |> Enum.map(& &1.name)
+
+    rpc_action
+    |> Map.get(:get_by)
+    |> List.wrap()
+    |> Enum.reduce(errors, fn field, acc ->
+      if field in public_attributes do
+        acc
+      else
+        [{:get_by_not_an_attribute, rpc_action.name, field, public_attributes} | acc]
+      end
+    end)
   end
 
   defp validate_identities_exist(resource, rpc_action, identities, errors) do
@@ -96,14 +126,29 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
     {:error,
      Spark.Error.DslError.exception(
        message: """
-       Invalid identity configuration found in RPC actions.
+       Invalid record lookup configuration found in RPC actions.
 
        #{message_parts}
 
        Each identity listed in the `identities` option must either be `:_primary_key` (for the resource's primary key)
-       or the name of an identity defined on the resource.
+       or the name of an identity defined on the resource. Each field listed in `get_by` must be a public attribute.
        """
      )}
+  end
+
+  defp format_error_part({:get_by_not_an_attribute, rpc_name, field, public_attributes}) do
+    available_str =
+      case public_attributes do
+        [] -> "No public attributes are defined on this resource."
+        attributes -> "Public attributes: #{Enum.map_join(attributes, ", ", &inspect/1)}"
+      end
+
+    """
+    get_by field is not a public attribute:
+      - RPC action: #{rpc_name}
+      - Field: #{inspect(field)}
+      - #{available_str}
+    """
   end
 
   defp format_error_part(

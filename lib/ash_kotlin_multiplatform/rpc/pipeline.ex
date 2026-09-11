@@ -38,6 +38,10 @@ defmodule AshKotlinMultiplatform.Rpc.Pipeline do
 
   @doc """
   Builds the Kotlin-specific configuration map for the shared pipeline.
+
+  `not_found_error?` is per-action — see `build_config/1`. This arity carries
+  the shared default, `true`, and serves the field selector and the error
+  builder, neither of which reads that key.
   """
   def build_config do
     %{
@@ -46,8 +50,22 @@ defmodule AshKotlinMultiplatform.Rpc.Pipeline do
       field_names_callback: :interop_field_names,
       get_original_field_name: &get_original_field_name/2,
       format_field_for_client: &format_field_for_client/3,
-      not_found_error?: AshKotlinMultiplatform.warn_on_missing_rpc_config?()
+      not_found_error?: true
     }
+  end
+
+  @doc """
+  Builds the pipeline configuration for one RPC action.
+
+  Only `not_found_error?` varies by action: it decides whether a `get?` read
+  that matches no record is an `Ash.Error.Query.NotFound` or a successful
+  `null`. It used to be wired to
+  `AshKotlinMultiplatform.warn_on_missing_rpc_config?/0`, a codegen-time
+  warning switch, so a project that silenced codegen warnings also turned every
+  not-found into a null result.
+  """
+  def build_config(rpc_action) do
+    Map.put(build_config(), :not_found_error?, Map.get(rpc_action, :not_found_error?, true))
   end
 
   @doc """
@@ -57,7 +75,7 @@ defmodule AshKotlinMultiplatform.Rpc.Pipeline do
   """
   @spec execute_ash_action(Request.t()) :: {:ok, term()} | {:error, term()}
   def execute_ash_action(%Request{} = request) do
-    SharedPipeline.execute_ash_action(request, build_config())
+    SharedPipeline.execute_ash_action(request, build_config(request.rpc_action))
   end
 
   @doc """

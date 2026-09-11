@@ -36,12 +36,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A `get?` read that matches no record is a not-found error again when
+  codegen warnings are off. `Rpc.Pipeline.build_config/0` wired the pipeline's
+  `not_found_error?` to `AshKotlinMultiplatform.warn_on_missing_rpc_config?/0`,
+  a codegen-time warning switch, so
+  `config :ash_kotlin_multiplatform, warn_on_missing_rpc_config: false` also
+  turned every not-found into a successful `null`. It is now per-action, via
+  the `not_found_error?` option.
+
 - A destroy's generated return type said `Boolean`. The server returns the
   destroyed record: `AshIntrospection.Rpc.Pipeline.execute_destroy_action/3`
   bulk-destroys with `return_records?: true`. Nothing had noticed, because
   `FunctionCore.determine_return_type/1` had no caller.
 
 ### Added
+
+- Six `rpc_action` options, all additive — an `rpc_action` that sets none of
+  them behaves exactly as before
+  ([#25](https://github.com/udin-io/ash_kotlin_multiplatform/issues/25)). The
+  shared core already honoured four of them and the DSL declared none, so
+  those branches were unreachable: `AshIntrospection.Rpc.Pipeline` branches on
+  `get?`, applies `get_by`, reads `identities` and reads `not_found_error?`
+  off the config.
+
+  - `get?` makes a read return one record or nothing instead of a list. The
+    generated function's `data` becomes the resource rather than
+    `AshPage<Resource>`, and `filter`, `sort` and `page` leave its config.
+  - `get_by` names the fields the client sends to select that record, and
+    implies `get?`. It generates a `@Serializable` lookup class —
+    `GetAuthorGetBy` — so the fields are typed rather than a hand-assembled
+    map. The request must carry exactly those fields: a missing one would
+    widen the lookup into a `MultipleResults`, and an extra one reaches
+    `Ash.Query.do_filter/2`, which reads a map operand as an operator
+    expression and turns an exact lookup into an arbitrary predicate.
+  - `not_found_error?` (default `true`) chooses between a not-found error and
+    a successful `null` when a `get?` read matches nothing.
+  - `identities` (default `[:_primary_key]`) lists the identities an update or
+    destroy may be addressed by. `[]` means the action takes no identity and
+    finds its record some other way, such as from the actor. The verifier that
+    checks these names against the resource could never fail before, for want
+    of a way to set the option.
+  - `enable_filter?` and `enable_sort?` (both default `true`) remove that
+    parameter from the generated config class. The server refuses a request
+    that sends it anyway rather than dropping it: a stale client would
+    otherwise be handed the whole table with no way to know it asked for a
+    subset.
+
+  These shape an action's **API surface**, typically to keep a parameter off an
+  endpoint that has no use for it. They are **not** authorization — Ash
+  policies run on every request regardless of what the DSL exposes.
+
+  `allowed_loads` and `denied_loads` are not here. They need
+  `ash_introspection` 0.4.0, whose bump is a separate and breaking change.
 
 - **Breaking for existing users.** Compile-time check that every action
   reachable from the generated Kotlin client is `public?`. Ash documents
