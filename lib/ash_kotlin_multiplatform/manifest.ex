@@ -73,35 +73,60 @@ defmodule AshKotlinMultiplatform.Manifest do
     quote do
       @persist {:domains, unquote(opts[:domains])}
       unquote_splicing(
-        AshKotlinMultiplatform.Manifest.compile_dependency_asts(
-          opts[:otp_app],
-          opts[:domains]
-        )
+        List.wrap(
+          AshKotlinMultiplatform.Manifest.config_dependency_ast(opts[:otp_app], opts[:domains])
+        ) ++
+          AshKotlinMultiplatform.Manifest.domain_dependency_asts(
+            opts[:otp_app],
+            opts[:domains]
+          )
       )
     end
   end
 
   @doc false
+  # One `<Domain>.module_info(:md5)` per domain. A static remote call is a
+  # compile-time dependency, and `:md5` is the cheapest thing to ask for; the
+  # result is discarded.
+  #
   # Public only because `handle_opts/1`'s quote is evaluated in the consumer's
   # module, where a private function here is out of reach.
-  def compile_dependency_asts(otp_app, explicit_domains) do
-    config_tracking =
-      if is_nil(explicit_domains) and not is_nil(otp_app) do
-        [quote(do: _ = Application.compile_env(unquote(otp_app), :ash_domains, []))]
-      else
-        []
-      end
-
+  def domain_dependency_asts(otp_app, explicit_domains) do
     domains =
       explicit_domains ||
         (otp_app && Application.get_env(otp_app, :ash_domains, [])) || []
 
-    config_tracking ++
-      for domain <- domains do
-        quote do
-          _ = unquote(domain).module_info(:md5)
-        end
+    for domain <- domains do
+      quote do
+        _ = unquote(domain).module_info(:md5)
       end
+    end
+  end
+
+  @doc false
+  # Spark runs `handle_opts/1`'s result through `Code.eval_quoted/3`
+  # (`deps/spark/lib/spark/dsl.ex`), and `Application.compile_env/3` is a macro
+  # whose whole job is to register the read with the compiler — so whether the
+  # registration survives evaluation is not obvious from the code. It does.
+  # Measured 2026-09-11 on Elixir 1.18.4: the source record for
+  # `test/support/test_manifest.ex` in
+  # `_build/test/lib/ash_kotlin_multiplatform/.mix/compile.elixir` carries
+  # `{:ash_kotlin_multiplatform, [:ash_domains],
+  #   {:ok, [AshKotlinMultiplatform.Test.Domain]}}`.
+  #
+  # Note the shape when reading that file: the key is a path LIST and the value
+  # is wrapped in `{:ok, _}`. Looking for a bare `{app, :ash_domains, value}`
+  # finds nothing and reads as "the edge is missing" when it is present.
+  #
+  # Emitted only when `:domains` is absent: a module scoped to an explicit list
+  # does not depend on the config, and claiming otherwise would recompile it for
+  # a change it deliberately ignores.
+  def config_dependency_ast(otp_app, explicit_domains) do
+    if is_nil(explicit_domains) and not is_nil(otp_app) do
+      quote do
+        _ = Application.compile_env(unquote(otp_app), :ash_domains, [])
+      end
+    end
   end
 
   @doc """
