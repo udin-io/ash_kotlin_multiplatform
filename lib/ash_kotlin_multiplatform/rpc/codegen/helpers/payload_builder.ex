@@ -49,6 +49,14 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.PayloadBuilder do
         payload_lines
       end
 
+    # Add the get_by lookup for a single-record read
+    payload_lines =
+      if context.get_by != [] do
+        payload_lines ++ ["put(\"getBy\", ashRpcJson.encodeToJsonElement(config.getBy))"]
+      else
+        payload_lines
+      end
+
     # Add input if needed
     payload_lines =
       case context.action_input_type do
@@ -88,10 +96,15 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.PayloadBuilder do
     payload_lines =
       if context.supports_filtering do
         payload_lines ++
-          [
-            "config.filter?.let { put(\"filter\", ashRpcJson.encodeToJsonElement(it)) }",
-            "config.sort?.let { put(\"sort\", it) }"
-          ]
+          ["config.filter?.let { put(\"filter\", ashRpcJson.encodeToJsonElement(it)) }"]
+      else
+        payload_lines
+      end
+
+    # Add sort if supported
+    payload_lines =
+      if context.supports_sorting do
+        payload_lines ++ ["config.sort?.let { put(\"sort\", it) }"]
       else
         payload_lines
       end

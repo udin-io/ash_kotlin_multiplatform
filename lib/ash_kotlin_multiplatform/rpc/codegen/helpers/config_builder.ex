@@ -31,16 +31,22 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.ConfigBuilder do
   - `:identities` - List of identity atoms for record lookup (update/destroy actions)
   - `:supports_pagination` - Whether the action supports pagination (list reads)
   - `:supports_filtering` - Whether the action supports filtering (list reads)
+  - `:supports_sorting` - Whether the action supports sorting (list reads)
+  - `:get_by` - Fields the client sends to select one record (`[]` when none)
   - `:action_input_type` - Whether the input is :none, :required, or :optional
   - `:is_get_action` - Whether this is a get action (returns single or null)
+
+  `rpc_action` is read with `Map.get/3` throughout rather than by struct field,
+  because the codegen tests pass a bare map for actions that set no options.
   """
   def get_action_context(resource, action, rpc_action) do
     # Check both Ash's native get? and RPC's get?/get_by options
     ash_get? = action.type == :read and Map.get(action, :get?, false)
     rpc_get? = Map.get(rpc_action, :get?, false)
-    rpc_get_by = (Map.get(rpc_action, :get_by) || []) != []
+    get_by = if action.type == :read, do: Map.get(rpc_action, :get_by) || [], else: []
 
-    is_get_action = ash_get? or rpc_get? or rpc_get_by
+    is_get_action = ash_get? or rpc_get? or get_by != []
+    list_read? = action.type == :read and not is_get_action
 
     identities =
       if action.type in [:update, :destroy] do
@@ -52,10 +58,10 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.ConfigBuilder do
     %{
       requires_tenant: AshKotlinMultiplatform.requires_tenant_parameter?(resource),
       identities: identities,
-      supports_pagination:
-        action.type == :read and not is_get_action and
-          ActionIntrospection.action_supports_pagination?(action),
-      supports_filtering: action.type == :read and not is_get_action,
+      supports_pagination: list_read? and ActionIntrospection.action_supports_pagination?(action),
+      supports_filtering: list_read? and Map.get(rpc_action, :enable_filter?, true),
+      supports_sorting: list_read? and Map.get(rpc_action, :enable_sort?, true),
+      get_by: get_by,
       action_input_type: ActionIntrospection.action_input_type(resource, action),
       is_get_action: is_get_action
     }
@@ -97,6 +103,14 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.ConfigBuilder do
         fields
       end
 
+    # Add the get_by lookup for a single-record read
+    fields =
+      if context.get_by != [] do
+        fields ++ [{:get_by, "#{rpc_action_name_pascal}GetBy", false}]
+      else
+        fields
+      end
+
     # Add input field based on input type
     fields =
       case context.action_input_type do
@@ -121,11 +135,14 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.ConfigBuilder do
     # Add filter and sort for list reads
     fields =
       if context.supports_filtering do
-        fields ++
-          [
-            {:filter, "Map<String, JsonElement>?", true, "null"},
-            {:sort, "String?", true, "null"}
-          ]
+        fields ++ [{:filter, "Map<String, JsonElement>?", true, "null"}]
+      else
+        fields
+      end
+
+    fields =
+      if context.supports_sorting do
+        fields ++ [{:sort, "String?", true, "null"}]
       else
         fields
       end
@@ -168,9 +185,43 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.ConfigBuilder do
       end)
 
     """
-    data class #{rpc_action_name_pascal}Config(
+    #{build_get_by_type(resource, context.get_by, rpc_action_name_pascal)}data class #{rpc_action_name_pascal}Config(
     #{Enum.join(field_defs, ",\n")}
     )
+    """
+  end
+
+  # The lookup fields of a single-record read, as their own @Serializable class
+  # rather than a Map<String, JsonElement>: the server requires exactly these
+  # fields and rejects anything else, so a client that has to assemble the map by
+  # hand learns at runtime what the compiler could have told it.
+  #
+  # @SerialName carries the resource's own field name, matching
+  # InputTypes.generate_input_type/2 — `Runner` snake-cases every incoming key,
+  # so both spellings arrive, and emitting one keeps the two request payloads
+  # spelled the same way on the wire.
+  defp build_get_by_type(_resource, [], _pascal_name), do: ""
+
+  defp build_get_by_type(resource, get_by, pascal_name) do
+    field_defs =
+      Enum.map_join(get_by, ",\n", fn field_name ->
+        attribute = Ash.Resource.Info.attribute(resource, field_name)
+        kotlin_type = TypeMapper.get_kotlin_type_for_type(attribute.type, attribute.constraints)
+        camel_name = Helpers.snake_to_camel_case(field_name)
+        serial_name = Atom.to_string(field_name)
+
+        annotation =
+          if serial_name == camel_name, do: "", else: "    @SerialName(\"#{serial_name}\")\n"
+
+        "#{annotation}    val #{camel_name}: #{kotlin_type}"
+      end)
+
+    """
+    @Serializable
+    data class #{pascal_name}GetBy(
+    #{field_defs}
+    )
+
     """
   end
 
