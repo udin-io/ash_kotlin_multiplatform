@@ -44,13 +44,17 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.FunctionGenerators.HttpRenderer do
         include_metadata_fields: shape.has_metadata
       )
 
+    # Ktor resolves `.body()` from the declared return type, so naming the type
+    # here is what makes the response decode into it (#22).
+    return_type = FunctionCore.determine_return_type(shape)
+
     """
     #{config_type}
     suspend fun #{function_name}(
         client: HttpClient,
         config: #{config_name},
         endpoint: String = "#{endpoint}"
-    ): RpcResult {
+    ): RpcResult<#{return_type}> {
         return client.post(endpoint) {
             contentType(ContentType.Application.Json)
             config.headers.forEach { (key, value) ->

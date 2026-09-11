@@ -23,6 +23,14 @@ defmodule AshKotlinMultiplatform.Test.Domain do
     resource AshKotlinMultiplatform.Test.Author do
       rpc_action :list_authors, :read
       rpc_action :create_author, :create
+
+      # Author is the only resource with a data layer, so it is the only one
+      # whose destroy, get and keyset reads can be run for real — which is what
+      # the round-trip gate needs in order to decode each typed return shape
+      # `FunctionCore.determine_return_type/1` can produce (#22).
+      rpc_action :destroy_author, :destroy
+      rpc_action :get_author, :by_id
+      rpc_action :keyset_authors, :keyset_paged
     end
 
     resource AshKotlinMultiplatform.Test.Book do

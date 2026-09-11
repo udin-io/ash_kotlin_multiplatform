@@ -98,7 +98,7 @@ defmodule AshKotlinMultiplatform.Codegen.SharedJsonTest do
 
       refute kotlin =~ "Json {"
       refute kotlin =~ "private val json"
-      assert kotlin =~ "ashRpcJson.decodeFromJsonElement<RpcResult>(resp)"
+      assert kotlin =~ "ashRpcJson.decodeFromJsonElement<RpcResult<JsonElement>>(resp)"
     end
   end
 end

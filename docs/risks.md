@@ -109,13 +109,27 @@ dependency jars rather than committing a wrapper.
 
 ## Product
 
-### The generated client returns an untyped result
+### The request half of the client is still untyped
 
-`RpcResult` is untyped and the generated per-action result types are
-orphaned (#22), so the end-to-end type safety the README leads with stops at
-the response boundary.
+`RpcResult<T>` types the response (#22) and `AshRpcError` types the failure
+(#24), but a config's `filter` and `page` are still
+`Map<String, JsonElement>?`. `FilterTypes` emits a `{Resource}FilterInput`
+per resource that nothing references, so `generate_filter_types: true`
+produces dead code.
 
-*Watch:* #22, and #24 alongside it — the client cannot decode the server's
-own error shape either.
-*Do:* fix them together. Typed success with untyped failure is not type
-safety.
+*Watch:* #65, and whether a consumer hand-builds a filter map and gets it
+wrong with no compile error.
+*Do:* type `filter` as `{Resource}FilterInput?` and `page` as a page config,
+gated on `generate_filter_types?/0` so the flag keeps meaning something.
+
+### Two hand-written serializers read two shapes each
+
+`AshPage<T>` and `AshMetadata<T, M>` decode a JSON shape the request
+decides, not the action (#22). `AshMetadata` uses a heuristic: an object
+carrying both `data` and `metadata` is the envelope.
+
+*Watch:* a resource that publishes attributes named both `data` and
+`metadata`, read with the metadata narrowed away — the only input that
+misreads.
+*Do:* the round-trip gate decodes both shapes of both types. Keep a check
+there for any new shape `Rpc.Runner` learns to send.

@@ -14,6 +14,82 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.MetadataTypes do
   alias AshIntrospection.Helpers
 
   @doc """
+  Generates `AshMetadata<T, M>`, the envelope a mutation with exposed metadata
+  returns, and its serializer.
+
+  Static: the same Kotlin for every application, emitted once per file.
+
+  A create, update or destroy that exposes metadata does not return the record.
+  `AshIntrospection.Rpc.Pipeline.add_mutation_metadata/3` wraps it:
+  `%{data: record, metadata: %{...}}`. But only when some metadata survives —
+  the same function returns the bare record when `show_metadata` is empty, and
+  a client makes it empty by sending `metadataFields: []` or a field name the
+  DSL does not expose (`AshKotlinMultiplatform.Rpc.Runner.narrow_metadata_fields/2`).
+  Both shapes are reachable from one generated function, so the serializer reads
+  both rather than the declaration promising one.
+
+  The heuristic is "an object carrying both `data` and `metadata` is the
+  envelope". It misreads exactly one case: a resource that publishes attributes
+  called both `data` and `metadata`, fetched with the metadata narrowed away.
+  Nothing else can produce that pair, because the wrapped shape has no other
+  keys.
+  """
+  def generate_metadata_envelope_type do
+    """
+    // What a create, update or destroy that exposes metadata returns. The server
+    // wraps the record only while some metadata survives the client's
+    // `metadataFields` narrowing, so this reads the bare record too.
+    @Serializable(with = AshMetadataSerializer::class)
+    data class AshMetadata<T, M>(
+        val data: T,
+        val metadata: M? = null
+    )
+
+    class AshMetadataSerializer<T, M>(
+        private val data: KSerializer<T>,
+        private val metadata: KSerializer<M>
+    ) : KSerializer<AshMetadata<T, M>> {
+        override val descriptor: SerialDescriptor =
+            buildClassSerialDescriptor("AshMetadata", data.descriptor, metadata.descriptor)
+
+        override fun deserialize(decoder: Decoder): AshMetadata<T, M> {
+            val input = decoder as? JsonDecoder
+                ?: throw SerializationException("AshMetadata decodes from JSON only")
+            val json = input.decodeJsonElement()
+            val wrapped = json is JsonObject && json.containsKey("data") && json.containsKey("metadata")
+
+            return if (wrapped) {
+                val obj = json.jsonObject
+                AshMetadata(
+                    data = input.json.decodeFromJsonElement(this.data, obj["data"]!!),
+                    metadata = obj["metadata"]
+                        ?.takeIf { it !is JsonNull }
+                        ?.let { input.json.decodeFromJsonElement(this.metadata, it) }
+                )
+            } else {
+                AshMetadata(data = input.json.decodeFromJsonElement(this.data, json))
+            }
+        }
+
+        override fun serialize(encoder: Encoder, value: AshMetadata<T, M>) {
+            val output = encoder as? JsonEncoder
+                ?: throw SerializationException("AshMetadata encodes to JSON only")
+
+            output.encodeJsonElement(buildJsonObject {
+                put("data", output.json.encodeToJsonElement(data, value.data))
+                put(
+                    "metadata",
+                    value.metadata
+                        ?.let { output.json.encodeToJsonElement(metadata, it) }
+                        ?: JsonNull
+                )
+            })
+        }
+    }
+    """
+  end
+
+  @doc """
   Gets the list of metadata fields that should be exposed for an RPC action.
 
   ## Parameters

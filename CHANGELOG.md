@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking.** Every generated RPC function now returns `RpcResult<T>` named
+  for its own action, where it returned the same untyped `RpcResult` with
+  `data: JsonElement?` before. `createTodo()` returns `RpcResult<Todo>`,
+  `listTodos()` returns `RpcResult<AshPage<Todo>>`, and a mutation that
+  exposes metadata returns `RpcResult<AshMetadata<Todo, CreateTodoMetadata>>`.
+  Callers replace `result.dataAs<Todo>()` with `result.data`. `dataAs()`
+  survives as an extension on `RpcResult<JsonElement>`, which is what the
+  Phoenix channel client returns — it takes the action name as a string, so
+  it has no type to name.
+
+  Two new types carry the shapes the server chooses per request rather than
+  per action. `AshPage<T>` reads both the bare JSON array a read sends
+  without a `page` and the offset or keyset page object it sends with one.
+  `AshMetadata<T, M>` reads both the `{data, metadata}` envelope a mutation
+  sends and the bare record it falls back to when the client narrows the
+  metadata away. Both are decoded from real `Rpc.Runner` responses by the CI
+  round-trip gate.
+
+  Removed along the way: the `{Action}Result` sealed classes and the
+  `{Action}OffsetResult` / `{Action}KeysetResult` / `{Action}PaginatedResult`
+  family. No generated function ever referenced them, and neither could have
+  decoded what the server sends — the sealed classes need a class
+  discriminator `Rpc.Runner` does not write, and the pagination classes
+  declare `previousPage: String = ""` against a server that sends `null`.
+
+### Fixed
+
+- A destroy's generated return type said `Boolean`. The server returns the
+  destroyed record: `AshIntrospection.Rpc.Pipeline.execute_destroy_action/3`
+  bulk-destroys with `return_records?: true`. Nothing had noticed, because
+  `FunctionCore.determine_return_type/1` had no caller.
+
 ### Added
 
 - **Breaking for existing users.** Compile-time check that every action

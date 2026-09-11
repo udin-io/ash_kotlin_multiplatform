@@ -69,5 +69,27 @@ defmodule AshKotlinMultiplatform.Test.Author do
       primary? true
       accept [:name, :email]
     end
+
+    # `get? true` is the only way an action reaches the get branch of
+    # `FunctionCore.determine_return_type/1`: the `kotlin_rpc` DSL has no `get?`
+    # or `get_by` option, so `ConfigBuilder.get_action_context/3` can only read
+    # it off the Ash action.
+    read :by_id do
+      get? true
+
+      argument :id, :uuid do
+        allow_nil? false
+      end
+
+      filter expr(id == ^arg(:id))
+    end
+
+    # Keyset is the half of `AshPage` that offset never exercises: the cursors,
+    # and `previousPage`/`nextPage`, which the server sends as `null` on an empty
+    # page. Ash picks offset whenever both are allowed and the request carries no
+    # cursor, so reaching keyset needs an action that allows nothing else.
+    read :keyset_paged do
+      pagination keyset?: true, offset?: false, required?: true, default_limit: 2
+    end
   end
 end

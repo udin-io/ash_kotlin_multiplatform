@@ -4,163 +4,116 @@
 
 defmodule AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.PaginationTypes do
   @moduledoc """
-  Generates Kotlin pagination result types for RPC actions.
+  Generates the one Kotlin type every paginated read returns.
 
-  Supports:
-  - Offset pagination (limit/offset)
-  - Keyset pagination (limit/after/before)
-  - Mixed pagination (both offset and keyset)
+  A read that supports pagination answers with two different JSON shapes, and
+  which one it sends is decided by the request, not by the action:
+  `AshIntrospection.Rpc.ResultProcessor.process/4` returns a bare list when the
+  request carried no `page`, and a page object (`results`, `hasMore`, `limit`,
+  `offset` or the keyset cursors, `count`, `type`) when it did. Ash 3 defaults
+  every read to `offset? true, keyset? true, required? false`
+  (`Ash.Resource.Info.action(resource, :read).pagination`), so "supports
+  pagination" is true for almost every read a consumer exposes, and a generated
+  function cannot know at compile time which shape it will receive.
+
+  So there is one type, `AshPage<T>`, and a hand-written serializer that reads
+  both shapes into it. That is what lets `listTodos()` declare a return type at
+  all. Until #22 this module emitted a `{Action}OffsetResult` /
+  `{Action}KeysetResult` / `{Action}PaginatedResult` family per action, none of
+  which was ever referenced by a generated function, and none of which could
+  have decoded the un-paginated call.
   """
 
   alias AshIntrospection.Codegen.ActionIntrospection
-  alias AshIntrospection.Helpers
 
   @doc """
-  Generates the pagination result type based on the action's pagination support.
+  Generates `AshPage<T>` and its serializer.
 
-  ## Parameters
+  Static: the same Kotlin for every application, emitted once per file.
 
-    * `resource` - The Ash resource
-    * `action` - The Ash action
-    * `rpc_action_name` - The name of the RPC action
-    * `resource_name` - The Kotlin resource type name
-    * `has_metadata` - Boolean indicating if metadata is enabled
-
-  ## Returns
-
-  A string containing the Kotlin result type definition for the appropriate pagination type.
+  Every field but `results` is nullable or defaulted, because the server omits
+  or nulls them freely — `count` is `null` unless the request asked for it, and
+  the keyset cursors are `null` on an empty page
+  (`AshIntrospection.Rpc.ResultProcessor.process/4`). The `type` discriminator
+  the server sends (`"offset"` or `"keyset"`) is deliberately not a field: it
+  says which pagination Ash applied, which the caller can already tell from
+  which cursors came back.
   """
-  def generate_pagination_result_type(
-        _resource,
-        action,
-        rpc_action_name,
-        resource_name,
-        has_metadata
-      ) do
-    supports_offset = ActionIntrospection.action_supports_offset_pagination?(action)
-    supports_keyset = ActionIntrospection.action_supports_keyset_pagination?(action)
-    rpc_action_name_pascal = Helpers.snake_to_pascal_case(rpc_action_name)
-
-    cond do
-      supports_offset and supports_keyset ->
-        generate_mixed_pagination_result_type(
-          rpc_action_name_pascal,
-          resource_name,
-          has_metadata
-        )
-
-      supports_offset ->
-        generate_offset_pagination_result_type(
-          rpc_action_name_pascal,
-          resource_name,
-          has_metadata
-        )
-
-      supports_keyset ->
-        generate_keyset_pagination_result_type(
-          rpc_action_name_pascal,
-          resource_name,
-          has_metadata
-        )
-
-      true ->
-        ""
-    end
-  end
-
-  @doc """
-  Generates an offset pagination result data class.
-
-  The result includes:
-  - results: List of items
-  - hasMore: Boolean indicating if more results exist
-  - limit: Number of items per page
-  - offset: Current offset
-  - count: Optional total count
-  """
-  def generate_offset_pagination_result_type(rpc_action_name_pascal, resource_name, _has_metadata) do
+  def generate_page_type do
     """
-    @Serializable
-    data class #{rpc_action_name_pascal}OffsetResult(
-        val results: List<#{resource_name}>,
-        val hasMore: Boolean,
-        val limit: Int,
-        val offset: Int,
-        val count: Int? = null
+    // What a read returns. The server sends a bare JSON array when the request
+    // carried no `page` and a page object when it did, so this one type reads
+    // both and `results` is always populated.
+    @Serializable(with = AshPageSerializer::class)
+    data class AshPage<T>(
+        val results: List<T>,
+        val hasMore: Boolean = false,
+        val limit: Int? = null,
+        val offset: Int? = null,
+        val count: Int? = null,
+        val after: String? = null,
+        val before: String? = null,
+        val previousPage: String? = null,
+        val nextPage: String? = null
     )
-    """
-  end
 
-  @doc """
-  Generates a keyset pagination result data class.
+    // A generic class annotated `@Serializable(with = ...)` resolves through a
+    // serializer constructed with one KSerializer per type parameter, which is
+    // why this takes `element`:
+    // https://kotlinlang.org/docs/serialization-custom-serializers.html
+    class AshPageSerializer<T>(private val element: KSerializer<T>) : KSerializer<AshPage<T>> {
+        override val descriptor: SerialDescriptor =
+            buildClassSerialDescriptor("AshPage", element.descriptor)
 
-  The result includes:
-  - results: List of items
-  - hasMore: Boolean indicating if more results exist
-  - limit: Number of items per page
-  - after: Cursor for next page (or null)
-  - before: Cursor for previous page (or null)
-  - previousPage: Cursor string for previous page
-  - nextPage: Cursor string for next page
-  - count: Optional total count
-  """
-  def generate_keyset_pagination_result_type(rpc_action_name_pascal, resource_name, _has_metadata) do
-    """
-    @Serializable
-    data class #{rpc_action_name_pascal}KeysetResult(
-        val results: List<#{resource_name}>,
-        val hasMore: Boolean,
-        val limit: Int,
-        @SerialName("after")
-        val afterCursor: String? = null,
-        @SerialName("before")
-        val beforeCursor: String? = null,
-        val previousPage: String = "",
-        val nextPage: String = "",
-        val count: Int? = null
-    )
-    """
-  end
+        override fun deserialize(decoder: Decoder): AshPage<T> {
+            val input = decoder as? JsonDecoder
+                ?: throw SerializationException("AshPage decodes from JSON only")
 
-  @doc """
-  Generates a mixed pagination sealed class (supports both offset and keyset).
+            return when (val json = input.decodeJsonElement()) {
+                is JsonArray -> AshPage(results = decodeResults(input, json))
 
-  Uses sealed class hierarchy to discriminate between offset and keyset results.
-  """
-  def generate_mixed_pagination_result_type(rpc_action_name_pascal, resource_name, _has_metadata) do
-    """
-    @Serializable
-    sealed class #{rpc_action_name_pascal}PaginatedResult {
-        abstract val results: List<#{resource_name}>
-        abstract val hasMore: Boolean
-        abstract val limit: Int
-        abstract val count: Int?
+                is JsonObject -> AshPage(
+                    results = json["results"]?.let { decodeResults(input, it) } ?: emptyList(),
+                    hasMore = json["hasMore"]?.jsonPrimitive?.booleanOrNull ?: false,
+                    limit = json["limit"]?.jsonPrimitive?.intOrNull,
+                    offset = json["offset"]?.jsonPrimitive?.intOrNull,
+                    count = json["count"]?.jsonPrimitive?.intOrNull,
+                    after = json["after"]?.jsonPrimitive?.contentOrNull,
+                    before = json["before"]?.jsonPrimitive?.contentOrNull,
+                    previousPage = json["previousPage"]?.jsonPrimitive?.contentOrNull,
+                    nextPage = json["nextPage"]?.jsonPrimitive?.contentOrNull
+                )
+
+                else -> throw SerializationException(
+                    "expected a list or a page object, got $json"
+                )
+            }
+        }
+
+        override fun serialize(encoder: Encoder, value: AshPage<T>) {
+            val output = encoder as? JsonEncoder
+                ?: throw SerializationException("AshPage encodes to JSON only")
+
+            output.encodeJsonElement(buildJsonObject {
+                put("results", output.json.encodeToJsonElement(ListSerializer(element), value.results))
+                put("hasMore", value.hasMore)
+                value.limit?.let { put("limit", it) }
+                value.offset?.let { put("offset", it) }
+                value.count?.let { put("count", it) }
+                value.after?.let { put("after", it) }
+                value.before?.let { put("before", it) }
+                value.previousPage?.let { put("previousPage", it) }
+                value.nextPage?.let { put("nextPage", it) }
+            })
+        }
+
+        private fun decodeResults(input: JsonDecoder, json: JsonElement): List<T> =
+            if (json is JsonNull) {
+                emptyList()
+            } else {
+                input.json.decodeFromJsonElement(ListSerializer(element), json)
+            }
     }
-
-    @Serializable
-    @SerialName("offset")
-    data class #{rpc_action_name_pascal}OffsetPaginatedResult(
-        override val results: List<#{resource_name}>,
-        override val hasMore: Boolean,
-        override val limit: Int,
-        override val count: Int? = null,
-        val offset: Int
-    ) : #{rpc_action_name_pascal}PaginatedResult()
-
-    @Serializable
-    @SerialName("keyset")
-    data class #{rpc_action_name_pascal}KeysetPaginatedResult(
-        override val results: List<#{resource_name}>,
-        override val hasMore: Boolean,
-        override val limit: Int,
-        override val count: Int? = null,
-        @SerialName("after")
-        val afterCursor: String? = null,
-        @SerialName("before")
-        val beforeCursor: String? = null,
-        val previousPage: String = "",
-        val nextPage: String = ""
-    ) : #{rpc_action_name_pascal}PaginatedResult()
     """
   end
 

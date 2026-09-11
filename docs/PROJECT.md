@@ -16,9 +16,10 @@ which page answers which, and what state that page is in.
 
 An Elixir library that reads Ash resources and domains at compile time and
 writes a client for them: one `AshRpc.kt` file of Kotlin, and a parallel
-Swift generator. The generated client carries the resource data classes, the
-per-action input and result types, an HTTP RPC function per action, and a
-Phoenix Channel client. The library also ships the server half — a Phoenix
+Swift generator. The generated client carries the resource data classes, a
+per-action input type, an HTTP RPC function per action returning
+`RpcResult<T>` typed on what that action sends back, and a Phoenix Channel
+client. The library also ships the server half — a Phoenix
 controller and an action runner — so the same Ash domain answers the
 requests the generated client makes. It is alpha software; the API changes
 between versions.
@@ -27,10 +28,10 @@ between versions.
 
 | Page | Answers | Status |
 | ---- | ------- | ------ |
-| [architecture.md](architecture.md) | How a resource becomes Kotlin and Swift, and what runs at request time | Current as of #49 |
-| [decisions.md](decisions.md) | The choices that still shape the code, and what each cost | Current as of #49 |
-| [risks.md](risks.md) | What could go wrong, what we watch, what we would do | Current as of #49 |
-| [roadmap.md](roadmap.md) | What shipped, what is in flight, what is next, what was refused | Current as of #49 |
+| [architecture.md](architecture.md) | How a resource becomes Kotlin and Swift, and what runs at request time | Current as of #22 |
+| [decisions.md](decisions.md) | The choices that still shape the code, and what each cost | Current as of #22 |
+| [risks.md](risks.md) | What could go wrong, what we watch, what we would do | Current as of #22 |
+| [roadmap.md](roadmap.md) | What shipped, what is in flight, what is next, what was refused | Current as of #22 |
 
 ## Keeping it current
 

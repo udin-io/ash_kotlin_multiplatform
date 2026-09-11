@@ -102,51 +102,68 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.FunctionGenerators.FunctionCore do
   end
 
   @doc """
-  Determines the return type for an action.
+  Determines the Kotlin type an action's response `data` decodes into.
+
+  This is the `T` in the `RpcResult<T>` the generated function returns, so each
+  branch has to name the shape `AshKotlinMultiplatform.Rpc.Runner` actually
+  sends, not the shape the action name suggests. Three of them are not obvious,
+  and each was measured against a real response before it was written here:
+
+  * **A destroy returns the destroyed record**, not a boolean.
+    `AshIntrospection.Rpc.Pipeline.execute_destroy_action/3` bulk-destroys with
+    `return_records?: true` and hands back `records: [record]`.
+  * **A read that supports pagination returns `AshPage<T>`**, which reads both
+    the bare list and the page object — see
+    `AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.PaginationTypes`. Ash 3
+    defaults every read to offset and keyset pagination, so this is the common
+    branch, not the exotic one.
+  * **A mutation that exposes metadata returns `AshMetadata<T, M>`**, because
+    `AshIntrospection.Rpc.Pipeline.add_mutation_metadata/3` wraps the record —
+    see `AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.MetadataTypes`. A
+    read does not wrap; it merges the metadata into each record instead.
+
+  A get action keeps the resource type rather than a nullable one: `data` is
+  already `T?` on `RpcResult`, so `Resource?` would only add a second question
+  mark.
+
+  Returns `JsonElement` for any shape this cannot name — a generic action
+  returning a map, or an Ash type the mapper does not recognise.
+  kotlinx-serialization has no serializer for `Any` and never will, so
+  `JsonElement` is what an untyped shape takes everywhere in this generator
+  (#51).
   """
   def determine_return_type(shape) do
-    action = shape.action
-    resource_name = shape.resource_name
-    context = shape.context
+    shape
+    |> data_type()
+    |> wrap_in_metadata_envelope(shape)
+  end
 
-    cond do
-      action.type == :destroy ->
-        "Boolean"
-
-      action.type == :action ->
-        # Generic action - check return type
-        case ActionIntrospection.action_returns_field_selectable_type?(action) do
-          {:ok, :resource, _} ->
-            "#{resource_name}"
-
-          {:ok, :array_of_resource, _} ->
-            "List<#{resource_name}>"
-
-          {:ok, :typed_map, _} ->
-            "Map<String, JsonElement>"
-
-          {:ok, :unconstrained_map, _} ->
-            "Map<String, JsonElement>"
-
-          _ ->
-            "Map<String, JsonElement>"
-        end
-
-      action.type == :read and context.is_get_action ->
-        "#{resource_name}?"
-
-      action.type == :read and context.supports_pagination ->
-        # Return paginated result
-        "Map<String, JsonElement>"
-
-      action.type == :read ->
-        "List<#{resource_name}>"
-
-      action.type in [:create, :update] ->
-        "#{resource_name}"
-
-      true ->
-        "Map<String, JsonElement>"
+  defp data_type(%{action: %{type: :action} = action, resource_name: resource_name}) do
+    case ActionIntrospection.action_returns_field_selectable_type?(action) do
+      {:ok, :resource, _} -> resource_name
+      {:ok, :array_of_resource, _} -> "List<#{resource_name}>"
+      _ -> "JsonElement"
     end
   end
+
+  defp data_type(%{action: %{type: :read}, context: context, resource_name: resource_name}) do
+    cond do
+      context.is_get_action -> resource_name
+      context.supports_pagination -> "AshPage<#{resource_name}>"
+      true -> "List<#{resource_name}>"
+    end
+  end
+
+  defp data_type(%{action: %{type: type}, resource_name: resource_name})
+       when type in [:create, :update, :destroy],
+       do: resource_name
+
+  defp data_type(_shape), do: "JsonElement"
+
+  defp wrap_in_metadata_envelope(data_type, %{has_metadata: true, action: %{type: type}} = shape)
+       when type in [:create, :update, :destroy] do
+    "AshMetadata<#{data_type}, #{shape.rpc_action_name_pascal}Metadata>"
+  end
+
+  defp wrap_in_metadata_envelope(data_type, _shape), do: data_type
 end

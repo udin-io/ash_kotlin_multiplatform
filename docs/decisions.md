@@ -189,3 +189,48 @@ Cost: a fixture that has to stay in step. The mix task writes responses and
 check proves nothing. The harness is one source compiled into both
 `:datetime_library` subprojects, so every check has to assert on `toString()`
 rather than on a concrete date class.
+
+## 2026-09-11 — `RpcResult<T>`, not a result class per action
+
+Every generated RPC function returns `RpcResult<T>` with `T` named for that
+action: `RpcResult<Author>`, `RpcResult<AshPage<Author>>`,
+`RpcResult<AshMetadata<Event, RegisterEventMetadata>>` (#22).
+
+Why not the `{Action}Result` sealed classes the generator already emitted?
+Because nothing could write a helper over them. Fifteen unrelated classes
+with the same three properties cannot be the parameter of a
+`fun <T> handle(result: RpcResult<T>)`, and every consumer would write the
+same `when` fifteen times. They were also wrong on the wire: a
+`@Serializable sealed class` makes kotlinx look for a class discriminator,
+and `Rpc.Runner` sends none — the defect that made every `validateX()` call
+throw in #24. The Swift generator has emitted `RpcResult<T: Codable>` since
+it was written, so this is also the two generators agreeing.
+
+Cost: breaking for every caller. `result.dataAs<Todo>()` becomes
+`result.data`, and a caller who held an `RpcResult` now holds an
+`RpcResult<Todo>`. `dataAs()` survives as an extension on
+`RpcResult<JsonElement>`, which is what the channel client returns.
+
+## 2026-09-11 — One page and one envelope type, with hand-written serializers
+
+`AshPage<T>` is what every paginated read returns and `AshMetadata<T, M>` is
+what a mutation with exposed metadata returns. Both carry a hand-written
+`KSerializer` that reads two different JSON shapes into one type.
+
+Why: which shape the server sends is decided by the request, not by the
+action, so a generated function cannot name one. A read answers with a bare
+JSON array when the request carried no `page` and a page object when it did
+(`AshIntrospection.Rpc.ResultProcessor.process/4`), and Ash 3 defaults every
+read to offset **and** keyset pagination, so that is nearly every read. A
+mutation wraps its record as `%{data:, metadata:}` only while some metadata
+survives the client's `metadataFields` narrowing, and returns the bare record
+otherwise (`AshIntrospection.Rpc.Pipeline.add_mutation_metadata/3`). The
+alternative — declare one shape and let the other throw — is the defect
+class of #24, #51 and #54.
+
+Cost: two serializers this repository maintains by hand, and one heuristic.
+`AshMetadata` treats an object carrying both `data` and `metadata` as the
+envelope, which misreads a resource that publishes attributes with both of
+those names when the metadata has been narrowed away. Nothing else produces
+that pair. Both are decoded from real `Runner` responses by the round-trip
+gate, including the narrowed-away case.
