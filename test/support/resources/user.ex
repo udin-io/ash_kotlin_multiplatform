@@ -9,7 +9,7 @@ defmodule AshKotlinMultiplatform.Test.User do
     extensions: [AshKotlinMultiplatform.Resource]
 
   kotlin_multiplatform do
-    type_name "User"
+    type_name("User")
   end
 
   attributes do
