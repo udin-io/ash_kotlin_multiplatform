@@ -48,19 +48,24 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.GenRoundtripFixture do
     # author checks count rows, so the order they run in is part of the fixture.
     # `sparse_fieldset` asserts on a single author and must go before the typed
     # entries add more.
-    responses =
-      [
-        {"populated_untyped_map", populated_untyped_map()},
-        {"date_fields", date_fields()},
-        {"action_metadata", action_metadata()},
-        {"metadata_narrowed_away", metadata_narrowed_away()},
-        {"sparse_fieldset", sparse_fieldset()},
-        {"error", error()},
-        {"validation_valid", validation_valid()},
-        {"validation_invalid", validation_invalid()}
-      ]
-      |> Kernel.++(typed_results())
-      |> Map.new()
+    base = [
+      {"populated_untyped_map", populated_untyped_map()},
+      {"date_fields", date_fields()},
+      {"action_metadata", action_metadata()},
+      {"metadata_narrowed_away", metadata_narrowed_away()},
+      {"sparse_fieldset", sparse_fieldset()},
+      {"error", error()},
+      {"validation_valid", validation_valid()},
+      {"validation_invalid", validation_invalid()}
+    ]
+
+    # Bound in three steps rather than piped, so the order these run in is the
+    # order they are written: `sparse_fieldset` counts authors, and the typed
+    # entries create three more.
+    typed = typed_results()
+    get_by = get_by_results(typed)
+
+    responses = Map.new(base ++ typed ++ get_by)
 
     json = Phoenix.json_library().encode!(responses)
 
@@ -159,6 +164,30 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.GenRoundtripFixture do
          "input" => %{"id" => "00000000-0000-0000-0000-000000000000"}
        })},
       {"typed_destroy", call(%{"action" => "destroy_author", "identity" => id(doomed)})}
+    ]
+  end
+
+  # The `rpc_action` options of #25. Each entry is a response the client's own
+  # config class has to produce or read, and every one of these branches was
+  # unreachable before the DSL declared the options — a `get?` read had no way
+  # to say which record it wanted, so it ran as a list read.
+  #
+  # Reuses the author `typed_results/0` already created rather than creating
+  # another: `typed_list` counts rows, and it runs first.
+  defp get_by_results(typed) do
+    {"typed_create", created} = Enum.find(typed, &match?({"typed_create", _}, &1))
+    author_id = id(created)
+
+    [
+      {"get_by_hit", call(%{"action" => "fetch_author", "getBy" => %{"id" => author_id}})},
+      {"get_by_null",
+       call(%{"action" => "find_author", "getBy" => %{"email" => "nobody@e.com"}})},
+      {"get_by_missing_field", call(%{"action" => "fetch_author"})},
+      {"get_by_unexpected_field",
+       call(%{"action" => "fetch_author", "getBy" => %{"id" => author_id, "email" => "x@e.com"}})},
+      {"filter_refused",
+       call(%{"action" => "list_books_unfiltered", "filter" => %{"title" => "Dune"}})},
+      {"sort_refused", call(%{"action" => "list_books_fixed_order", "sort" => "title"})}
     ]
   end
 
