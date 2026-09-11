@@ -25,9 +25,11 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
       """
       #{datetime_package}
       import kotlinx.serialization.KSerializer
+      import kotlinx.serialization.builtins.ListSerializer
       import kotlinx.serialization.descriptors.PrimitiveKind
       import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
       import kotlinx.serialization.descriptors.SerialDescriptor
+      import kotlinx.serialization.descriptors.buildClassSerialDescriptor
       import kotlinx.serialization.encoding.Decoder
       import kotlinx.serialization.encoding.Encoder
       import kotlinx.serialization.modules.SerializersModule
@@ -240,7 +242,21 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
   end
 
   @doc """
-  Generates the generic RPC result types.
+  Generates the result wrapper every generated RPC function returns.
+
+  `RpcResult` is generic over what the action returns, so `createTodo()` returns
+  `RpcResult<Todo>` and `listTodos()` returns `RpcResult<AshPage<Todo>>` and
+  `result.data` is already the type the caller wanted. Until #22 it was
+  `RpcResult` with `data: JsonElement?`, identical for all fifteen actions, and
+  the caller named the type by hand through `dataAs<T>()` — which the README
+  has always described as end-to-end type safety. The Swift generator has
+  emitted `RpcResult<T: Codable>` since it was written
+  (`AshKotlinMultiplatform.Swift.Codegen.generate_result_types/0`); this is the
+  Kotlin side catching up.
+
+  `dataAs()` survives as an extension on `RpcResult<JsonElement>`, which is what
+  the Phoenix channel client returns: it takes the action name as a string, so
+  it has no type to name.
   """
   # No `metadata` property. `Rpc.Runner.build_success_response/1` returns
   # `success` and `data` and nothing else, and action metadata reaches the
@@ -250,22 +266,22 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
   # readers looking for it in the wrong place (#24).
   def generate_generic_result_types do
     """
-    // Generic result wrapper
+    // Generic result wrapper, typed on what its action returns (#22).
     @Serializable
-    data class RpcResult(
+    data class RpcResult<T>(
         val success: Boolean,
-        val data: JsonElement? = null,
+        val data: T? = null,
         val errors: List<AshRpcError>? = null
     ) {
-        // Through `ashRpcJson`, not a fresh Json: this is the documented way to
-        // get a typed value out of a result, so a date or an untyped map here is
-        // the primary happy path, and its own Json carried no serializers (#54).
-        inline fun <reified T> dataAs(): T? {
-            return data?.let { ashRpcJson.decodeFromJsonElement<T>(it) }
-        }
-
         fun isSuccess(): Boolean = success
         fun isError(): Boolean = !success
+    }
+
+    // For an untyped result — the channel client's, or one decoded by hand.
+    // Through `ashRpcJson`, not a fresh Json: a date or an untyped map here is
+    // the primary happy path, and its own Json carried no serializers (#54).
+    inline fun <reified T> RpcResult<JsonElement>.dataAs(): T? {
+        return data?.let { ashRpcJson.decodeFromJsonElement<T>(it) }
     }
     """
   end

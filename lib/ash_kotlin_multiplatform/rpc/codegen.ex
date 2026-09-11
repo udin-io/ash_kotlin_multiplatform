@@ -12,6 +12,9 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
   - Enum classes for atom types with :one_of constraints
   - Sealed classes for union types
   - Input types for actions
+  - `RpcResult<T>`, the wrapper every RPC function returns
+  - `AshPage<T>`, what a read's `data` decodes into
+  - `AshMetadata<T, M>`, what a mutation with exposed metadata returns
   - Metadata types for action metadata
   - RPC functions (both functional and object-oriented styles)
   - Validation functions (if enabled)
@@ -28,7 +31,8 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
 
   alias AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.{
     InputTypes,
-    MetadataTypes
+    MetadataTypes,
+    PaginationTypes
   }
 
   alias AshKotlinMultiplatform.Rpc.Codegen.FunctionGenerators.HttpRenderer
@@ -121,6 +125,10 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
         KotlinStatic.generate_generic_result_types(),
         # Validation types (if enabled)
         non_empty_or_nil(validation_types, "// Validation Types"),
+        # The page a read returns
+        "// Pagination Types\n#{PaginationTypes.generate_page_type()}",
+        # The envelope a mutation with exposed metadata returns
+        "// Metadata Envelope\n#{MetadataTypes.generate_metadata_envelope_type()}",
         # Metadata types
         non_empty_or_nil(metadata_types, "// Metadata Types"),
         # Input types for actions

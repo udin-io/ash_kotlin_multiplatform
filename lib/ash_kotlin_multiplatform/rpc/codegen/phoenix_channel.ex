@@ -953,7 +953,9 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
          * @param input The input parameters for the action
          * @param fields The fields to return in the response
          * @param timeout Timeout in milliseconds
-         * @return RpcResult with the response data or errors
+         * @return RpcResult<JsonElement> with the response data or errors. The channel
+         * takes the action name as a string, so there is no type to name here;
+         * `dataAs<T>()` is the way through (#22).
          */
         suspend fun call(
             action: String,
@@ -961,7 +963,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
             fields: List<Any> = emptyList(),
             tenant: String? = null,
             timeout: Long = 10000L
-        ): RpcResult {
+        ): RpcResult<JsonElement> {
             val payload = buildJsonObject {
                 put("action", action)
                 input?.let { inp ->
@@ -993,9 +995,9 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
                 PushStatus.OK -> {
                     response?.let { resp ->
                         try {
-                            ashRpcJson.decodeFromJsonElement<RpcResult>(resp)
+                            ashRpcJson.decodeFromJsonElement<RpcResult<JsonElement>>(resp)
                         } catch (e: Exception) {
-                            RpcResult(
+                            RpcResult<JsonElement>(
                                 success = false,
                                 errors = listOf(AshRpcError(
                                     type = "deserialization_error",
@@ -1004,7 +1006,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
                                 ))
                             )
                         }
-                    } ?: RpcResult(
+                    } ?: RpcResult<JsonElement>(
                         success = false,
                         errors = listOf(AshRpcError(
                             type = "empty_response",
@@ -1016,9 +1018,9 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
                 PushStatus.ERROR -> {
                     response?.let { resp ->
                         try {
-                            ashRpcJson.decodeFromJsonElement<RpcResult>(resp)
+                            ashRpcJson.decodeFromJsonElement<RpcResult<JsonElement>>(resp)
                         } catch (e: Exception) {
-                            RpcResult(
+                            RpcResult<JsonElement>(
                                 success = false,
                                 errors = listOf(AshRpcError(
                                     type = "error",
@@ -1027,7 +1029,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
                                 ))
                             )
                         }
-                    } ?: RpcResult(
+                    } ?: RpcResult<JsonElement>(
                         success = false,
                         errors = listOf(AshRpcError(
                             type = "unknown_error",
@@ -1037,7 +1039,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
                     )
                 }
                 PushStatus.TIMEOUT -> {
-                    RpcResult(
+                    RpcResult<JsonElement>(
                         success = false,
                         errors = listOf(AshRpcError(
                             type = "timeout",
