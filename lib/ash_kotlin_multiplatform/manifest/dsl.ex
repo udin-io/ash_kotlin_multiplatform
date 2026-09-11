@@ -7,6 +7,7 @@ defmodule AshKotlinMultiplatform.Manifest.Dsl do
 
   use Spark.Dsl.Extension,
     transformers: [
-      AshKotlinMultiplatform.Manifest.Transformers.BuildManifest
+      AshKotlinMultiplatform.Manifest.Transformers.BuildManifest,
+      AshKotlinMultiplatform.Manifest.Transformers.DecorateManifest
     ]
 end

@@ -42,6 +42,7 @@ defmodule AshKotlinMultiplatform.Manifest.Transformers.BuildManifest do
   alias Spark.Dsl.Transformer
 
   @impl true
+  def after?(AshKotlinMultiplatform.Manifest.Transformers.DecorateManifest), do: false
   def after?(_), do: true
 
   @impl true
