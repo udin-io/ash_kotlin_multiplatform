@@ -456,3 +456,21 @@ Upstream added a `persistent_term` spec cache in `199f9cd` and deleted it in
 state. `Spark.Dsl.Extension.get_persisted/3` reads a compiled module attribute,
 which is already free at runtime, so a second cache would buy nothing and add a
 second thing to go stale. Not ported.
+
+## 2026-09-12 — `get_by` is a read-only option, enforced at compile time
+
+`get_by` names the fields a client sends to select one record. The generator
+emits that field for read actions only
+(`Rpc.Codegen.Helpers.ConfigBuilder.get_action_context/3`), so the other half of
+the DSL had two ways to go: teach the generator to emit `getBy` for writes, or
+refuse the combination. `Rpc.Verifiers.VerifyIdentities` now refuses it (#69).
+
+Why: an update or destroy already has a lookup key — `identities` — and a
+create looks up nothing. A second lookup mechanism on the same action would
+give two DSL options that select a record, with no rule saying which wins. The
+old behaviour was worse than either: the action compiled, shipped a client that
+could not send the field, and failed every call with `{:missing_get_by_fields,
+...}`.
+
+Cost: a project that set `get_by` on a write and never called the action now
+fails to compile. That build was already broken; it just had not been run yet.

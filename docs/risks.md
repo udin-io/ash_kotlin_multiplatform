@@ -94,21 +94,6 @@ declares only the v1 serializer.
 *Do:* nothing for the stock Phoenix socket, which offers both. A host that
 narrowed `serializer:` to v1 must add v2.
 
-### `get_by` on an action that is not a read fails only at runtime
-
-`VerifyIdentities` checks `get_by` on read actions only, and
-`ConfigBuilder.get_action_context/3` zeroes it for every other type. So
-`get_by [:id]` on a create, update or destroy compiles clean and generates a
-config class with no lookup field — and then `Rpc.Runner`'s `parse_get_by`,
-which runs on every action type, finds the configured field missing from the
-request and refuses the call. Every call to that action fails, and nothing
-said so at compile time.
-
-*Watch:* nothing. No test covers the combination.
-*Do:* extend the read branch of `VerifyIdentities` to reject a non-empty
-`get_by` on any action that is not a read, so the DSL entry breaks the build
-instead of the client.
-
 ### `main` is not formatter-clean
 
 `mix format --check-formatted` fails on ten files that predate the current
