@@ -47,8 +47,12 @@ defmodule AshKotlinMultiplatform.Test.Todo do
 
     attribute :metadata, :map, public?: true
 
+    # `notify_by_email` is two words on purpose. A typed map declares its field
+    # names, so stage 4 formats them; an untyped map's keys are data and survive
+    # as written (#71). A one-word field name is identical in both casings and
+    # so cannot tell those two rules apart.
     attribute :settings, :keyword do
-      constraints fields: [notify: [type: :boolean]]
+      constraints fields: [notify: [type: :boolean], notify_by_email: [type: :boolean]]
       public? true
     end
 

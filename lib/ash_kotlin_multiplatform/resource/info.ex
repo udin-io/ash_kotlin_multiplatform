@@ -40,11 +40,27 @@ defmodule AshKotlinMultiplatform.Resource.Info do
   end
 
   @doc """
-  Gets the original (internal) field name from a client field name.
+  Resolves a client field name to the internal field name.
 
-  Looks up the field_names mapping and returns the internal field name
-  if a mapping exists, otherwise returns nil.
+  A string is looked up against the `field_names` mapping and answers the
+  internal name, or `nil` when the resource declares no such override.
+
+  An atom passes through unchanged, because an atom is already an internal
+  name. That is the contract
+  `AshIntrospection.Rpc.FieldProcessing.FieldSelector` expects — its own
+  fallback is `if is_atom(field_name), do: field_name, else: nil` — and it calls
+  this twice per field: once with the client string, then again with whatever
+  the first call returned. Answering `nil` to the second call made a mapped
+  field unselectable: `"addressLine1"` resolved to `:address_line_1` and then
+  back to `nil`, and the request failed with `unknown_field` naming no field at
+  all (#71).
+
+  Existence is not checked here. An unmapped atom is returned as given and the
+  caller rejects it against the resource, which is what the shared default does.
   """
+  def get_original_field_name(_resource, client_field_name) when is_atom(client_field_name),
+    do: client_field_name
+
   def get_original_field_name(resource, client_field_name) do
     field_names = kotlin_multiplatform_field_names(resource)
 
@@ -54,6 +70,33 @@ defmodule AshKotlinMultiplatform.Resource.Info do
         internal_name
       end
     end)
+  end
+
+  @doc """
+  The name a field takes on the wire, as a string.
+
+  One answer for both directions of the contract: the key
+  `AshKotlinMultiplatform.Rpc.Pipeline` writes into a response, and the key
+  `AshKotlinMultiplatform.Codegen.ResourceSchemas` generates Kotlin to read.
+  They were computed separately and disagreed — codegen camelized the attribute
+  name and never read `field_names` at all — which is why the option was
+  documented and dead on both sides (#71).
+
+  A `field_names` override wins and is used verbatim, never re-formatted: the
+  override *is* the client's chosen name, so `output_field_formatter
+  :snake_case` does not turn `:addressLine1` into `address_line1`. Without an
+  override the formatter decides, as before.
+
+  Always a string. The DSL stores override values as atoms, and an atom key in a
+  payload of string keys encodes to the right JSON while failing every
+  `Map.get(data, "addressLine1")` in Elixir.
+  """
+  @spec client_field_name(module(), atom(), atom()) :: String.t()
+  def client_field_name(resource, field_name, formatter) do
+    case Keyword.get(kotlin_multiplatform_field_names(resource), field_name) do
+      nil -> AshIntrospection.FieldFormatter.format_field_name(field_name, formatter)
+      override -> to_string(override)
+    end
   end
 
   @doc """

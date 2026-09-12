@@ -97,12 +97,6 @@ private fun untypedMapKeepsNumberLiterals(): String {
 
 // #30: `:vector` reached Kotlin as JsonElement, so a caller unpacked the numbers
 // by hand. It is `List<Double>` now.
-//
-// A literal, not a fixture entry, because no Runner response can carry a vector
-// yet: #71 measured that `%Ash.Vector{}` reaches the encoder as its packed
-// binary and raises Jason.EncodeError. This is the number array the server will
-// send once it does, so the Kotlin half is checked now and the fixture entry
-// lands with #71.
 private fun vectorDecodesAsDoubles(): String {
     val sent = """{"id":"1","embedding":[0.25,-1.5,3.0]}"""
     val todo = ashRpcJson.decodeFromString<Todo>(sent)
@@ -110,6 +104,49 @@ private fun vectorDecodesAsDoubles(): String {
     expect("embedding", todo.embedding, listOf(0.25, -1.5, 3.0))
 
     return "embedding=${todo.embedding}"
+}
+
+// #71: the other half of #30, and the half that was actually broken. The check
+// above proved Kotlin can read a JSON number array; it could not prove the
+// server ever sends one, because until #71 a vector reached the encoder as the
+// packed binary `%Ash.Vector{}` carries and raised Jason.EncodeError. This
+// reads a real response, so it fails if stage 4 stops formatting the value.
+private fun vectorFromARealResponse(): String {
+    val todo = result("vector_attribute").dataAs<Todo>()!!
+
+    expect("embedding", todo.embedding, listOf(0.25, -1.5, 3.0))
+
+    return "embedding=${todo.embedding}"
+}
+
+// #71: a `field_names` override, asserted where it actually has to hold — the
+// generated property reading the key the server really wrote. Both sides
+// ignored the option before, so they agreed while doing nothing; a check on the
+// class declaration alone would have passed throughout.
+private fun fieldNamesOverrideDecodes(): String {
+    val author = result("field_names_override").dataAs<Author>()!!
+
+    expect("addressLine1", author.addressLine1, "10 Downing Street")
+    expect("name", author.name, "Mapped Name")
+
+    return "addressLine1=${author.addressLine1}"
+}
+
+// #71: an untyped map's keys are data, so a key stored as `created_by` comes
+// back as `created_by`. Stage 4 used to rename every key it walked, at every
+// depth, because it could not tell a field name from a map key. The typed
+// `settings` field next to it still gets its declared name camelCased, which is
+// the half that says this is a rule rather than an omission.
+private fun untypedMapKeysAreNotRenamed(): String {
+    val todo = result("populated_untyped_map").dataAs<Todo>()!!
+    val metadata = todo.metadata ?: throw AssertionError("metadata decoded as null")
+
+    expect("metadata.created_by", metadata["created_by"]?.jsonPrimitive?.content, "ada")
+    expect("metadata.createdBy absent", metadata["createdBy"], null)
+    expect("settings.notifyByEmail present", todo.settings?.containsKey("notifyByEmail"), true)
+    expect("settings.notify_by_email absent", todo.settings?.get("notify_by_email"), null)
+
+    return "metadata keys=${metadata.keys} settings keys=${todo.settings?.keys}"
 }
 
 // #54: dataAs() is the documented way to get a typed value out of a result, and
@@ -385,6 +422,9 @@ fun main() {
     check("#51 populated untyped map via dataAs()", ::populatedUntypedMap)
     check("#51 untyped map keeps number literals", ::untypedMapKeepsNumberLiterals)
     check("#30 a vector decodes as a list of doubles", ::vectorDecodesAsDoubles)
+    check("#71 a vector from a real response decodes", ::vectorFromARealResponse)
+    check("#71 a field_names override decodes", ::fieldNamesOverrideDecodes)
+    check("#71 untyped map keys are not renamed", ::untypedMapKeysAreNotRenamed)
     check("#54 date fields via dataAs()", ::dateFieldsViaDataAs)
     check("#54 date fields through the channel client's Json", ::dateFieldsThroughTheChannelJson)
     check("#54 input encoding through the shared Json", ::inputEncoding)

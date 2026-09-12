@@ -99,7 +99,12 @@ defmodule AshKotlinMultiplatform.MixProject do
 
   defp deps do
     [
-      {:ash_introspection, "~> 0.3"},
+      # 0.4.0 is the floor because it is the first release whose stage 4 formats
+      # a multi-record read: `Pipeline.format_resource_output/4` gained a clause
+      # for a bare list and one for a page envelope (ash_introspection #57/#64).
+      # Without it `Rpc.Runner` cannot adopt the type-aware formatter at all —
+      # every list and page read would return internal atom keys (#71).
+      {:ash_introspection, "~> 0.4"},
       # Floors below are security floors, not preferences. A library's floor is
       # what its consumers inherit, so each one is the lowest release that
       # carries every published fix for that package as of 2026-09-09.

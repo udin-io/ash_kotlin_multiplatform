@@ -23,6 +23,13 @@ defmodule AshKotlinMultiplatform.Test.Author do
 
   kotlin_multiplatform do
     type_name("Author")
+
+    # The documented motivating case for `field_names`, and the only attribute
+    # here that carries an override. `VerifyFieldNames` rejects a `_1` suffix
+    # outright, so `address_line_1` cannot be generated without this mapping —
+    # which makes it the one attribute that proves the override is honoured on
+    # both sides rather than merely accepted by the DSL (#71).
+    field_names(address_line_1: :addressLine1)
   end
 
   attributes do
@@ -34,6 +41,10 @@ defmodule AshKotlinMultiplatform.Test.Author do
     end
 
     attribute :email, :string do
+      public? true
+    end
+
+    attribute :address_line_1, :string do
       public? true
     end
   end
@@ -67,7 +78,7 @@ defmodule AshKotlinMultiplatform.Test.Author do
 
     create :create do
       primary? true
-      accept [:name, :email]
+      accept [:name, :email, :address_line_1]
     end
 
     # An Ash-level `get? true`, which `ConfigBuilder.get_action_context/3` reads

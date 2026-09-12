@@ -153,9 +153,13 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
            ),
          {:ok, ash_result} <- Pipeline.execute_ash_action(request),
          {:ok, processed} <- Pipeline.process_result(ash_result, request) do
-      # Use format_output/1 which just formats field names without expecting a wrapped response
-      formatted = Pipeline.format_output(processed)
-      build_success_response(formatted)
+      # `format_data/2` and not `format_output/1`: the latter renames field names
+      # and never looks at a value, so a vector left here as the packed binary
+      # `Jason` refuses (#71). `format_data/2` returns the payload alone, which
+      # is what lets this library keep its own envelope below.
+      processed
+      |> Pipeline.format_data(request)
+      |> build_success_response()
     else
       {:error, error} ->
         build_error_response(error)
@@ -163,10 +167,10 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   end
 
   defp build_request(domain, resource, action, rpc_action, params, actor, tenant, context) do
-    input = parse_input(params)
+    input = parse_input(params, resource)
     fields = params["fields"] || []
-    identity = parse_identity(params)
-    filter = parse_filter(params)
+    identity = parse_identity(params, resource)
+    filter = parse_filter(params, resource)
     sort = parse_sort(params)
     page = parse_pagination(params)
 
@@ -176,7 +180,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
       |> narrow_metadata_fields(parse_metadata_fields(params))
 
     with :ok <- check_read_surface(rpc_action, filter, sort),
-         {:ok, get_by} <- parse_get_by(params, rpc_action),
+         {:ok, get_by} <- parse_get_by(params, rpc_action, resource),
          {:ok, {select, load, extraction_template}} <-
            select_fields(resource, action, fields) do
       {:ok,
@@ -205,7 +209,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   defp validate_changeset(domain, resource, rpc_action, params, actor, tenant) do
     action_name = rpc_action.action
     action_info = Ash.Resource.Info.action(resource, action_name)
-    input = parse_input(params)
+    input = parse_input(params, resource)
 
     opts = [
       actor: actor,
@@ -220,7 +224,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
           {:ok, changeset}
 
         :update ->
-          identity = parse_identity(params)
+          identity = parse_identity(params, resource)
 
           with {:ok, record} <- get_record_for_validation(resource, identity, opts) do
             changeset = Ash.Changeset.for_update(record, action_name, input, opts)
@@ -292,9 +296,9 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # rest, and `Ash.read_one/1` answers that with a `MultipleResults` naming
   # nothing the caller can act on; an extra field would reach
   # `Ash.Query.do_filter/2` as an arbitrary predicate.
-  defp parse_get_by(params, rpc_action) do
+  defp parse_get_by(params, rpc_action, resource) do
     allowed = configured_get_by(rpc_action)
-    sent = normalize_get_by(params["getBy"])
+    sent = normalize_get_by(params["getBy"], resource)
 
     sent_keys = sent |> Map.keys() |> MapSet.new()
     allowed_keys = MapSet.new(allowed)
@@ -310,8 +314,10 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     end
   end
 
-  defp normalize_get_by(get_by) when is_map(get_by), do: convert_keys_to_atoms(get_by)
-  defp normalize_get_by(_), do: %{}
+  defp normalize_get_by(get_by, resource) when is_map(get_by),
+    do: convert_keys_to_atoms(get_by, resource)
+
+  defp normalize_get_by(_, _resource), do: %{}
 
   # ---------------------------------------------------------------------------
   # Read Surface
@@ -383,24 +389,24 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # Input Parsing
   # ---------------------------------------------------------------------------
 
-  defp parse_input(params) do
+  defp parse_input(params, resource) do
     input = params["input"] || %{}
-    convert_keys_to_atoms(input)
+    convert_keys_to_atoms(input, resource)
   end
 
-  defp parse_identity(params) do
+  defp parse_identity(params, resource) do
     case params["identity"] do
       nil -> nil
       id when is_binary(id) -> id
-      id when is_map(id) -> convert_keys_to_atoms(id)
+      id when is_map(id) -> convert_keys_to_atoms(id, resource)
       id -> id
     end
   end
 
-  defp parse_filter(params) do
+  defp parse_filter(params, resource) do
     case params["filter"] do
       nil -> nil
-      filter -> convert_keys_to_atoms(filter)
+      filter -> convert_keys_to_atoms(filter, resource)
     end
   end
 
@@ -415,7 +421,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   defp parse_pagination(params) do
     case params["page"] do
       nil -> nil
-      page -> convert_keys_to_atoms(page)
+      page -> convert_keys_to_atoms(page, nil)
     end
   end
 
@@ -440,21 +446,38 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   defp existing_metadata_atom(name) when is_atom(name) and not is_nil(name), do: [name]
   defp existing_metadata_atom(_), do: []
 
-  defp convert_keys_to_atoms(map) when is_map(map) do
+  defp convert_keys_to_atoms(map, resource) when is_map(map) do
     Map.new(map, fn
       {key, value} when is_binary(key) ->
-        {to_snake_case_key(key), convert_keys_to_atoms(value)}
+        {to_internal_key(key, resource), convert_keys_to_atoms(value, resource)}
 
       {key, value} ->
-        {key, convert_keys_to_atoms(value)}
+        {key, convert_keys_to_atoms(value, resource)}
     end)
   end
 
-  defp convert_keys_to_atoms(list) when is_list(list) do
-    Enum.map(list, &convert_keys_to_atoms/1)
+  defp convert_keys_to_atoms(list, resource) when is_list(list) do
+    Enum.map(list, &convert_keys_to_atoms(&1, resource))
   end
 
-  defp convert_keys_to_atoms(value), do: value
+  defp convert_keys_to_atoms(value, _resource), do: value
+
+  # A `field_names` override is consulted before the generic camelCase parser,
+  # because the two disagree and only the override is right: the DSL maps
+  # `address_line_1` to the client name `addressLine1`, which the parser would
+  # turn back into `address_line1` — an attribute that does not exist. Inbound
+  # and outbound must resolve the same option or the client cannot send back
+  # what the server just sent it (#71).
+  defp to_internal_key(string, nil), do: to_snake_case_key(string)
+
+  defp to_internal_key(string, resource) when is_binary(string) do
+    case AshKotlinMultiplatform.Resource.Info.get_original_field_name(resource, string) do
+      name when is_atom(name) and not is_nil(name) -> name
+      _ -> to_snake_case_key(string)
+    end
+  rescue
+    _ -> to_snake_case_key(string)
+  end
 
   # `String.to_existing_atom/1`, never `String.to_atom/1`. These keys come from
   # the client's `input`, `filter`, `page` and `identity` maps, and the atom

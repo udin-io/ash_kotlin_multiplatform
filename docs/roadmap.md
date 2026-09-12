@@ -34,6 +34,7 @@ afterwards.
 | 2026-09-11 | Typed results: every RPC function returns `RpcResult<T>` (#22) |
 | 2026-09-11 | Six `rpc_action` options the shared core already honoured: `get?`, `get_by`, `identities`, `not_found_error?`, `enable_filter?`, `enable_sort?` (#25, PR #66) |
 | 2026-09-11 | Kotlin types for vector, money, ltree and ULID, plus the `AshMoney` class a money field needs (#30) |
+| 2026-09-11 | Stage 4 formats output values by Ash type, so a vector response encodes; `field_names` honoured on both sides (#71) |
 
 ## In progress
 
@@ -45,10 +46,9 @@ Ordered by what unblocks the most.
 
 | Issue | What | Why now |
 | ----- | ---- | ------- |
-| #71 | A vector response raises `Jason.EncodeError`: the runner never runs the shared core's type-aware output formatter | #30 named the Kotlin type; the server cannot send one yet |
 | #38 | Make `main` formatter-clean and put the check in CI | One mechanical commit; unblocks review signal |
 | #65, #53 | Typed `filter` and `page` in the request config | The response is typed now; the request still takes untyped maps, so `FilterTypes` is dead code |
-| #48, #53 | The runner mangles unconstrained map keys; FilterTypes emits unpublished resources | Both leak shapes the client cannot use |
+| #48, #53 | The runner mangles unconstrained map keys on the way IN; FilterTypes emits unpublished resources | #71 fixed the output half: an untyped map's keys now survive as written, but `Runner` parses `input` before it knows a field's type, so a key sent as `createdBy` is still stored as `created_by` |
 | #57 | Error keys ignore the output field formatter | The decode gate now reads those keys |
 | #17, #43 | Unstable output order across builds | A regenerated file should diff empty |
 | #35 | The channel client is static and cannot send most params | Blocks any per-action channel work |

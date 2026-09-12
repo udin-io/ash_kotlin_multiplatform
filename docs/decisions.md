@@ -323,3 +323,50 @@ generator cannot see ash_money without depending on it. A Money field cannot
 be checked end to end here for the same reason — the round-trip gate has no
 money response to decode, so `client_server_contract_test.exs` holds the class
 to ash_money's documented shape instead.
+
+## 2026-09-11 — Stage 4 formats by type, and this library keeps its envelope
+
+`Rpc.Runner` called `Pipeline.format_output/1`, which renames field names and
+never looks at a value, so `AshIntrospection.Rpc.ValueFormatter` never ran on
+a response. A `:vector` attribute therefore reached `Jason` as the packed
+binary `%Ash.Vector{}` carries and raised `Jason.EncodeError`, and every
+request touching it returned a 500 (#71).
+
+The shared core's type-aware entry point, `format_output_with_request/3`, is
+not a drop-in and was not adopted. It builds its own `%{success:, data:}`
+envelope, duplicating `Runner.build_success_response/1`, and it hoists action
+metadata to a sibling of `data` where this library nests it. Measured on
+`ash_introspection` 0.4.1: routing stage 4 straight through it fails seven
+tests, all of them that hoist, and the generated Kotlin declares no top-level
+`metadata` — so it is a decode break, not a test failure.
+
+`Rpc.Pipeline.format_data/2` is the answer: it asks the shared function to
+format the payload, takes the payload back out of the envelope, and matches
+the `%{data:, metadata:}` shape stage 3 produces so metadata stays nested.
+The nesting decision is #24's and is unchanged.
+
+The dependency floor moved to `~> 0.4` for this. 0.4.0 is the first release
+whose stage 4 formats a multi-record read; on 0.3.0 the same change returned
+internal atom keys for every list and page read and failed twelve tests.
+
+Cost: two wire changes, both deliberate.
+
+An untyped `Ash.Type.Map` no longer has its keys renamed. They are data, not
+field names, and renaming them meant a value written as `created_by` could
+never be read back under the name it was written with. A typed map still has
+its declared field names formatted, which is what makes this a rule rather
+than an omission.
+
+A `field_names` override is now honoured, where before both the server and the
+generator ignored it. They agreed by doing nothing, so fixing either side
+alone would have sent `addressLine1` to a class declaring `address_line_1` —
+the #24 and #51 shape, code that compiles and decodes `null`. Both moved
+together, and `Resource.Info.client_field_name/3` is the one function both
+ask. Input keys are untouched except under an override: the request contract
+was snake_case and stays so.
+
+Not fixed, and named here so it is not rediscovered: `Runner` parses `input`
+before it knows any field's type, so nested keys inside an untyped map are
+still snake_cased on the way in. A key sent as `createdBy` is stored and
+returned as `created_by`. Resolving input keys by type means minting atoms for
+unknown names, which reopens the atom-table exhaustion #18 closed.

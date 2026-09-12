@@ -50,10 +50,15 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.GenRoundtripFixture do
     # entries add more.
     base = [
       {"populated_untyped_map", populated_untyped_map()},
+      {"vector_attribute", vector_attribute()},
       {"date_fields", date_fields()},
       {"action_metadata", action_metadata()},
       {"metadata_narrowed_away", metadata_narrowed_away()},
       {"sparse_fieldset", sparse_fieldset()},
+      # After `sparse_fieldset`, which reads one author and fails on two. This
+      # entry creates one, so running it earlier breaks a check that has nothing
+      # to do with it.
+      {"field_names_override", field_names_override()},
       {"error", error()},
       {"validation_valid", validation_valid()},
       {"validation_invalid", validation_invalid()}
@@ -88,10 +93,40 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.GenRoundtripFixture do
           "source" => "import",
           "retries" => 3,
           "verified" => true,
-          "note" => nil
+          "note" => nil,
+          # Deliberately two words. An untyped map's keys are data and are sent
+          # back as written, where a typed field name would be camelCased (#71).
+          # Every other key here is one word and so cannot show the difference.
+          "created_by" => "ada"
         },
         "settings" => %{"notify" => true}
       }
+    })
+  end
+
+  # A populated `:vector`. Until #71 this response could not be produced at all:
+  # stage 4 renamed field names and never formatted a value, so `%Ash.Vector{}`
+  # reached `Jason` as its packed binary and raised `Jason.EncodeError`. The
+  # entry exists to prove the array on the wire decodes into the `List<Double>`
+  # #30 declared, which is the other half of that pair.
+  defp vector_attribute do
+    call(%{
+      "action" => "create_todo",
+      "input" => %{"title" => "Index me", "embedding" => [0.25, -1.5, 3.0]}
+    })
+  end
+
+  # A `field_names` override on both sides of one request: the client sends
+  # `addressLine1` and reads `addressLine1` back, while the attribute is
+  # `address_line_1` throughout the server. Both halves were dead before #71 —
+  # the server ignored the option and so did the generator — so a fixture that
+  # only checked the class declaration would have passed while the option did
+  # nothing.
+  defp field_names_override do
+    call(%{
+      "action" => "create_author",
+      "input" => Map.put(author_input("Mapped Name"), "addressLine1", "10 Downing Street"),
+      "fields" => ["id", "name", "addressLine1"]
     })
   end
 
