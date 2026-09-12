@@ -119,6 +119,73 @@ in review.
 *Do:* close #38 as one mechanical commit, then add the check to the `test`
 job.
 
+### The manifest is built and nothing reads it
+
+`AshKotlinMultiplatform.Manifest` builds, decorates and persists a full
+`%Ash.Info.Manifest{}` on every compile, and no code on the request path or in
+codegen reads it. `Rpc.Runner.discover_action/2` still scans
+`Ash.Info.domains/1` per request. So the manifest can be wrong in a way that
+only `test/ash_kotlin_multiplatform/manifest/` would catch, and it costs
+compile time to build something nothing consumes.
+
+**What we watch.** The differential pressure is the `decorated?/2` assertions
+in `decorate_manifest_test.exs` and the entrypoint counts in
+`build_manifest_test.exs`. Neither compares a manifest read against a live
+read the way `ash_introspection`'s own differential test does.
+
+**What we would do.** Stage 4 of `ash_introspection#23` is what makes codegen
+read it, and stage 5 makes it required. Until one of them lands, treat a
+manifest change as unverified by anything but its own tests. If stage 4 slips,
+add a test that reads one field both ways and compares.
+
+### `Code.ensure_compiled!` inside a transformer can deadlock
+
+`BuildManifest` forces every `kotlin_rpc` resource and every module the
+generated manifest names to compile. If one of those modules ever gains a
+compile-time dependency back on the manifest module, the parallel compiler
+deadlocks rather than erroring usefully.
+
+**What we watch.** Nothing automated. The shape that causes it is a resource
+or domain file that `use`s or otherwise compile-depends on the consumer's
+manifest module.
+
+**What we would do.** Keep the injected edges pointing at domains only, and
+say in `AshKotlinMultiplatform.Manifest`'s moduledoc that a resource must never
+reference the manifest module. If a consumer reports a hang, `mix compile
+--no-compile` plus `mix xref graph --label compile` on their app names the
+cycle.
+
+### A scoped manifest stops tracking its config
+
+`use AshKotlinMultiplatform.Manifest, domains: [...]` suppresses the
+`Application.compile_env/3` edge, because a module scoped to an explicit list
+does not depend on `config :my_app, ash_domains:`. That is correct and it is
+also a foot-gun: a consumer who copies the test-only option into a production
+manifest gets a module that never notices a domain being added.
+
+**What we watch.** `compile_edges_test.exs` asserts the suppression, so the
+behaviour cannot drift silently, and the installer never writes `:domains`.
+Nothing stops a consumer writing it by hand.
+
+**What we would do.** The moduledoc carries a warning admonition. If it bites
+anyone, make the option raise unless `Mix.env() == :test`.
+
+### `generate/1` scopes by entrypoints, not by domains
+
+`Ash.Info.Manifest.Generator.generate/1` takes `:otp_app` and calls
+`Ash.Info.domains/1` itself; there is no `:domains` option. Scoping works only
+because the generator ignores its own domain walk when `:action_entrypoints` is
+a list. Passing `nil` there — or refactoring
+`Entrypoints.action_entrypoints/2` to return `nil` on an empty DSL — silently
+widens a scoped manifest to the whole application.
+
+**What we watch.** `decorate_manifest_test.exs` asserts `Test.Todo` is absent
+from the scoped manifest, which fails if the scoping ever widens.
+
+**What we would do.** Keep `action_entrypoints` unconditional. An empty list is
+the correct answer for a domain list with no `kotlin_rpc` blocks and is not the
+same as `nil`.
+
 ## Operational
 
 ### Two generators, one hex release, alpha API

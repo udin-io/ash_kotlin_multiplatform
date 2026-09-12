@@ -370,3 +370,89 @@ before it knows any field's type, so nested keys inside an untyped map are
 still snake_cased on the way in. A key sent as `createdBy` is stored and
 returned as `created_by`. Resolving input keys by type means minting atoms for
 unknown names, which reopens the atom-table exhaustion #18 closed.
+## 2026-09-12 — The manifest module lives here, not in the core
+
+`ash_introspection` builds no manifest because building one needs a Spark DSL
+that names the client-facing actions, and that library ships none — the
+recorded reason its issue 26 was declined. So `AshKotlinMultiplatform.Manifest`
+sits next to `AshKotlinMultiplatform.Rpc`, which already names them. It is a
+standalone `use Spark.Dsl` module rather than a domain extension: one domain
+cannot see the others, a per-domain manifest would fight itself when the same
+resource appears in two `kotlin_rpc` blocks, and a domain transformer has
+nowhere to hang a compile-time dependency on the *other* domains — which is
+the whole point of the edges.
+
+**Cost.** A consumer now has a module and a config line to declare, and
+`mix ash_kotlin_multiplatform.install` exists to write both. Two transformers
+and a full reachability walk run on every compile of that module, for output
+nothing reads yet (see [risks.md](risks.md)).
+
+## 2026-09-12 — The entrypoint lookups are keyed off `entrypoint.config`
+
+`AshIntrospection.Manifest.Decorator.decorate/3` offers an `:entrypoint_name`
+callback and builds a global lookup from it. The callback receives
+`(resource, action_name)` and never reads `entrypoint.config`, so it cannot
+tell two client-facing operations over one Ash action apart — and this library
+has those by design. `AshKotlinMultiplatform.Rpc`'s own moduledoc exposes
+`MyApp.Todo`'s `:read` twice, as `list_todos` and `get_todo`. Supplying the
+callback makes the decorator raise "two entrypoints claim the client-facing
+name" and stops the documented example compiling.
+
+So we pass no `:entrypoint_name`, leave the core's `entrypoint_lookup` empty,
+and build `:rpc_action_lookup` and `:typed_query_lookup` in
+`Transformers.DecorateManifest` off `entrypoint.config`, which is the only
+place a client-facing name exists.
+
+**Cost.** Two lookups this repository maintains instead of one the core
+maintains, and a standing constraint: nothing downstream may key an entrypoint
+by `{resource, action}`. The constraint is written in the transformer's
+moduledoc, where the next reader hits it. A 3-arity callback in the core would
+remove the duplication; it was not worth blocking stage 3 on.
+
+## 2026-09-12 — `include_private_relationships?: true` when generating
+
+`Ash.Info.Manifest.Generator.generate/1` defaults it to `false`.
+`ash_introspection` shipped stage 1 with the default and its
+`ResourceInfo.relationship/3` then answered `nil` for a private `belongs_to`
+where `Ash.Resource.Info` answers the relationship;
+`ResourceFields.get_field_type_info/3` inherited the bug because it asks
+`relationship/3` for a field's type. Passing `true` keeps this library from
+repeating it one layer out.
+
+**Cost.** A larger manifest than the client strictly needs — private
+relationships are not generated into Kotlin. `Test.Book.editor` is the fixture,
+and the test carries an oracle asserting the generator's defaults omit it, so
+the assertion cannot pass for the wrong reason.
+
+## 2026-09-12 — The compile edges are measured, not asserted
+
+The `8c07331` edges are the difference between a manifest that tracks its
+domains and one that goes stale with no error, and until this PR the claim that
+they work rested on a code comment — upstream's. Both are now measured by
+tests:
+
+- The domain edge, with `mix xref graph --label compile`, which shows
+  `todo.ex` → `test_domain.ex (compile)` → `test_manifest.ex (compile)`. The
+  middle link is Ash's, not ours; the test fails with the instruction to add a
+  per-resource `module_info/1` edge if Ash ever drops it. None is needed today.
+- The config edge, against Elixir's own compiler manifest, which is the file
+  `mix` reads to decide what a config change invalidates.
+
+**Cost.** One test shells out to `mix xref` and reads a `_build` file, so it is
+coupled to Elixir's compiler-manifest layout and will need updating if that
+changes. That is the price of proving the thing rather than asserting it.
+
+One trap worth recording, because it cost a detour and briefly had this branch
+claiming upstream's placement was broken: the compile-env entry's shape is
+`{app, key_path_list, {:ok, value}}`. Looking for a bare
+`{app, :ash_domains, value}` finds nothing and reads as a missing edge.
+`handle_opts/1` registers the edge correctly through `Code.eval_quoted`,
+exactly as upstream has it.
+
+## 2026-09-12 — No `SpecCache`
+
+Upstream added a `persistent_term` spec cache in `199f9cd` and deleted it in
+`b7104a8`, moving the lookups onto the manifest module's persisted Spark DSL
+state. `Spark.Dsl.Extension.get_persisted/3` reads a compiled module attribute,
+which is already free at runtime, so a second cache would buy nothing and add a
+second thing to go stale. Not ported.

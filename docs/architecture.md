@@ -51,6 +51,7 @@ C4Container
         Container(kgen, "Kotlin generator", "Elixir", "AshKotlinMultiplatform.Rpc.Codegen and its type/function generators")
         Container(sgen, "Swift generator", "Elixir", "AshKotlinMultiplatform.Swift.Codegen; a partial parallel of the Kotlin one")
         Container(dsl, "DSL extensions", "Spark", "AshKotlinMultiplatform.Resource on resources, .Rpc on domains, plus four verifiers")
+        Container(man, "Manifest module", "Spark DSL", "AshKotlinMultiplatform.Manifest; the consumer declares one. Two transformers build, decorate and persist one Ash.Info.Manifest at compile time")
         Container(serve, "RPC server half", "Elixir", "Phoenix.Controller, Rpc.Runner, Rpc.Pipeline, Rpc.Hooks")
     }
 
@@ -60,6 +61,8 @@ C4Container
 
     Rel(tasks, kgen, "generate_kotlin_code/2")
     Rel(tasks, sgen, "generate_swift_code/2")
+    Rel(man, dsl, "reads every domain's kotlin_rpc block")
+    Rel(man, ash, "Ash.Info.Manifest.Generator.generate/1, then AshIntrospection.Manifest.Decorator.decorate/3")
     Rel(kgen, dsl, "reads rpc_actions, type_name, field_names")
     Rel(sgen, dsl, "reads the same DSL")
     Rel(kgen, client, "writes AshRpc.kt")
@@ -204,7 +207,68 @@ switch, so a project that silenced codegen warnings also turned every
 not-found into a successful `null`. The field selector and the error builder
 still call `build_config/0`; neither reads the key.
 
-## 5. The Phoenix channel wire format
+## 5. The compile-time manifest pass
+
+Added by issue #73, stage 3 of five in `ash_introspection#23`. It runs once,
+when the consumer's manifest module compiles, and it is the only place this
+library is meant to introspect a resource. Nothing on the request path reads
+its output yet — that is stage 4 — so today the pass is additive and
+reversible: delete the module and every read falls back to live introspection.
+
+```mermaid
+sequenceDiagram
+    participant Mix as mix compile
+    participant MM as MyApp.AkmManifest
+    participant B as Transformers.BuildManifest
+    participant E as Manifest.Entrypoints
+    participant G as Ash.Info.Manifest.Generator
+    participant D as AshIntrospection.Manifest.Decorator
+    participant S as Spark persisted state
+
+    Mix->>MM: compile the module
+    Note over MM: handle_opts/1 injects the compile edges —<br/>Application.compile_env(otp_app, :ash_domains, [])<br/>and one Domain.module_info(:md5) per domain
+    MM->>B: transformers run, BuildManifest last but one
+    B->>E: action_entrypoints(domains, rpc_resources)
+    E-->>B: one entry per rpc_action and per typed_query,<br/>each carrying its rpc_action or typed_query and its domain
+    B->>B: Code.ensure_compiled! every kotlin_rpc resource
+    B->>G: generate(otp_app:, action_entrypoints:, include_private_relationships?: true)
+    G-->>B: undecorated %Ash.Info.Manifest{}
+    B->>B: Code.ensure_compiled! every module the manifest names
+    B->>S: persist :undecorated_manifest and :manifest
+    B->>D: DecorateManifest runs next
+    D->>D: decorate(manifest, :ash_kotlin_multiplatform, Rpc.Pipeline.build_config())
+    D->>S: persist the decorated :manifest,<br/>:rpc_action_lookup and :typed_query_lookup
+```
+
+### Why the compile edges are there
+
+`BuildManifest` finds its domains through `Ash.Info.domains/1`, inside a
+transformer, where Elixir's dependency tracker cannot see it. Without explicit
+edges, editing a resource recompiles the resource and its domain and leaves the
+manifest module alone — and a stale manifest raises nothing. Both edges are
+measured rather than assumed, by
+`AshKotlinMultiplatform.Manifest.CompileEdgesTest`:
+
+| Edge | Mechanism | Proof |
+| ---- | --------- | ----- |
+| resource to domain to manifest | `Domain.module_info(:md5)`, a static remote call | `mix xref graph --label compile` shows `todo.ex` to `test_domain.ex (compile)` to `test_manifest.ex (compile)` |
+| config to manifest | `Application.compile_env/3` | the source record in `_build/test/lib/ash_kotlin_multiplatform/.mix/compile.elixir` carries `{:ash_kotlin_multiplatform, [:ash_domains], {:ok, [...]}}` |
+
+The middle link of the first row is Ash's, not this library's, so the test
+asserts it directly and fails with the instruction to inject a per-resource
+edge if Ash ever drops it. No per-resource edge is needed today.
+
+### Why the lookups are not keyed by resource and action
+
+One Ash action can back several client-facing operations —
+`rpc_action :list_todos, :read` and `rpc_action :get_todo, :read` are both in
+`AshKotlinMultiplatform.Rpc`'s own moduledoc. The generator preserves the
+duplicate entrypoints, so `{resource, action}` is not unique here.
+`:rpc_action_lookup` and `:typed_query_lookup` are therefore keyed off
+`entrypoint.config`, which is the only place a client-facing name exists. See
+[decisions.md](decisions.md).
+
+## 6. The Phoenix channel wire format
 
 The generated channel client speaks Phoenix's **v2** serializer,
 `Phoenix.Socket.V2.JSONSerializer`, selected by the `vsn=2.0.0` query
