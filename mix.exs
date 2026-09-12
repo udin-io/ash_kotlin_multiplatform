@@ -99,6 +99,7 @@ defmodule AshKotlinMultiplatform.MixProject do
 
   defp deps do
     [
+      {:igniter, "~> 0.7", optional: true},
       # 0.4.0 is the floor because it is the first release whose stage 4 formats
       # a multi-record read: `Pipeline.format_resource_output/4` gained a clause
       # for a bare list and one for a page envelope (ash_introspection #57/#64).
