@@ -21,13 +21,12 @@ defmodule AshKotlinMultiplatform.Test.ScopedDomain do
 
   kotlin_rpc do
     resource AshKotlinMultiplatform.Test.Book do
-      rpc_action(:scoped_list_books, :read)
+      rpc_action :scoped_list_books, :read
 
-      typed_query(:book_titles, :read,
+      typed_query :book_titles, :read,
         fields: ["id", "title"],
         kotlin_result_type_name: "BookTitlesResult",
         kotlin_fields_const_name: "BOOK_TITLES_FIELDS"
-      )
     end
   end
 end

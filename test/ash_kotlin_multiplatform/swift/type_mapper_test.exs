@@ -38,7 +38,7 @@ defmodule AshKotlinMultiplatform.Swift.TypeMapperTest do
 
     test "maps atom type to String" do
       assert TypeMapper.get_swift_type_for_type(Ash.Type.Atom, []) == "String"
-      assert TypeMapper.get_swift_type_for_type(Ash.Type.Atom, one_of: [:a, :b]) == "String"
+      assert TypeMapper.get_swift_type_for_type(Ash.Type.Atom, [one_of: [:a, :b]]) == "String"
     end
   end
 

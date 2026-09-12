@@ -180,9 +180,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.MetadataTypes do
           # Check for mapped metadata field names
           metadata_field_names = Map.get(rpc_action, :metadata_field_names, [])
 
-          mapped_name =
-            Keyword.get(metadata_field_names, metadata_field.name, metadata_field.name)
-
+          mapped_name = Keyword.get(metadata_field_names, metadata_field.name, metadata_field.name)
           formatted_name = Helpers.snake_to_camel_case(mapped_name)
 
           # Add @SerialName if the formatted name differs from the original

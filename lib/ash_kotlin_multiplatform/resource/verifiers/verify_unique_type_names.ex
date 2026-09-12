@@ -32,9 +32,7 @@ defmodule AshKotlinMultiplatform.Resource.Verifiers.VerifyUniqueTypeNames do
         end)
         |> Enum.uniq()
         |> Enum.map(fn resource ->
-          type_name =
-            AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name!(resource)
-
+          type_name = AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name!(resource)
           {type_name, resource}
         end)
 

@@ -145,38 +145,20 @@ defmodule AshKotlinMultiplatform.Phoenix.Controller do
     if require_auth and is_nil(actor) do
       handle_unauthorized.(conn)
     else
-      result =
-        AshKotlinMultiplatform.Rpc.Runner.run_action(otp_app, params,
-          actor: actor,
-          tenant: tenant
-        )
-
+      result = AshKotlinMultiplatform.Rpc.Runner.run_action(otp_app, params, actor: actor, tenant: tenant)
       Phoenix.Controller.json(conn, result)
     end
   end
 
   @doc false
-  def handle_validate(
-        conn,
-        params,
-        otp_app,
-        get_actor,
-        get_tenant,
-        handle_unauthorized,
-        require_auth
-      ) do
+  def handle_validate(conn, params, otp_app, get_actor, get_tenant, handle_unauthorized, require_auth) do
     actor = get_actor.(conn)
     tenant = get_tenant.(conn)
 
     if require_auth and is_nil(actor) do
       handle_unauthorized.(conn)
     else
-      result =
-        AshKotlinMultiplatform.Rpc.Runner.validate_action(otp_app, params,
-          actor: actor,
-          tenant: tenant
-        )
-
+      result = AshKotlinMultiplatform.Rpc.Runner.validate_action(otp_app, params, actor: actor, tenant: tenant)
       Phoenix.Controller.json(conn, result)
     end
   end
