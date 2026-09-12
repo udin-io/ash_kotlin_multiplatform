@@ -15,6 +15,14 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
   * `get_by` on a read — each must be a public attribute. The generated `GetBy`
     data class takes its Kotlin type from that attribute, so a name that is not
     one has no type to emit.
+
+  `get_by` on anything other than a read is also rejected here (#69). The
+  generator emits the `getBy` config field for read actions only
+  (`Rpc.Codegen.Helpers.ConfigBuilder.get_action_context/3`), so a create,
+  update or destroy carrying `get_by` compiled clean, shipped a client that
+  could not send the field, and failed every call with
+  `{:missing_get_by_fields, ...}`. A compile error at the offending line beats a
+  runtime error on every request.
   """
   use Spark.Dsl.Verifier
   alias Spark.Dsl.Verifier
@@ -50,15 +58,27 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
       is_nil(action) ->
         errors
 
-      action.type in [:update, :destroy] ->
-        identities = Map.get(rpc_action, :identities, [:_primary_key])
-        validate_identities_exist(resource, rpc_action, identities, errors)
-
       action.type == :read ->
         validate_get_by_fields(resource, rpc_action, errors)
 
+      action.type in [:update, :destroy] ->
+        identities = Map.get(rpc_action, :identities, [:_primary_key])
+
+        errors = validate_get_by_absent(rpc_action, action, errors)
+        validate_identities_exist(resource, rpc_action, identities, errors)
+
       true ->
+        validate_get_by_absent(rpc_action, action, errors)
+    end
+  end
+
+  defp validate_get_by_absent(rpc_action, action, errors) do
+    case rpc_action |> Map.get(:get_by) |> List.wrap() do
+      [] ->
         errors
+
+      fields ->
+        [{:get_by_on_non_read, rpc_action.name, rpc_action.action, action.type, fields} | errors]
     end
   end
 
@@ -131,9 +151,19 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
        #{message_parts}
 
        Each identity listed in the `identities` option must either be `:_primary_key` (for the resource's primary key)
-       or the name of an identity defined on the resource. Each field listed in `get_by` must be a public attribute.
+       or the name of an identity defined on the resource. Each field listed in `get_by` must be a public attribute,
+       and `get_by` may only be set on a read action.
        """
      )}
+  end
+
+  defp format_error_part({:get_by_on_non_read, rpc_name, action_name, action_type, fields}) do
+    """
+    get_by is set on an action that is not a read:
+      - RPC action: #{rpc_name} (action: #{action_name}, type: #{inspect(action_type)})
+      - Fields: #{Enum.map_join(fields, ", ", &inspect/1)}
+      - #{get_by_replacement(action_type)}
+    """
   end
 
   defp format_error_part({:get_by_not_an_attribute, rpc_name, field, public_attributes}) do
@@ -180,4 +210,11 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
       - Either define a primary key on the resource, use a named identity, or use `identities: []` for actor-scoped actions.
     """
   end
+
+  defp get_by_replacement(type) when type in [:update, :destroy],
+    do:
+      "Use `identities` to name the lookup key for an update or destroy. `get_by` selects a record on a read only."
+
+  defp get_by_replacement(_type),
+    do: "A create looks up no record. Remove `get_by` from this action."
 end

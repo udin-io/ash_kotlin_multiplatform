@@ -296,6 +296,12 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # rest, and `Ash.read_one/1` answers that with a `MultipleResults` naming
   # nothing the caller can act on; an extra field would reach
   # `Ash.Query.do_filter/2` as an arbitrary predicate.
+  #
+  # No action-type guard here on purpose. `Rpc.Verifiers.VerifyIdentities`
+  # refuses to compile a `get_by` on anything but a read (#69), so on a create,
+  # update or destroy `allowed` is the schema default `[]` and this returns
+  # `{:ok, nil}`. A guard would be a branch no test can reach without disabling
+  # the verifier.
   defp parse_get_by(params, rpc_action, resource) do
     allowed = configured_get_by(rpc_action)
     sent = normalize_get_by(params["getBy"], resource)
