@@ -7,7 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `AshKotlinMultiplatform.Manifest`, the Spark DSL module a consumer declares
+  so this library reads one compile-time `%Ash.Info.Manifest{}` instead of
+  introspecting per request. Two transformers build it from every domain's
+  `kotlin_rpc` block, hand it to
+  `AshIntrospection.Manifest.Decorator.decorate/3`, and persist the decorated
+  result alongside `:rpc_action_lookup` and `:typed_query_lookup` (#73). This
+  is stage 3 of five in `ash_introspection#23`; nothing on the request path
+  reads the manifest yet, so the change is additive and reversible.
+
+      defmodule MyApp.AshKotlinMultiplatformManifest do
+        use AshKotlinMultiplatform.Manifest, otp_app: :my_app
+      end
+
+      # config/config.exs
+      config :ash_kotlin_multiplatform, manifest: MyApp.AshKotlinMultiplatformManifest
+
+- `mix ash_kotlin_multiplatform.install`, an Igniter task that writes both of
+  those and nothing else. Run it with
+  `mix igniter.install ash_kotlin_multiplatform`.
+
 ### Changed
+
+- The `ash_introspection` floor is now `~> 0.4`.
+  `AshIntrospection.Manifest.Decorator.decorate/3` ships in 0.4.1; under the
+  previous `~> 0.3` the lock resolved 0.3.0, where the module does not exist.
 
 - **Breaking.** Every generated RPC function now returns `RpcResult<T>` named
   for its own action, where it returned the same untyped `RpcResult` with

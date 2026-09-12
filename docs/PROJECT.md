@@ -28,10 +28,10 @@ between versions.
 
 | Page | Answers | Status |
 | ---- | ------- | ------ |
-| [architecture.md](architecture.md) | How a resource becomes Kotlin and Swift, and what runs at request time | Current as of #30 |
-| [decisions.md](decisions.md) | The choices that still shape the code, and what each cost | Current as of #30 |
-| [risks.md](risks.md) | What could go wrong, what we watch, what we would do | Current as of #30 |
-| [roadmap.md](roadmap.md) | What shipped, what is in flight, what is next, what was refused | Current as of #30 |
+| [architecture.md](architecture.md) | How a resource becomes Kotlin and Swift, and what runs at request time | Current as of #73 |
+| [decisions.md](decisions.md) | The choices that still shape the code, and what each cost | Current as of #73 |
+| [risks.md](risks.md) | What could go wrong, what we watch, what we would do | Current as of #73 |
+| [roadmap.md](roadmap.md) | What shipped, what is in flight, what is next, what was refused | Current as of #73 |
 
 ## Keeping it current
 

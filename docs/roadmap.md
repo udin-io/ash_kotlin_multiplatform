@@ -35,10 +35,13 @@ afterwards.
 | 2026-09-11 | Six `rpc_action` options the shared core already honoured: `get?`, `get_by`, `identities`, `not_found_error?`, `enable_filter?`, `enable_sort?` (#25, PR #66) |
 | 2026-09-11 | Kotlin types for vector, money, ltree and ULID, plus the `AshMoney` class a money field needs (#30) |
 | 2026-09-11 | Stage 4 formats output values by Ash type, so a vector response encodes; `field_names` honoured on both sides (#71) |
+| 2026-09-12 | `AshKotlinMultiplatform.Manifest`: one compile-time `Ash.Info.Manifest`, decorated and persisted (#73) |
 
 ## In progress
 
-Nothing.
+| Issue | What | State |
+| ----- | ---- | ----- |
+| #73 | Declare and decorate the manifest here — stage 3 of 5 of `ash_introspection#23` | PR open |
 
 ## Next
 
@@ -46,6 +49,7 @@ Ordered by what unblocks the most.
 
 | Issue | What | Why now |
 | ----- | ---- | ------- |
+| `ash_introspection#23` stage 4 | Delete `AshIntrospection.Codegen.TypeDiscovery`; codegen reads the manifest only | Stage 3 built the manifest; nothing reads it on the request path yet |
 | #38 | Make `main` formatter-clean and put the check in CI | One mechanical commit; unblocks review signal |
 | #65, #53 | Typed `filter` and `page` in the request config | The response is typed now; the request still takes untyped maps, so `FilterTypes` is dead code |
 | #48, #53 | The runner mangles unconstrained map keys on the way IN; FilterTypes emits unpublished resources | #71 fixed the output half: an untyped map's keys now survive as written, but `Runner` parses `input` before it knows a field's type, so a key sent as `createdBy` is still stored as `created_by` |
