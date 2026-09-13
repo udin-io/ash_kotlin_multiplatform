@@ -193,7 +193,8 @@ defmodule AshKotlinMultiplatform.Rpc do
       ],
       get_by: [
         type: {:wrap_list, :atom},
-        doc: "Fields the client sends to select one record. Implies `get?`. Read actions only",
+        doc:
+          "Fields the client sends to select one record. Implies `get?`. Read actions only — on a create, update or destroy it is a compile error",
         default: []
       ],
       not_found_error?: [

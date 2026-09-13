@@ -36,6 +36,7 @@ afterwards.
 | 2026-09-11 | Kotlin types for vector, money, ltree and ULID, plus the `AshMoney` class a money field needs (#30) |
 | 2026-09-11 | Stage 4 formats output values by Ash type, so a vector response encodes; `field_names` honoured on both sides (#71) |
 | 2026-09-12 | `AshKotlinMultiplatform.Manifest`: one compile-time `Ash.Info.Manifest`, decorated and persisted (#73) |
+| 2026-09-12 | `get_by` on a create, update or destroy is a compile error rather than a runtime failure on every call (#69) |
 
 ## In progress
 
