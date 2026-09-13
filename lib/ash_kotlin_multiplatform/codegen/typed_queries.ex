@@ -209,7 +209,9 @@ defmodule AshKotlinMultiplatform.Codegen.TypedQueries do
       rel = Ash.Resource.Info.relationship(resource, field)
 
       if rel do
-        nested_type_name = "#{parent_type_name}#{AshIntrospection.Helpers.snake_to_pascal_case(field)}Result"
+        nested_type_name =
+          "#{parent_type_name}#{AshIntrospection.Helpers.snake_to_pascal_case(field)}Result"
+
         formatted_name = format_field_for_client(field, resource)
 
         if rel.cardinality == :many do
@@ -228,7 +230,9 @@ defmodule AshKotlinMultiplatform.Codegen.TypedQueries do
     rel = Ash.Resource.Info.relationship(resource, field)
 
     if rel do
-      nested_type_name = "#{parent_type_name}#{AshIntrospection.Helpers.snake_to_pascal_case(field)}Result"
+      nested_type_name =
+        "#{parent_type_name}#{AshIntrospection.Helpers.snake_to_pascal_case(field)}Result"
+
       formatted_name = format_field_for_client(field, resource)
 
       if rel.cardinality == :many do
@@ -271,7 +275,9 @@ defmodule AshKotlinMultiplatform.Codegen.TypedQueries do
     rel = Ash.Resource.Info.relationship(resource, field)
 
     if rel do
-      nested_type_name = "#{parent_type_name}#{AshIntrospection.Helpers.snake_to_pascal_case(field)}Result"
+      nested_type_name =
+        "#{parent_type_name}#{AshIntrospection.Helpers.snake_to_pascal_case(field)}Result"
+
       [{rel.destination, nested_fields, nested_type_name}]
     else
       []
@@ -330,6 +336,7 @@ defmodule AshKotlinMultiplatform.Codegen.TypedQueries do
       "mapOf(\"#{format_field_for_client(field, resource)}\" to #{nested})"
     else
       args_json = format_args_for_kotlin(args, resource)
+
       "mapOf(\"#{format_field_for_client(field, resource)}\" to mapOf(\"args\" to #{args_json}, \"fields\" to #{nested}))"
     end
   end
@@ -351,7 +358,9 @@ defmodule AshKotlinMultiplatform.Codegen.TypedQueries do
   defp encode_kotlin_value(v) when is_number(v), do: to_string(v)
   defp encode_kotlin_value(v) when is_boolean(v), do: to_string(v)
   defp encode_kotlin_value(nil), do: "null"
-  defp encode_kotlin_value(v) when is_list(v), do: "listOf(#{Enum.map_join(v, ", ", &encode_kotlin_value/1)})"
+
+  defp encode_kotlin_value(v) when is_list(v),
+    do: "listOf(#{Enum.map_join(v, ", ", &encode_kotlin_value/1)})"
 
   defp encode_kotlin_value(v) when is_map(v) do
     items =

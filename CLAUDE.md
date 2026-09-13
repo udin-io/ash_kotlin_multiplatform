@@ -63,11 +63,22 @@ Since #52 the `kotlin-compile-gate` job has no `continue-on-error`, and both
 Any warning or error is yours. Run both before pushing a generator change;
 the CI job will not merge without them.
 
-### `mix format --check-formatted` fails on `main`
+### Gradle and Java are not on the global mise path
 
-Ten files predate the current formatter rules (#38), so a red check does not
-mean you broke something. Run `mix format` on the files you touched and check
-the failing list is unchanged, not empty.
+`kotlin-compile-gate` steps (`gradle compileKotlin`, `gradle run` in
+`test/fixtures/kotlin_compile`) fail with "command not found" under a bare
+`mise exec --` because gradle and java aren't installed there globally.
+Prefix every such command with
+`mise exec gradle@9.7.0 java@temurin-21 --` (#38).
+
+### `.formatter.exs` needs `locals_without_parens` for this library's DSL
+
+Without it, `mix format` rewrites `rpc_action :list_todos, :read` into
+`rpc_action(:list_todos, :read)` in test resources and README examples,
+making DSL calls read like function calls. Regenerate the list with
+`mix spark.formatter --extensions AshKotlinMultiplatform.Rpc,AshKotlinMultiplatform.Resource,AshKotlinMultiplatform.Manifest.Dsl`
+after adding or changing a DSL entity or option — never hand-edit the
+`spark_locals_without_parens` list (#38).
 
 ### The channel client is hand-written Phoenix protocol, not kotlinx
 
