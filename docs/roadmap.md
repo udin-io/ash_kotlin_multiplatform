@@ -44,6 +44,7 @@ afterwards.
 | Issue | What | State |
 | ----- | ---- | ----- |
 | #73 | Declare and decorate the manifest here — stage 3 of 5 of `ash_introspection#23` | PR open |
+| #27 | Delete dead code and the DSL options that do nothing | `Codegen.TypeDiscovery` deleted; `Rpc.Hooks` and the other items in the issue remain |
 
 ## Next
 
