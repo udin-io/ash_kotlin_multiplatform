@@ -35,7 +35,7 @@ afterwards.
 | 2026-09-11 | Six `rpc_action` options the shared core already honoured: `get?`, `get_by`, `identities`, `not_found_error?`, `enable_filter?`, `enable_sort?` (#25, PR #66) |
 | 2026-09-11 | Kotlin types for vector, money, ltree and ULID, plus the `AshMoney` class a money field needs (#30) |
 | 2026-09-11 | Stage 4 formats output values by Ash type, so a vector response encodes; `field_names` honoured on both sides (#71) |
-| 2026-09-12 | `AshKotlinMultiplatform.Manifest`: one compile-time `Ash.Info.Manifest`, decorated and persisted (#73) |
+| 2026-09-12 | `AshKotlinMultiplatform.Manifest`: one compile-time `Ash.Info.Manifest`, decorated and persisted (#73, PR #75) |
 | 2026-09-12 | `get_by` on a create, update or destroy is a compile error rather than a runtime failure on every call (#69) |
 | 2026-09-13 | `main` is formatter-clean; `mix format --check-formatted` is in CI (#38) |
 
@@ -43,7 +43,6 @@ afterwards.
 
 | Issue | What | State |
 | ----- | ---- | ----- |
-| #73 | Declare and decorate the manifest here — stage 3 of 5 of `ash_introspection#23` | PR open |
 | #27 | Delete dead code and the DSL options that do nothing | `Codegen.TypeDiscovery` deleted; `Rpc.Hooks` and the other items in the issue remain |
 
 ## Next
