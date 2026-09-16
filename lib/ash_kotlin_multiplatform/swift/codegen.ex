@@ -239,7 +239,9 @@ defmodule AshKotlinMultiplatform.Swift.Codegen do
     case type do
       Ash.Type.Atom ->
         case Keyword.get(constraints, :one_of) do
-          nil -> {enums, embedded}
+          nil ->
+            {enums, embedded}
+
           values ->
             enum_name = generate_enum_name(attr.name)
             {[{enum_name, values} | enums], embedded}
