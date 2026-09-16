@@ -370,6 +370,29 @@ before it knows any field's type, so nested keys inside an untyped map are
 still snake_cased on the way in. A key sent as `createdBy` is stored and
 returned as `created_by`. Resolving input keys by type means minting atoms for
 unknown names, which reopens the atom-table exhaustion #18 closed.
+
+## 2026-09-16 — Untyped map values never promote a data key to an atom
+
+`Runner.to_snake_case_key/1` promotes a key to an atom with
+`String.to_existing_atom/1`, which succeeds the moment ANY loaded code has
+interned that exact atom, not only this app's own. The paragraph above only
+ever measured the safe path: "created_by" and "retry_count" were never atoms
+anywhere in the VM when it was written. Upgrading to ash 3.33.4 (#81) pulled
+in reactor 1.0.7, whose `Reactor.Error.Invalid.RetriesExceededError` defines a
+`:retry_count` struct field, interning that atom at load — so an untyped
+`:metadata` attribute holding `retry_count` came back with a mixed
+atom/string-keyed map that does not round-trip through JSON the same way
+twice.
+
+`Runner.convert_keys_to_atoms/2` now checks, once it resolves a key to an
+attribute whose type is an unconstrained `Ash.Type.Map`, and stops promoting
+keys under it: they are still snake-cased on the way in, per the rule above,
+but kept as strings always. This closes the atom-promotion half of the risk
+without touching the camelCase-snake_case asymmetry, which stays deliberately
+unfixed for the reason given above — resolving it fully means minting atoms
+for names Ash never declared, which #18 still forbids. No new atoms are
+minted anywhere by this change.
+
 ## 2026-09-12 — The manifest module lives here, not in the core
 
 `ash_introspection` builds no manifest because building one needs a Spark DSL
