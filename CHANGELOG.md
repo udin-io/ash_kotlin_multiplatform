@@ -23,7 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       end
 
       # config/config.exs
-      config :ash_kotlin_multiplatform, manifest: MyApp.AshKotlinMultiplatformManifest
+      config :ash_kotlin_multiplatform,
+        manifest: MyApp.AshKotlinMultiplatformManifest
 
 - `mix ash_kotlin_multiplatform.install`, an Igniter task that writes both of
   those and nothing else. Run it with
