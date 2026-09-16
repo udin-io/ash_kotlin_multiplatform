@@ -455,7 +455,8 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   defp convert_keys_to_atoms(map, resource) when is_map(map) do
     Map.new(map, fn
       {key, value} when is_binary(key) ->
-        {to_internal_key(key, resource), convert_keys_to_atoms(value, resource)}
+        internal_key = to_internal_key(key, resource)
+        {internal_key, convert_nested(internal_key, value, resource)}
 
       {key, value} ->
         {key, convert_keys_to_atoms(value, resource)}
@@ -467,6 +468,52 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   end
 
   defp convert_keys_to_atoms(value, _resource), do: value
+
+  # An untyped `:map` attribute declares no field names of its own, so every
+  # key under it is caller data, not something this DSL or Ash ever named.
+  # Recursing into it with `convert_keys_to_atoms/2` risked promoting a data
+  # key to an atom via `to_snake_case_key/1`'s `String.to_existing_atom/1`
+  # whenever that word happened to be interned somewhere else in the VM —
+  # dependent on load order, not on this app's own atom budget (#18 stays
+  # closed either way, nothing here mints one). The ash 3.33.4 bump made it
+  # deterministic: reactor 1.0.7's `RetriesExceededError` interns `:retry_count`
+  # at load, and the wire test data used exactly that word (#81). Once inside
+  # an untyped map's value, keys are only ever snake_cased and kept as
+  # strings — this still applies the #71 casing rule that output formatting no
+  # longer undoes it, without ever risking a mixed atom/string-keyed map.
+  defp convert_nested(key, value, resource) when is_atom(key) do
+    if untyped_map_attribute?(resource, key) do
+      stringify_keys(value)
+    else
+      convert_keys_to_atoms(value, resource)
+    end
+  end
+
+  defp convert_nested(_key, value, resource), do: convert_keys_to_atoms(value, resource)
+
+  defp untyped_map_attribute?(resource, key) when not is_nil(resource) do
+    case Ash.Resource.Info.attribute(resource, key) do
+      %{type: Ash.Type.Map, constraints: constraints} ->
+        Keyword.get(constraints, :fields) in [nil, []]
+
+      _ ->
+        false
+    end
+  rescue
+    _ -> false
+  end
+
+  defp untyped_map_attribute?(_resource, _key), do: false
+
+  defp stringify_keys(map) when is_map(map) do
+    Map.new(map, fn {key, value} -> {stringify_key(key), stringify_keys(value)} end)
+  end
+
+  defp stringify_keys(list) when is_list(list), do: Enum.map(list, &stringify_keys/1)
+  defp stringify_keys(value), do: value
+
+  defp stringify_key(key) when is_binary(key), do: to_snake_case(key)
+  defp stringify_key(key), do: key
 
   # A `field_names` override is consulted before the generic camelCase parser,
   # because the two disagree and only the override is right: the DSL maps
