@@ -114,7 +114,9 @@ defmodule AshKotlinMultiplatform.MixProject do
       # what its consumers inherit, so each one is the lowest release that
       # carries every published fix for that package as of 2026-09-09.
       # ash 3.33.0 is the first release fixing CVE-2026-82752.
-      {:ash, "~> 3.33"},
+      # ash 3.33.4 is the first release fixing EEF-CVE-2026-86338 (field
+      # policies not filtering nil forbidden calculations/aggregates).
+      {:ash, ">= 3.33.4 and < 4.0.0-0"},
       # ash_phoenix 2.3.25 fixes CVE-2026-82724 through CVE-2026-82727.
       {:ash_phoenix, ">= 2.3.25 and < 3.0.0-0"},
       # Both are used directly by AshKotlinMultiplatform.Phoenix.Controller and

@@ -23,7 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       end
 
       # config/config.exs
-      config :ash_kotlin_multiplatform, manifest: MyApp.AshKotlinMultiplatformManifest
+      config :ash_kotlin_multiplatform,
+        manifest: MyApp.AshKotlinMultiplatformManifest
 
 - `mix ash_kotlin_multiplatform.install`, an Igniter task that writes both of
   those and nothing else. Run it with
@@ -89,6 +90,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hand now arrives typed; that call site has to change. Vectors are typed but
   not yet transportable — a vector response still raises `Jason.EncodeError`
   ([#71](https://github.com/udin-io/ash_kotlin_multiplatform/issues/71)).
+
+- The ash floor is now 3.33.4, the first release fixing EEF-CVE-2026-86338
+  ([#81](https://github.com/udin-io/ash_kotlin_multiplatform/issues/81)):
+  field policies did not filter-nil forbidden calculations and aggregates,
+  which leaked information. The upgrade moved `reactor` 1.0.6 to 1.0.7 and
+  `spark` 2.7.2 to 2.7.3 alongside it.
+
+- An untyped `:map` attribute no longer comes back with a mix of atom and
+  string keys. `Rpc.Runner` turned a data key into an atom whenever any loaded
+  module had already created that atom. reactor 1.0.7 creates `:retry_count`,
+  so a `metadata` map holding `retry_count` came back with mixed keys. Keys
+  under an untyped map are now snake_cased and always kept as strings.
 
 ### Added
 

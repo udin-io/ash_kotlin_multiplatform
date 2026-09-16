@@ -68,6 +68,26 @@ defmodule AshKotlinMultiplatform.Rpc.UntypedMapKeyCasingTest do
       assert data["metadata"] == %{"outer_key" => %{"inner_key" => 1}}
     end
 
+    # `to_snake_case_key/1` promotes a key to an atom with
+    # `String.to_existing_atom/1`, which succeeds the moment ANY loaded code —
+    # not only this app — has interned that exact atom first. The test above
+    # only ever demonstrated the happy path by luck: "created_by" and
+    # "retry_count" were never atoms anywhere in the VM at the time it ran.
+    # Upgrading to ash 3.33.4 pulled in reactor 1.0.7, whose
+    # `Reactor.Error.Invalid.RetriesExceededError` defines a `:retry_count`
+    # struct field, interning that atom as soon as the module loads — and the
+    # untyped `:metadata` attribute started coming back with a mixed
+    # atom/string-keyed map, which fails to round-trip as JSON the same way
+    # twice (#81). Intern the atom ourselves so this test proves the fix
+    # rather than depending on load order.
+    test "a key matching an atom interned by an unrelated dependency still stays a string" do
+      _ = String.to_atom("interned_probe_key")
+
+      data = create_todo(%{"metadata" => %{"interned_probe_key" => "value"}})
+
+      assert data["metadata"] == %{"interned_probe_key" => "value"}
+    end
+
     test "the keys survive JSON encoding" do
       json =
         %{"metadata" => %{"created_by" => "ada"}}
