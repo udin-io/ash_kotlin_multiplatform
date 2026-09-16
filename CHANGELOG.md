@@ -218,6 +218,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `AshKotlinMultiplatform.Codegen.TypeDiscovery`, 618 lines of resource and
+  type traversal with no caller
+  ([#27](https://github.com/udin-io/ash_kotlin_multiplatform/issues/27)).
+  The module was public in 0.1.3, but nothing in the library called it and
+  no documented entry point reached it. `Codegen.ResourceSchemas` walks the
+  types it needs on its own. Code that called `TypeDiscovery` directly no
+  longer compiles.
+
 - `AshKotlinMultiplatform.Codegen.ValidationSchemas`, the `with_validation`
   option on `KotlinStatic.generate_imports/1`, and the orphaned
   `generate_validation_annotations?/0` config accessor. Nothing in the

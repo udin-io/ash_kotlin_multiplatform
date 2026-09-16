@@ -104,7 +104,7 @@ flowchart TD
     tuples --> fns["FunctionGenerators.HttpRenderer<br/>+ FunctionCore, ConfigBuilder,<br/>ActionIntrospection, PayloadBuilder"]
     tuples --> chan["Rpc.Codegen.PhoenixChannel<br/>PhoenixSerializer, PhoenixSocket,<br/>PhoenixChannel, AshRpcChannel"]
 
-    schemas --> tm["Codegen.TypeMapper<br/>Codegen.TypeDiscovery"]
+    schemas --> tm["Codegen.TypeMapper"]
     types --> tm
     filters --> tm
 

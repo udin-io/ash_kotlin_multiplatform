@@ -73,7 +73,6 @@ defmodule AshKotlinMultiplatform.MixProject do
         "Code Generation": [
           AshKotlinMultiplatform.Rpc.Codegen,
           AshKotlinMultiplatform.Codegen.TypeMapper,
-          AshKotlinMultiplatform.Codegen.TypeDiscovery,
           AshKotlinMultiplatform.Codegen.ResourceSchemas
         ],
         "RPC Pipeline": [
