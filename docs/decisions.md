@@ -497,3 +497,29 @@ could not send the field, and failed every call with `{:missing_get_by_fields,
 
 Cost: a project that set `get_by` on a write and never called the action now
 fails to compile. That build was already broken; it just had not been run yet.
+
+## 2026-09-17 — Codegen reads embedded types from a required manifest
+
+Both generators declare one class per `kind: :embedded_resource` entry in the
+persisted manifest's `types`, through `Manifest.embedded_resources/1` (#84).
+They used to walk the RPC resources' public attributes one level deep. With
+nine embedded fixtures that walk found 1 type and the manifest found 8, and
+the generated Kotlin named `Edition`, `UnionNote` and `SummaryOpts` without
+declaring them.
+
+We accept the widening, as `ash_typescript` does. `Cover`, `Summary`,
+`SecretNote` and `VaultSeal` now get classes although no generated data class
+field names them; the Kotlin compile gate checks every one. The alternative, a
+deeper walk of our own, is the code `ash_introspection#23` exists to delete.
+
+The manifest is now required. `Manifest.manifest_module/0` raises when
+`config :ash_kotlin_multiplatform, :manifest` is unset, naming the config line
+and `mix igniter.install ash_kotlin_multiplatform`. There is no fallback to the
+live walk, because a fallback would keep the defect it replaces.
+
+**Cost.** Breaking: an app without the config key cannot generate code, so
+this ships as 0.2.0. `BuildManifest` compiles every domain resource before
+generating, which widens the deadlock surface in [risks.md](risks.md). A type
+reached only through a `first` aggregate is still missing, because Ash leaves
+the aggregate's `type` `nil` at build time. The embedded classes in a
+generated file reorder once, sorted by module instead of `MapSet` order.

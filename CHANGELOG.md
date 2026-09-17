@@ -32,6 +32,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking, ships as 0.2.0.** Code generation requires
+  `config :ash_kotlin_multiplatform, :manifest`
+  ([#84](https://github.com/udin-io/ash_kotlin_multiplatform/issues/84)).
+  `mix ash_kotlin_multiplatform.codegen` and `swift_codegen` read embedded
+  resource types from the manifest and raise an `ArgumentError` when none is
+  configured. The message names the config line and
+  `mix igniter.install ash_kotlin_multiplatform`, which writes it.
+
+  Both generators now declare a class for every embedded resource in the
+  manifest's `types`, however it is reached: a nested embedded resource, a
+  union member, a generic action argument or return, a calculation, or a
+  relationship to a resource no `kotlin_rpc` block names. The one-level
+  attribute walk they replace found only embedded resources held directly by
+  an RPC resource's attributes. Expect new classes nothing names yet, and a
+  one-time reorder of the embedded classes, now sorted by module.
+
 - The `ash_introspection` floor is now `~> 0.4`.
   `AshIntrospection.Manifest.Decorator.decorate/3` ships in 0.4.1; under the
   previous `~> 0.3` the lock resolved 0.3.0, where the module does not exist.
@@ -62,6 +78,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   declare `previousPage: String = ""` against a server that sends `null`.
 
 ### Fixed
+
+- Generated Kotlin compiles when an embedded resource is reached through
+  another embedded resource, a union member or a generic action argument.
+  With the test fixtures it named `Edition`, `UnionNote` and `SummaryOpts` and
+  never declared them (#84).
+
+- An enum or union field inside an embedded resource named a class nothing
+  declared. Enum and sealed classes are now collected from the embedded
+  resources too (#84).
+
+- A type reached only through a resource no `kotlin_rpc` block names could
+  drop out of the manifest when a file changed. `BuildManifest` compiled only
+  the `kotlin_rpc` resources before generating; it now compiles every domain
+  resource first (#84).
 
 - A `get?` read that matches no record is a not-found error again when
   codegen warnings are off. `Rpc.Pipeline.build_config/0` wired the pipeline's

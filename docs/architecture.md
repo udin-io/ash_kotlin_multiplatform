@@ -65,6 +65,8 @@ C4Container
     Rel(man, ash, "Ash.Info.Manifest.Generator.generate/1, then AshIntrospection.Manifest.Decorator.decorate/3")
     Rel(kgen, dsl, "reads rpc_actions, type_name, field_names")
     Rel(sgen, dsl, "reads the same DSL")
+    Rel(kgen, man, "Manifest.embedded_resources/1; raises without config :manifest")
+    Rel(sgen, man, "the same list")
     Rel(kgen, client, "writes AshRpc.kt")
     Rel(sgen, client, "writes AshRpc.swift")
     Rel(gate, kgen, "compiles what it emits, one subproject per datetime_library")
@@ -93,12 +95,14 @@ flowchart TD
     task["Mix.Tasks.AshKotlinMultiplatform.Codegen"] --> cg["Rpc.Codegen.generate_kotlin_code/2"]
 
     cg --> coll["Rpc.Codegen.RpcConfigCollector<br/>reads Rpc.Info off each domain"]
+    cg --> emb["Manifest.embedded_resources/1<br/>kind: :embedded_resource<br/>from the persisted manifest.types"]
     cg --> vc["VerifierChecker<br/>VerifyIdentities (identities and get_by),<br/>VerifyActionTypes,<br/>VerifyFieldNames, VerifyUniqueTypeNames"]
 
     coll --> tuples["{resource, action, rpc_action}"]
 
     tuples --> static["KotlinStatic<br/>imports, type aliases, AshMoney,<br/>the shared ashRpcJson,<br/>HttpClient factory, AshRpcError, RpcResult&lt;T&gt;"]
-    tuples --> schemas["Codegen.ResourceSchemas<br/>data classes, enums,<br/>sealed unions, embedded"]
+    tuples --> schemas["Codegen.ResourceSchemas.generate_all_schemas/2<br/>data classes, enums,<br/>sealed unions, embedded"]
+    emb --> schemas
     tuples --> types["TypeGenerators.*<br/>InputTypes, MetadataTypes (+ AshMetadata&lt;T, M&gt;),<br/>PaginationTypes (AshPage&lt;T&gt;)"]
     tuples --> filters["Codegen.FilterTypes<br/>Codegen.TypedQueries"]
     tuples --> fns["FunctionGenerators.HttpRenderer<br/>+ FunctionCore, ConfigBuilder,<br/>ActionIntrospection, PayloadBuilder"]
@@ -115,6 +119,19 @@ flowchart TD
     fns --> out
     chan --> out
 ```
+
+`ResourceSchemas` finds no embedded resource itself. `Rpc.Codegen` passes it
+`Manifest.embedded_resources/1`, every `kind: :embedded_resource` entry in the
+persisted manifest's `types`, sorted by module. Ash's reachability walk (the
+traversal that fills `manifest.types`) follows nested embedded resources,
+union members, action arguments and returns, calculations and relationships to
+unpublished resources. The one-level attribute walk it replaced found only the
+first level, and the generated Kotlin named classes it never declared (#84).
+Enum and sealed classes are still collected live, from the public attributes
+of the RPC resources and of those embedded resources. `Swift.Codegen` reads the
+same list. A type reached only through a `first` aggregate is missing from
+`manifest.types`, because the aggregate's `type` is `nil` when the manifest is
+built; see [risks.md](risks.md).
 
 `HttpRenderer` and `FunctionCore` are drawn in one box, but the arrow that
 matters runs between them: `FunctionCore.determine_return_type/1` names the
@@ -211,9 +228,10 @@ still call `build_config/0`; neither reads the key.
 
 Added by issue #73, stage 3 of five in `ash_introspection#23`. It runs once,
 when the consumer's manifest module compiles, and it is the only place this
-library is meant to introspect a resource. Nothing on the request path reads
-its output yet — that is stage 4 — so today the pass is additive and
-reversible: delete the module and every read falls back to live introspection.
+library is meant to introspect a resource. Both code generators read its
+embedded-resource types since #84, so code generation raises when
+`config :ash_kotlin_multiplatform, :manifest` is unset. The request path does
+not read it yet; that is the rest of stage 4.
 
 ```mermaid
 sequenceDiagram
@@ -230,7 +248,7 @@ sequenceDiagram
     MM->>B: transformers run, BuildManifest last but one
     B->>E: action_entrypoints(domains, rpc_resources)
     E-->>B: one entry per rpc_action and per typed_query,<br/>each carrying its rpc_action or typed_query and its domain
-    B->>B: Code.ensure_compiled! every kotlin_rpc resource
+    B->>B: Code.ensure_compiled! every resource of every domain
     B->>G: generate(otp_app:, action_entrypoints:, include_private_relationships?: true)
     G-->>B: undecorated %Ash.Info.Manifest{}
     B->>B: Code.ensure_compiled! every module the manifest names
@@ -239,6 +257,18 @@ sequenceDiagram
     D->>D: decorate(manifest, :ash_kotlin_multiplatform, Rpc.Pipeline.build_config())
     D->>S: persist the decorated :manifest,<br/>:rpc_action_lookup and :typed_query_lookup
 ```
+
+### Why every domain resource compiles first
+
+Ash's reachability walk skips a resource that is not loaded yet, and drops
+every type reached only through it. `BuildManifest` used to compile only the
+`kotlin_rpc` resources before generating. Under parallel compilation, editing
+`test/support/resources/vault_seal.ex` or `secret_note.ex` then dropped the
+edited type from `manifest.types` in 6 of 6 edits. Each is reached only
+through a resource no `kotlin_rpc` block names: `Test.Vault` and
+`Test.Secret`. Compiling every resource of every domain first kept the type in
+6 of 6 edits (#84). The race does not reproduce inside ExUnit, so
+`build_manifest_test.exs` pins the pre-compile list instead.
 
 ### Why the compile edges are there
 
