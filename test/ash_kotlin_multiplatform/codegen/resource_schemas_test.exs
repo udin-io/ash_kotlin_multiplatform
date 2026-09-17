@@ -46,6 +46,11 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemasTest do
       end
     end
 
+    test "declares the enum class an embedded resource's field names", %{kotlin: kotlin} do
+      assert kotlin =~ "val format: Format? = null"
+      assert kotlin =~ "enum class Format {"
+    end
+
     test "declares nothing for a type reached only through a first aggregate",
          %{kotlin: kotlin} do
       # Upstream gap, out of scope for #84: the aggregate's type is nil when the

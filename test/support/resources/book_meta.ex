@@ -11,6 +11,13 @@ defmodule AshKotlinMultiplatform.Test.BookMeta do
 
   attributes do
     attribute :isbn, :string, public?: true
+
+    # An enum inside an embedded resource. The field names `Format`, so the
+    # generated file has to declare it (#84).
+    attribute :format, :atom,
+      constraints: [one_of: [:hardcover, :paperback]],
+      public?: true
+
     attribute :edition, AshKotlinMultiplatform.Test.Edition, public?: true
   end
 end

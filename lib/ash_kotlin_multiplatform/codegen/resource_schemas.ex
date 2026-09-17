@@ -30,7 +30,9 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
   strings.
   """
   def generate_all_schemas(resources, embedded) do
-    {enums, unions} = collect_types(resources)
+    # Embedded classes are generated with `generate_data_class/2` too, so their
+    # enum and union fields name classes this pass must declare.
+    {enums, unions} = collect_types(resources ++ embedded)
 
     # Exactly the resources this pass declares a data class for. Nothing else may
     # be named by a relationship field - see `generate_relationship_fields/2`.
@@ -180,9 +182,11 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
   # name: it maps from the Ash type alone, while both names come from the attribute
   # name.
   #
-  # Both `collect_types/1` and `generate_data_class/1` read
-  # `Ash.Resource.Info.public_attributes/1` and share the predicates below, so the
-  # class a field names always exists. Nothing else may take these branches — a
+  # Both `collect_types/1` and `generate_data_class/2` read
+  # `Ash.Resource.Info.public_attributes/1` of the same resources and embedded
+  # resources, and share the predicates below, so the class a field names always
+  # exists. An enum inside an embedded resource once named a class nothing
+  # declared, because `collect_types/1` saw the RPC resources only (#84). Nothing else may take these branches — a
   # union or `one_of` atom reached through an action argument or a union member has
   # no generated class, and naming one there would emit a dangling reference.
   defp field_kotlin_type(attribute) do
