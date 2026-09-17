@@ -82,6 +82,38 @@ defmodule AshKotlinMultiplatform.Test.Book do
       end
     end
 
+    # A generic action returning a list of the same embedded resource, so the
+    # generated signature has to name `List<Summary>` (#87).
+    action :summarize_all, {:array, AshKotlinMultiplatform.Test.Summary} do
+      run fn _input, _context ->
+        {:ok,
+         [
+           %AshKotlinMultiplatform.Test.Summary{label: "One"},
+           %AshKotlinMultiplatform.Test.Summary{label: "Two"}
+         ]}
+      end
+    end
+
+    # A generic action returning a resource other than its owner. Codegen named
+    # the owner, `Book`, here before #87.
+    #
+    # `:struct` with `instance_of` rather than the bare `Author` module: naming
+    # `Author` as the return type failed to compile `Book` with "Author is not
+    # a valid type". At runtime `FieldSelector.select_fields/5` sends both forms
+    # to `select_resource_fields/4`.
+    action :sample_author, :struct do
+      constraints instance_of: AshKotlinMultiplatform.Test.Author
+
+      run fn _input, _context ->
+        {:ok,
+         %AshKotlinMultiplatform.Test.Author{
+           id: "00000000-0000-0000-0000-000000000001",
+           name: "Sample",
+           email: "sample@example.com"
+         }}
+      end
+    end
+
     create :create do
       primary? true
       accept [:title, :author_id]
