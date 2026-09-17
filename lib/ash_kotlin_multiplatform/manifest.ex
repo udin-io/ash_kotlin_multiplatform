@@ -7,12 +7,15 @@ defmodule AshKotlinMultiplatform.Manifest do
   The Spark DSL module a consumer declares so this library reads one
   compile-time `%Ash.Info.Manifest{}` instead of introspecting per request.
 
-      defmodule MyApp.AkmManifest do
+      defmodule MyApp.AshKotlinMultiplatformManifest do
         use AshKotlinMultiplatform.Manifest, otp_app: :my_app
       end
 
       # config/config.exs
-      config :ash_kotlin_multiplatform, manifest: MyApp.AkmManifest
+      config :ash_kotlin_multiplatform, manifest: MyApp.AshKotlinMultiplatformManifest
+
+  Both code generators read embedded resource types from this manifest, and
+  raise when the config key is missing.
 
   ## Why the module lives here and not in the core
 
@@ -132,7 +135,8 @@ defmodule AshKotlinMultiplatform.Manifest do
   @doc """
   The manifest module named by `config :ash_kotlin_multiplatform, :manifest`.
 
-  Raises with the config line to add when none is configured.
+  Raises with the config line to add when none is configured. Both code
+  generators call this, so the key is required to generate code (#84).
   """
   @spec manifest_module() :: module()
   def manifest_module do
@@ -141,16 +145,19 @@ defmodule AshKotlinMultiplatform.Manifest do
         raise ArgumentError, """
         No `:manifest` module configured for AshKotlinMultiplatform.
 
-        Declare one and point the config at it:
+        Code generation reads embedded resource types from a compile-time
+        manifest. Install one with:
 
-            defmodule MyApp.AkmManifest do
+            mix igniter.install ash_kotlin_multiplatform
+
+        or declare it and point the config at it:
+
+            defmodule MyApp.AshKotlinMultiplatformManifest do
               use AshKotlinMultiplatform.Manifest, otp_app: :my_app
             end
 
             # config/config.exs
-            config :ash_kotlin_multiplatform, manifest: MyApp.AkmManifest
-
-        `mix ash_kotlin_multiplatform.install` writes both.
+            config :ash_kotlin_multiplatform, manifest: MyApp.AshKotlinMultiplatformManifest
         """
 
       module ->
