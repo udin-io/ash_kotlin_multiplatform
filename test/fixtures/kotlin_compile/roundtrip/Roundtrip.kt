@@ -260,6 +260,19 @@ private fun otherResourceActionDefaultFieldsDecode(): String {
     return "author=$author"
 }
 
+// #95: a generic action returning a `:struct` with declared fields, sent with
+// no `fields`, answered with Book's keys, all null. `bookStats` returns
+// `RpcResult<JsonElement>`, so the check reads the JSON's keys and values.
+private fun typedStructActionDefaultFieldsDecode(): String {
+    val data = typed<JsonElement>("typed_struct_action_default_fields").data!!.jsonObject
+
+    expect("keys", data.keys.sorted(), listOf("bookCount", "topTitle"))
+    expect("bookCount", data["bookCount"]?.jsonPrimitive?.int, 2)
+    expect("topTitle", data["topTitle"]?.jsonPrimitive?.content, "Kindred")
+
+    return "data=$data"
+}
+
 // #24: every error map Runner builds writes the key "shortMessage" literally,
 // under every output_field_formatter.
 private fun errorDecodes(): String {
@@ -510,6 +523,7 @@ fun main() {
     check("#88 no fields: RpcResult<Summary> decodes a non-null label", ::embeddedActionDefaultFieldsDecode)
     check("#88 no fields: RpcResult<List<Summary>> decodes non-null labels", ::embeddedListActionDefaultFieldsDecode)
     check("#88 no fields: RpcResult<Author> decodes Author's fields, not Book's", ::otherResourceActionDefaultFieldsDecode)
+    check("#95 no fields: a typed :struct result carries its own keys, not Book's", ::typedStructActionDefaultFieldsDecode)
     check("#24 validation results decode", ::validationDecodes)
     check("#24 sparse fieldset decodes", ::sparseFieldsetDecodes)
     check("#24 action metadata lands inside data", ::actionMetadataLandsInsideData)

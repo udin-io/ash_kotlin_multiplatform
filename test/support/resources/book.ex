@@ -132,6 +132,79 @@ defmodule AshKotlinMultiplatform.Test.Book do
       run fn _input, _context -> {:ok, %{"shelf_count" => 3}} end
     end
 
+    # Generic actions returning each typed container other than a map, alone
+    # and in a list. A request with no `fields` gets the declared field names.
+    # Before #95 each sent Book's attribute names, every value nil, because the
+    # runner's default only recognised `:map`.
+    #
+    # A `:struct` with `fields` and no `instance_of`: a typed map by another
+    # name. The run function returns a plain map, which the struct type reads.
+    action :book_stats, :struct do
+      constraints fields: [
+                    book_count: [type: :integer],
+                    top_title: [type: :string]
+                  ]
+
+      run fn _input, _context -> {:ok, %{book_count: 2, top_title: "Kindred"}} end
+    end
+
+    action :book_stats_all, {:array, :struct} do
+      constraints items: [
+                    fields: [
+                      book_count: [type: :integer],
+                      top_title: [type: :string]
+                    ]
+                  ]
+
+      run fn _input, _context ->
+        {:ok, [%{book_count: 1, top_title: "A"}, %{book_count: 2, top_title: "B"}]}
+      end
+    end
+
+    # A `:tuple` names its elements by position, so its template carries each
+    # field's index rather than a key (`FieldSelector.select_tuple_fields/4`).
+    action :book_pair, :tuple do
+      constraints fields: [
+                    book_count: [type: :integer],
+                    top_title: [type: :string]
+                  ]
+
+      run fn _input, _context -> {:ok, {2, "Kindred"}} end
+    end
+
+    action :book_pairs, {:array, :tuple} do
+      constraints items: [
+                    fields: [
+                      book_count: [type: :integer],
+                      top_title: [type: :string]
+                    ]
+                  ]
+
+      run fn _input, _context -> {:ok, [{1, "A"}, {2, "B"}]} end
+    end
+
+    action :book_options, :keyword do
+      constraints fields: [
+                    book_count: [type: :integer],
+                    top_title: [type: :string]
+                  ]
+
+      run fn _input, _context -> {:ok, [book_count: 2, top_title: "Kindred"]} end
+    end
+
+    action :book_options_all, {:array, :keyword} do
+      constraints items: [
+                    fields: [
+                      book_count: [type: :integer],
+                      top_title: [type: :string]
+                    ]
+                  ]
+
+      run fn _input, _context ->
+        {:ok, [[book_count: 1, top_title: "A"], [book_count: 2, top_title: "B"]]}
+      end
+    end
+
     create :create do
       primary? true
       accept [:title, :author_id]
