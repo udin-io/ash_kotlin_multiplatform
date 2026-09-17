@@ -187,18 +187,45 @@ private fun inputEncoding(): String {
 
 // #84: `SummaryOpts` and `Summary` are reachable only through a generic action,
 // so the one-level attribute walk never declared either. The request half
-// encodes the argument the fixture sent; the response half decodes the result.
+// encodes the argument the fixture sent; the response half decodes the result
+// into `RpcResult<Summary>`, the type `summarizeBook` returns since #87. It went
+// through `dataAs()` while the function returned `RpcResult<JsonElement>`.
 private fun embeddedActionResultDecodes(): String {
     val sent = """{"opts":{"label":"Short"}}"""
     val input = SummarizeBookInput(opts = SummaryOpts(label = "Short"))
 
     expect("encoded input", ashRpcJson.encodeToString(input), sent)
 
-    val summary = result("embedded_action_result").dataAs<Summary>()!!
+    val summary = typed<Summary>("embedded_action_result").data!!
 
-    expect("label", summary.label, "Short")
+    expect("summary", summary.toString(), "Summary(label=Short)")
 
-    return "sent=$sent label=${summary.label}"
+    return "sent=$sent summary=$summary"
+}
+
+// #87: a generic action returning a list of embedded resources returns
+// `RpcResult<List<Summary>>`.
+private fun embeddedListActionResultDecodes(): String {
+    val summaries = typed<List<Summary>>("embedded_list_action_result").data!!
+
+    expect("summaries", summaries.toString(), "[Summary(label=One), Summary(label=Two)]")
+
+    return "summaries=$summaries"
+}
+
+// #87: a generic action on Book returning an Author returns
+// `RpcResult<Author>`. It named the owner, `RpcResult<Book>`, before; the
+// server sends Author's fields.
+private fun otherResourceActionResultDecodes(): String {
+    val author = typed<Author>("other_resource_action_result").data!!
+
+    expect(
+        "author",
+        author.toString(),
+        "Author(id=00000000-0000-0000-0000-000000000001, name=Sample, email=null, addressLine1=null, books=null)"
+    )
+
+    return "author=$author"
 }
 
 // #24: every error map Runner builds writes the key "shortMessage" literally,
@@ -445,7 +472,9 @@ fun main() {
     check("#54 date fields through the channel client's Json", ::dateFieldsThroughTheChannelJson)
     check("#54 input encoding through the shared Json", ::inputEncoding)
     check("#24 error response decodes", ::errorDecodes)
-    check("#84 an embedded action argument encodes and its result decodes", ::embeddedActionResultDecodes)
+    check("#84 #87 an embedded action argument encodes and RpcResult<Summary> decodes", ::embeddedActionResultDecodes)
+    check("#87 a list of embedded resources decodes into RpcResult<List<Summary>>", ::embeddedListActionResultDecodes)
+    check("#87 another resource decodes into RpcResult<Author>, not Book", ::otherResourceActionResultDecodes)
     check("#24 validation results decode", ::validationDecodes)
     check("#24 sparse fieldset decodes", ::sparseFieldsetDecodes)
     check("#24 action metadata lands inside data", ::actionMetadataLandsInsideData)
