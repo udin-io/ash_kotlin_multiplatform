@@ -48,9 +48,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an RPC resource's attributes. Expect new classes nothing names yet, and a
   one-time reorder of the embedded classes, now sorted by module.
 
-- The `ash_introspection` floor is now `~> 0.4`.
+- The `ash_introspection` floor is now `~> 0.5`.
   `AshIntrospection.Manifest.Decorator.decorate/3` ships in 0.4.1; under the
-  previous `~> 0.3` the lock resolved 0.3.0, where the module does not exist.
+  previous `~> 0.3` the lock resolved 0.3.0, where the module does not
+  exist. 0.5.0 deletes `AshIntrospection.Codegen.TypeDiscovery` and its
+  warning helpers (ash_introspection#23 stage 4b); codegen here is
+  manifest-only since #86, so this repo has zero callers of the deleted
+  module.
 
 - **Breaking.** Every generated RPC function now returns `RpcResult<T>` named
   for its own action, where it returned the same untyped `RpcResult` with
