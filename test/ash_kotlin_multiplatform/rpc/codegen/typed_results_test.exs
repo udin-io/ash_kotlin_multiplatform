@@ -18,16 +18,25 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.TypedResultsTest do
   """
   use ExUnit.Case, async: true
 
+  alias AshKotlinMultiplatform.Manifest
   alias AshKotlinMultiplatform.Rpc.Codegen.FunctionGenerators.HttpRenderer
   alias AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic
   alias AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel
+  alias AshKotlinMultiplatform.Rpc.Codegen.RpcConfigCollector
   alias AshKotlinMultiplatform.Test.{Author, Event, Todo}
+
+  # Every resource the full generation pass declares a class for, built the way
+  # `Rpc.Codegen` builds it.
+  defp emitted do
+    RpcConfigCollector.get_rpc_resources(:ash_kotlin_multiplatform) ++
+      Manifest.embedded_resources()
+  end
 
   defp signature(resource, action_name, rpc_name, rpc_action \\ %{}) do
     action = Ash.Resource.Info.action(resource, action_name)
 
     resource
-    |> HttpRenderer.render_execution_function(action, rpc_action, rpc_name)
+    |> HttpRenderer.render_execution_function(action, rpc_action, rpc_name, emitted())
     |> String.split("\n")
     |> Enum.find(&String.contains?(&1, "): RpcResult"))
   end

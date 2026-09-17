@@ -77,9 +77,16 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
     resources_and_actions = RpcConfigCollector.get_rpc_resources_and_actions(otp_app)
     rpc_configs = RpcConfigCollector.get_rpc_configs(otp_app)
 
+    embedded = Manifest.embedded_resources()
+
+    # Every resource this pass declares a class for. A section generator cannot
+    # see what another emitted, so the set is built once here and handed to the
+    # functions, whose return types may name nothing outside it (#87).
+    emitted = rpc_resources ++ embedded
+
     # Generate comprehensive schema types
     {data_classes, embedded_classes, enum_classes, sealed_classes} =
-      ResourceSchemas.generate_all_schemas(rpc_resources, Manifest.embedded_resources())
+      ResourceSchemas.generate_all_schemas(rpc_resources, embedded)
 
     # Generate action-specific input types
     input_types = InputTypes.generate_input_types(rpc_configs)
@@ -140,7 +147,10 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
         # Typed queries (if any)
         non_empty_or_nil(typed_queries, "// Typed Queries"),
         # RPC functions (functional style with config types)
-        non_empty_or_nil(generate_rpc_functions(resources_and_actions, opts), "// RPC Functions"),
+        non_empty_or_nil(
+          generate_rpc_functions(resources_and_actions, emitted),
+          "// RPC Functions"
+        ),
         # Validation functions (if enabled)
         maybe_generate_validation_functions(resources_and_actions, opts),
         # Object wrappers (OO style)
@@ -214,10 +224,16 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
   end
 
   # Generate RPC functions using the HttpRenderer
-  defp generate_rpc_functions(resources_and_actions, _opts) do
+  defp generate_rpc_functions(resources_and_actions, emitted) do
     resources_and_actions
     |> Enum.map(fn {resource, action, rpc_action} ->
-      HttpRenderer.render_execution_function(resource, action, rpc_action, rpc_action.name)
+      HttpRenderer.render_execution_function(
+        resource,
+        action,
+        rpc_action,
+        rpc_action.name,
+        emitted
+      )
     end)
     |> Enum.join("\n\n")
   end

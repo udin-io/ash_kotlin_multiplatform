@@ -22,9 +22,15 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.FunctionGenerators.FunctionCore do
   - Field selection info (has_fields)
   - Pagination info
   - Metadata info
+  - `emitted`, every resource the generated file declares a class for
+
+  `opts` must carry `:emitted`. A generic action's return type may only name a
+  class in that list, and this module cannot see what `ResourceSchemas`
+  declares, so `AshKotlinMultiplatform.Rpc.Codegen` passes it in.
   """
-  def build_execution_function_shape(resource, action, rpc_action, rpc_action_name, opts \\ []) do
+  def build_execution_function_shape(resource, action, rpc_action, rpc_action_name, opts) do
     transport = Keyword.get(opts, :transport, :http)
+    emitted = Keyword.fetch!(opts, :emitted)
 
     rpc_action_name_pascal = Helpers.snake_to_pascal_case(rpc_action_name)
     resource_name = build_resource_type_name(resource)
@@ -58,7 +64,8 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.FunctionGenerators.FunctionCore do
       has_metadata: has_metadata,
       is_optional_pagination: is_optional_pagination,
       is_mutation: action.type in [:create, :update],
-      transport: transport
+      transport: transport,
+      emitted: emitted
     }
   end
 
