@@ -26,7 +26,9 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     are either a field name (`"title"`) or a map naming a relationship,
     calculation or embedded field and the fields to take from it
     (`%{"author" => ["id", "name"]}`), nested to any depth. Absent or `[]`
-    returns every public attribute and nothing else. Selection is resolved by
+    returns every public attribute and nothing else. For a generic action
+    those are the attributes of the resource it returns, not the one that owns
+    it, or the declared fields of a map it returns. Selection is resolved by
     `AshIntrospection.Rpc.FieldProcessing.FieldSelector`, so an unknown name is
     an error rather than silently dropped, and a relationship whose destination
     the `kotlin_rpc` DSL does not publish is refused.
@@ -47,6 +49,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   - `"metadata"` - Optional metadata from the action
   """
 
+  alias AshKotlinMultiplatform.Resource.Info, as: ResourceInfo
   alias AshKotlinMultiplatform.Rpc.Info
   alias AshKotlinMultiplatform.Rpc.Pipeline
   alias AshIntrospection.Rpc.ErrorBuilder
@@ -558,12 +561,20 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # Field Selection
   # ---------------------------------------------------------------------------
 
-  # An empty request keeps the existing contract: every public attribute, no
-  # relationships, calculations or aggregates. The client asked for nothing in
-  # particular, so it gets the resource's own flat shape.
-  defp select_fields(resource, _action, []) do
-    template = Enum.map(Ash.Resource.Info.public_attributes(resource), & &1.name)
-    {:ok, {template, [], template}}
+  # An empty request gets every public attribute of the resource the action
+  # produces: no relationships, calculations or aggregates. The client asked
+  # for nothing in particular, so it gets that resource's own flat shape.
+  #
+  # For a generic action that is the resource it RETURNS, never the one that
+  # owns it. `Book.summarize` returns `Summary`, and taking Book's attributes
+  # copied five nil keys out of a Summary, which generated Kotlin decoded as
+  # `Summary(label=null)` with no error (#88). A generic action returning a map
+  # that declares its `fields` gets those names, for the same reason.
+  #
+  # Any other generic return keeps the owner's attributes, as before #88. The
+  # shared pipeline ignores that template for an untyped map and a scalar.
+  defp select_fields(resource, action, []) do
+    {:ok, default_selection(resource, action)}
   end
 
   defp select_fields(resource, action, fields) when is_list(fields) do
@@ -575,6 +586,29 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
 
   defp select_fields(_resource, _action, fields) do
     {:error, {:invalid_fields, {:fields_must_be_a_list, fields}}}
+  end
+
+  defp default_selection(resource, %{type: :action} = action) do
+    case ResourceInfo.returned_resource(action) do
+      nil -> map_field_selection(ResourceInfo.returned_type(action), resource)
+      returned -> attribute_selection(returned)
+    end
+  end
+
+  defp default_selection(resource, _action), do: attribute_selection(resource)
+
+  defp map_field_selection({Ash.Type.Map, constraints}, resource) do
+    case Keyword.get(constraints, :fields) do
+      [_ | _] = fields -> {[], [], Keyword.keys(fields)}
+      _untyped -> attribute_selection(resource)
+    end
+  end
+
+  defp map_field_selection(_other_return, resource), do: attribute_selection(resource)
+
+  defp attribute_selection(resource) do
+    template = Enum.map(Ash.Resource.Info.public_attributes(resource), & &1.name)
+    {template, [], template}
   end
 
   # `is_interop_resource?` is what stops a nested request walking out of the

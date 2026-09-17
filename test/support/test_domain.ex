@@ -61,6 +61,11 @@ defmodule AshKotlinMultiplatform.Test.Domain do
       rpc_action :summarize_all, :summarize_all
       rpc_action :sample_author, :sample_author
 
+      # A generic action returning a typed map and one returning an untyped
+      # map, so the no-`fields` default covers both (#88).
+      rpc_action :tally_books, :tally
+      rpc_action :raw_book_stats, :raw_stats
+
       # Each of the two read-surface switches on its own, so a test can tell
       # which one dropped which parameter.
       rpc_action :list_books_fixed_order, :read do
