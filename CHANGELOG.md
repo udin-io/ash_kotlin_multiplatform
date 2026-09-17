@@ -81,6 +81,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   discriminator `Rpc.Runner` does not write, and the pagination classes
   declare `previousPage: String = ""` against a server that sends `null`.
 
+- **Breaking, ships in 0.2.0.** A generated function for a generic action
+  now returns `RpcResult<T>` named for the resource the action returns
+  ([#87](https://github.com/udin-io/ash_kotlin_multiplatform/issues/87)).
+  An action returning an embedded resource returned
+  `RpcResult<JsonElement>`, and one returning a different resource named
+  the resource that owns the action. With the test fixtures,
+  `summarizeBook()` now returns `RpcResult<Summary>`, `summarizeAll()`
+  returns `RpcResult<List<Summary>>`, and `sampleAuthor()` on `Book`
+  returns `RpcResult<Author>` where it returned `RpcResult<Book>`.
+
+  Callers replace `result.dataAs<Summary>()` with `result.data`. A caller
+  that decoded the old owner type reads the returned resource's fields
+  instead, which is what `Rpc.Runner` sends. A returned resource the file
+  declares no class for, such as one no `kotlin_rpc` block names, stays
+  `RpcResult<JsonElement>`.
+
 ### Fixed
 
 - Generated Kotlin compiles when an embedded resource is reached through
