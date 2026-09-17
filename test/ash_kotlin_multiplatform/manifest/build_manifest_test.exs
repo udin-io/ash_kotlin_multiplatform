@@ -9,6 +9,7 @@ defmodule AshKotlinMultiplatform.Manifest.BuildManifestTest do
   """
   use ExUnit.Case, async: true
 
+  alias AshKotlinMultiplatform.Manifest.Transformers.BuildManifest
   alias AshKotlinMultiplatform.Test
 
   defp manifest, do: AshKotlinMultiplatform.Manifest.manifest(Test.Manifest)
@@ -102,6 +103,21 @@ defmodule AshKotlinMultiplatform.Manifest.BuildManifestTest do
 
       refute Map.has_key?(book.relationships, :editor)
       assert Map.has_key?(book.relationships, :author)
+    end
+  end
+
+  describe "resources compiled before generating" do
+    # Ash's reachability walk skips a resource that is not loaded yet. Under
+    # parallel compilation, compiling only the kotlin_rpc resources first left
+    # `VaultSeal` out of `manifest.types` in 6 of 6 edits to `vault_seal.ex`:
+    # it is reached only through `Vault`, which no kotlin_rpc block names
+    # (#84). The race did not reproduce inside ExUnit, so this pins the list.
+    test "include every domain resource, not only the kotlin_rpc ones" do
+      compiled = BuildManifest.resources_to_compile([Test.Domain])
+
+      assert Test.Secret in compiled
+      assert Test.Vault in compiled
+      assert Test.Todo in compiled
     end
   end
 
