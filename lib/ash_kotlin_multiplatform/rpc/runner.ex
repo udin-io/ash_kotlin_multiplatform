@@ -28,7 +28,8 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     (`%{"author" => ["id", "name"]}`), nested to any depth. Absent or `[]`
     returns every public attribute and nothing else. For a generic action
     those are the attributes of the resource it returns, not the one that owns
-    it, or the declared fields of a map it returns. Selection is resolved by
+    it, or the declared fields of a map, struct, keyword list or tuple it
+    returns. Selection is resolved by
     `AshIntrospection.Rpc.FieldProcessing.FieldSelector`, so an unknown name is
     an error rather than silently dropped, and a relationship whose destination
     the `kotlin_rpc` DSL does not publish is refused.
@@ -568,11 +569,13 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # For a generic action that is the resource it RETURNS, never the one that
   # owns it. `Book.summarize` returns `Summary`, and taking Book's attributes
   # copied five nil keys out of a Summary, which generated Kotlin decoded as
-  # `Summary(label=null)` with no error (#88). A generic action returning a map
-  # that declares its `fields` gets those names, for the same reason.
+  # `Summary(label=null)` with no error (#88). A generic action returning a map,
+  # struct, keyword list or tuple that declares its `fields` gets those fields,
+  # for the same reason (#88, #95).
   #
   # Any other generic return keeps the owner's attributes, as before #88. The
   # shared pipeline ignores that template for an untyped map and a scalar.
+  # Unions are not handled here yet: ash_introspection#84 and #96.
   defp select_fields(resource, action, []) do
     {:ok, default_selection(resource, action)}
   end
@@ -597,7 +600,18 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
 
   defp default_selection(resource, _action), do: attribute_selection(resource)
 
-  defp map_field_selection({Ash.Type.Map, constraints}, resource) do
+  # A tuple has no keys, so its template names each field by position. That is
+  # the template `FieldSelector` builds for an empty request, so it is taken
+  # from there rather than rebuilt.
+  defp map_field_selection({Ash.Type.Tuple, constraints}, resource) do
+    case Keyword.get(constraints, :fields) do
+      [_ | _] -> FieldSelector.select_tuple_fields(constraints, [], [], field_selector_config())
+      _untyped -> attribute_selection(resource)
+    end
+  end
+
+  defp map_field_selection({type, constraints}, resource)
+       when type in [Ash.Type.Map, Ash.Type.Struct, Ash.Type.Keyword] do
     case Keyword.get(constraints, :fields) do
       [_ | _] = fields -> {[], [], Keyword.keys(fields)}
       _untyped -> attribute_selection(resource)

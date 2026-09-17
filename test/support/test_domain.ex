@@ -66,6 +66,16 @@ defmodule AshKotlinMultiplatform.Test.Domain do
       rpc_action :tally_books, :tally
       rpc_action :raw_book_stats, :raw_stats
 
+      # A struct, a tuple and a keyword list with declared fields, each alone
+      # and in a list, so the no-`fields` default covers every typed
+      # container (#95).
+      rpc_action :book_stats, :book_stats
+      rpc_action :book_stats_all, :book_stats_all
+      rpc_action :book_pair, :book_pair
+      rpc_action :book_pairs, :book_pairs
+      rpc_action :book_options, :book_options
+      rpc_action :book_options_all, :book_options_all
+
       # Each of the two read-surface switches on its own, so a test can tell
       # which one dropped which parameter.
       rpc_action :list_books_fixed_order, :read do
