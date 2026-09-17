@@ -34,6 +34,15 @@ defmodule AshKotlinMultiplatform.Manifest.Transformers.BuildManifest do
   relationship destinations and embedded-resource modules that appear in no
   `kotlin_rpc` block, which is why the second pass reads the manifest rather
   than the DSL.
+
+  The first pass compiles every resource of every domain, not only the
+  `kotlin_rpc` ones. Ash's reachability walk skips a resource that is not loaded
+  yet, and so drops every type reached only through it. Compiling only the
+  `kotlin_rpc` resources, editing `test/support/resources/vault_seal.ex` or
+  `secret_note.ex` dropped the edited type from `manifest.types` in 6 of 6
+  edits, because only the unpublished `Vault` and `Secret` reach them.
+  Compiling every domain resource kept it in 6 of 6 (#84). Code generation reads its embedded types from that list, so a
+  type dropped here is a class the generated file does not declare.
   """
 
   use Spark.Dsl.Transformer
@@ -51,7 +60,7 @@ defmodule AshKotlinMultiplatform.Manifest.Transformers.BuildManifest do
     domains = Transformer.get_persisted(dsl_state, :domains) || Ash.Info.domains(otp_app)
 
     rpc_resources = Entrypoints.rpc_resources(domains)
-    Enum.each(rpc_resources, &Code.ensure_compiled!/1)
+    domains |> resources_to_compile() |> Enum.each(&Code.ensure_compiled!/1)
 
     {:ok, manifest} =
       Ash.Info.Manifest.Generator.generate(
@@ -66,6 +75,17 @@ defmodule AshKotlinMultiplatform.Manifest.Transformers.BuildManifest do
      dsl_state
      |> Transformer.persist(:undecorated_manifest, manifest)
      |> Transformer.persist(:manifest, manifest)}
+  end
+
+  @doc false
+  # Every resource of every domain, and every kotlin_rpc resource. Public only
+  # so a test can pin the list: the race it prevents did not reproduce inside
+  # ExUnit.
+  def resources_to_compile(domains) do
+    domains
+    |> Enum.flat_map(&Ash.Domain.Info.resources/1)
+    |> Enum.concat(Entrypoints.rpc_resources(domains))
+    |> Enum.uniq()
   end
 
   defp ensure_all_modules_compiled(%Ash.Info.Manifest{resources: resources, types: types}) do

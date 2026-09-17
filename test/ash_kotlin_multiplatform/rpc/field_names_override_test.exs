@@ -28,6 +28,7 @@ defmodule AshKotlinMultiplatform.Rpc.FieldNamesOverrideTest do
   use ExUnit.Case, async: true
 
   alias AshKotlinMultiplatform.Codegen.ResourceSchemas
+  alias AshKotlinMultiplatform.Manifest
   alias AshKotlinMultiplatform.Resource.Info
   alias AshKotlinMultiplatform.Rpc.Runner
   alias AshKotlinMultiplatform.Test.Author
@@ -50,7 +51,9 @@ defmodule AshKotlinMultiplatform.Rpc.FieldNamesOverrideTest do
   end
 
   defp author_class do
-    {resource_classes, _, _, _} = ResourceSchemas.generate_all_schemas([Author])
+    {resource_classes, _, _, _} =
+      ResourceSchemas.generate_all_schemas([Author], Manifest.embedded_resources())
+
     resource_classes
   end
 

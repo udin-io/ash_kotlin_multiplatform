@@ -104,29 +104,42 @@ in review.
 *Do:* close #38 as one mechanical commit, then add the check to the `test`
 job.
 
-### The manifest is built and nothing reads it
+### Codegen trusts the manifest's type list, and the request path ignores it
 
-`AshKotlinMultiplatform.Manifest` builds, decorates and persists a full
-`%Ash.Info.Manifest{}` on every compile, and no code on the request path or in
-codegen reads it. `Rpc.Runner.discover_action/2` still scans
-`Ash.Info.domains/1` per request. So the manifest can be wrong in a way that
-only `test/ash_kotlin_multiplatform/manifest/` would catch, and it costs
-compile time to build something nothing consumes.
+Both code generators declare one class per embedded resource in the persisted
+manifest's `types` (#84). A type missing from that list is a class the
+generated file does not declare, and Kotlin that names it does not compile.
+Two ways to lose one are known:
 
-**What we watch.** The differential pressure is the `decorated?/2` assertions
-in `decorate_manifest_test.exs` and the entrypoint counts in
-`build_manifest_test.exs`. Neither compares a manifest read against a live
-read the way `ash_introspection`'s own differential test does.
+- A type reached only through a `first` aggregate. The aggregate's `type` is
+  `nil` when the manifest is built, so Ash's reachability walk misses it.
+  `Test.PrivateMeta` is the fixture. No data class carries aggregates, so no
+  generated file names it today. This is an upstream Ash gap.
+- A type reached only through a resource that was not loaded when the manifest
+  was built. `BuildManifest` now compiles every domain resource first; that
+  race dropped a type in 6 of 6 measured edits before.
 
-**What we would do.** Stage 4 of `ash_introspection#23` is what makes codegen
-read it, and stage 5 makes it required. Until one of them lands, treat a
-manifest change as unverified by anything but its own tests. If stage 4 slips,
-add a test that reads one field both ways and compares.
+Meanwhile `Rpc.Runner.discover_action/2` still scans `Ash.Info.domains/1` per
+request, so the request path and the manifest can disagree with nothing
+comparing them.
+
+**What we watch.** The Kotlin compile gate, which fails on any undeclared
+class. The embedded-class tests in `resource_schemas_test.exs` and
+`swift/codegen_test.exs`, one per route. The `refute` on `PrivateMeta` in
+`resource_schemas_test.exs` fails the day Ash fixes the aggregate gap.
+
+**What we would do.** When the `PrivateMeta` test fails, delete this bullet
+and turn the test into an assertion. If a consumer reports an undeclared
+embedded class, find the route, add a fixture for it, and fix reachability
+upstream rather than walking attributes here again. The request path moves
+onto the manifest in the rest of `ash_introspection#23` stage 4.
 
 ### `Code.ensure_compiled!` inside a transformer can deadlock
 
-`BuildManifest` forces every `kotlin_rpc` resource and every module the
-generated manifest names to compile. If one of those modules ever gains a
+`BuildManifest` forces every resource of every domain, and every module the
+generated manifest names, to compile. Since #84 that is every domain resource,
+not only the `kotlin_rpc` ones, so the surface is wider: a resource no client
+ever sees can now deadlock the build too. If one of those modules ever gains a
 compile-time dependency back on the manifest module, the parallel compiler
 deadlocks rather than erroring usefully.
 

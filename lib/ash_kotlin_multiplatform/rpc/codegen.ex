@@ -21,6 +21,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
   - Phoenix Channel client (if enabled)
   """
 
+  alias AshKotlinMultiplatform.Manifest
   alias AshKotlinMultiplatform.Rpc.Info
   alias AshKotlinMultiplatform.Codegen.{FilterTypes, ResourceSchemas, TypedQueries}
 
@@ -78,7 +79,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
 
     # Generate comprehensive schema types
     {data_classes, embedded_classes, enum_classes, sealed_classes} =
-      ResourceSchemas.generate_all_schemas(rpc_resources)
+      ResourceSchemas.generate_all_schemas(rpc_resources, Manifest.embedded_resources())
 
     # Generate action-specific input types
     input_types = InputTypes.generate_input_types(rpc_configs)

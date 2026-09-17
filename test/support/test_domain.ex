@@ -13,6 +13,7 @@ defmodule AshKotlinMultiplatform.Test.Domain do
     resource AshKotlinMultiplatform.Test.Secret
     resource AshKotlinMultiplatform.Test.Todo
     resource AshKotlinMultiplatform.Test.User
+    resource AshKotlinMultiplatform.Test.Vault
   end
 
   kotlin_rpc do
@@ -49,6 +50,10 @@ defmodule AshKotlinMultiplatform.Test.Domain do
     resource AshKotlinMultiplatform.Test.Book do
       rpc_action :list_books, :read
       rpc_action :create_book, :create
+
+      # A generic action whose argument and return are embedded resources, both
+      # reachable only through the action (#84).
+      rpc_action :summarize_book, :summarize
 
       # Each of the two read-surface switches on its own, so a test can tell
       # which one dropped which parameter.

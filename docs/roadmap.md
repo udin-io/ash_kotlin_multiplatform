@@ -38,6 +38,7 @@ afterwards.
 | 2026-09-12 | `AshKotlinMultiplatform.Manifest`: one compile-time `Ash.Info.Manifest`, decorated and persisted (#73, PR #75) |
 | 2026-09-12 | `get_by` on a create, update or destroy is a compile error rather than a runtime failure on every call (#69) |
 | 2026-09-13 | `main` is formatter-clean; `mix format --check-formatted` is in CI (#38) |
+| 2026-09-17 | Both generators read embedded types from the manifest, which is now required; breaking, 0.2.0 (#84) |
 
 ## In progress
 
@@ -51,7 +52,7 @@ Ordered by what unblocks the most.
 
 | Issue | What | Why now |
 | ----- | ---- | ------- |
-| `ash_introspection#23` stage 4 | Delete `AshIntrospection.Codegen.TypeDiscovery`; codegen reads the manifest only | Stage 3 built the manifest; nothing reads it on the request path yet |
+| `ash_introspection#23` stage 4 | Delete `AshIntrospection.Codegen.TypeDiscovery` (ash_introspection 0.5.0); the request path reads the manifest | #84 moved codegen's embedded types onto the manifest; enums, unions and the request path still read live |
 | #65, #53 | Typed `filter` and `page` in the request config | The response is typed now; the request still takes untyped maps, so `FilterTypes` is dead code |
 | #48, #53 | The runner mangles unconstrained map keys on the way IN; FilterTypes emits unpublished resources | #71 fixed the output half: an untyped map's keys now survive as written, but `Runner` parses `input` before it knows a field's type, so a key sent as `createdBy` is still stored as `created_by` |
 | #57 | Error keys ignore the output field formatter | The decode gate now reads those keys |

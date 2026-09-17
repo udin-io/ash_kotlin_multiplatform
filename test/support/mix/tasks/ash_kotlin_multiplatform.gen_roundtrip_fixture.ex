@@ -61,7 +61,8 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.GenRoundtripFixture do
       {"field_names_override", field_names_override()},
       {"error", error()},
       {"validation_valid", validation_valid()},
-      {"validation_invalid", validation_invalid()}
+      {"validation_invalid", validation_invalid()},
+      {"embedded_action_result", embedded_action_result()}
     ]
 
     # Bound in three steps rather than piped, so the order these run in is the
@@ -127,6 +128,19 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.GenRoundtripFixture do
       "action" => "create_author",
       "input" => Map.put(author_input("Mapped Name"), "addressLine1", "10 Downing Street"),
       "fields" => ["id", "name", "addressLine1"]
+    })
+  end
+
+  # A generic action whose argument and return are embedded resources that only
+  # the manifest finds (#84). The Kotlin side encodes the `SummaryOpts` it sends
+  # and decodes the `Summary` it gets back, so both generated classes meet a real
+  # server. `fields` is required: without it `Rpc.Runner` answers with Book's
+  # fields rather than Summary's.
+  defp embedded_action_result do
+    call(%{
+      "action" => "summarize_book",
+      "input" => %{"opts" => %{"label" => "Short"}},
+      "fields" => ["label"]
     })
   end
 

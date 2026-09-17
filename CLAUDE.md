@@ -175,3 +175,19 @@ So a new type needs both halves checked. A Kotlin type that reads the wire
 format proves nothing about whether this library can produce that wire
 format; run the action through `Runner` and encode the result before
 believing it.
+
+### Embedded classes come from the manifest; a missing one is a manifest bug
+
+Since #84 both generators declare exactly the embedded resources in
+`Manifest.embedded_resources/1`, and code generation raises without
+`config :ash_kotlin_multiplatform, :manifest` (the test env names
+`AshKotlinMultiplatform.Test.Manifest`). When generated Kotlin names an
+embedded class it never declares, look at `manifest.types`, not at
+`ResourceSchemas`; never add an attribute walk back.
+
+A manifest that drops a type after a file edit is a compile-order race, and
+it does NOT reproduce inside ExUnit. Reproduce it outside: add an attribute
+to the embedded fixture, run `MIX_ENV=test mix compile`, then read the type's
+fields off `Manifest.manifest(Test.Manifest).types` with `mix run`. That is
+how the `BuildManifest` pre-compile race was measured, 6 of 6 edits dropped
+before the fix and 6 of 6 kept after.

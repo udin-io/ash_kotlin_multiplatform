@@ -52,6 +52,25 @@ def deps do
 end
 ```
 
+Code generation reads embedded resource types from a compile-time manifest,
+and raises when none is configured. The installer declares the manifest module
+and writes the config line:
+
+```sh
+mix igniter.install ash_kotlin_multiplatform
+```
+
+Or declare both yourself:
+
+```elixir
+defmodule MyApp.AshKotlinMultiplatformManifest do
+  use AshKotlinMultiplatform.Manifest, otp_app: :my_app
+end
+
+# config/config.exs
+config :ash_kotlin_multiplatform, manifest: MyApp.AshKotlinMultiplatformManifest
+```
+
 ## Quick Start
 
 ### 1. Add the Resource Extension

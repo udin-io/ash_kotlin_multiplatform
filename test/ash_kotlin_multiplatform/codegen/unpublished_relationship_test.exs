@@ -19,6 +19,7 @@ defmodule AshKotlinMultiplatform.Codegen.UnpublishedRelationshipTest do
   use ExUnit.Case, async: true
 
   alias AshKotlinMultiplatform.Codegen.ResourceSchemas
+  alias AshKotlinMultiplatform.Manifest
   alias AshKotlinMultiplatform.Test.{Author, Book}
 
   defp author_class(emitted) do
@@ -55,11 +56,13 @@ defmodule AshKotlinMultiplatform.Codegen.UnpublishedRelationshipTest do
   describe "the whole schema pass" do
     test "names no type it does not declare" do
       {data_classes, embedded_classes, enum_classes, sealed_classes} =
-        ResourceSchemas.generate_all_schemas([Author, Book])
+        ResourceSchemas.generate_all_schemas([Author, Book], Manifest.embedded_resources())
 
       kotlin = Enum.join([data_classes, embedded_classes, enum_classes, sealed_classes], "\n")
 
-      refute kotlin =~ "Secret"
+      # A word boundary, because `SecretNote` is declared: it is embedded in
+      # `Secret` and reached through the manifest (#84).
+      refute kotlin =~ ~r/\bSecret\b/
       assert kotlin =~ "data class Author("
       assert kotlin =~ "data class Book("
     end

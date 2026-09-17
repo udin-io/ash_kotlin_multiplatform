@@ -18,13 +18,21 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
   alias AshIntrospection.TypeSystem.Introspection
 
   @doc """
-  Generates all schema types (data classes, enums, sealed classes) for the given resources.
+  Generates all schema types (data classes, embedded classes, enums, sealed
+  classes) for the given resources.
 
-  Returns a tuple of {data_classes, enum_classes, sealed_classes} as strings.
+  `embedded` is the list of embedded resources to declare a class for. Pass
+  `AshKotlinMultiplatform.Manifest.embedded_resources/1`: this module does not
+  look for embedded resources itself, because a walk of the resources' own
+  attributes misses every one reached any other way (#84).
+
+  Returns `{data_classes, embedded_classes, enum_classes, sealed_classes}` as
+  strings.
   """
-  def generate_all_schemas(resources) do
-    # Collect all types that need generation
-    {enums, unions, embedded} = collect_types(resources)
+  def generate_all_schemas(resources, embedded) do
+    # Embedded classes are generated with `generate_data_class/2` too, so their
+    # enum and union fields name classes this pass must declare.
+    {enums, unions} = collect_types(resources ++ embedded)
 
     # Exactly the resources this pass declares a data class for. Nothing else may
     # be named by a relationship field - see `generate_relationship_fields/2`.
@@ -57,32 +65,13 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
 
   defp collect_types(resources) do
     resources
-    |> Enum.reduce({[], [], MapSet.new()}, fn resource, {enums, unions, embedded} ->
-      attributes = Ash.Resource.Info.public_attributes(resource)
-      relationships = get_public_relationships(resource)
-
-      # Collect types from attributes
-      {new_enums, new_unions, new_embedded} =
-        Enum.reduce(attributes, {enums, unions, embedded}, fn attr, {e, u, emb} ->
-          collect_types_from_attribute(attr, e, u, emb)
-        end)
-
-      # Collect embedded resources from relationships (for embedded resources only)
-      new_embedded =
-        Enum.reduce(relationships, new_embedded, fn rel, emb ->
-          if Introspection.is_embedded_resource?(rel.destination) do
-            MapSet.put(emb, rel.destination)
-          else
-            emb
-          end
-        end)
-
-      {new_enums, new_unions, new_embedded}
+    |> Enum.flat_map(&Ash.Resource.Info.public_attributes/1)
+    |> Enum.reduce({[], []}, fn attr, {enums, unions} ->
+      collect_types_from_attribute(attr, enums, unions)
     end)
-    |> then(fn {enums, unions, embedded} -> {enums, unions, MapSet.to_list(embedded)} end)
   end
 
-  defp collect_types_from_attribute(attr, enums, unions, embedded) do
+  defp collect_types_from_attribute(attr, enums, unions) do
     type = attr.type
     constraints = attr.constraints || []
 
@@ -92,27 +81,15 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
     cond do
       TypeMapper.is_enum_type?(type, constraints) ->
         enum_name = generate_enum_name(attr.name)
-        {[{enum_name, TypeMapper.get_enum_values(constraints)} | enums], unions, embedded}
+        {[{enum_name, TypeMapper.get_enum_values(constraints)} | enums], unions}
 
       TypeMapper.is_union_type?(type) ->
         union_types = Introspection.get_union_types_from_constraints(type, constraints)
         union_name = generate_union_name(attr.name)
-        {enums, [{union_name, union_types} | unions], embedded}
+        {enums, [{union_name, union_types} | unions]}
 
       true ->
-        {enums, unions, collect_embedded_resource(type, embedded)}
-    end
-  end
-
-  defp collect_embedded_resource({:array, inner_type}, embedded) do
-    collect_embedded_resource(inner_type, embedded)
-  end
-
-  defp collect_embedded_resource(type, embedded) do
-    if Introspection.is_embedded_resource?(type) do
-      MapSet.put(embedded, type)
-    else
-      embedded
+        {enums, unions}
     end
   end
 
@@ -205,9 +182,11 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
   # name: it maps from the Ash type alone, while both names come from the attribute
   # name.
   #
-  # Both `collect_types/1` and `generate_data_class/1` read
-  # `Ash.Resource.Info.public_attributes/1` and share the predicates below, so the
-  # class a field names always exists. Nothing else may take these branches — a
+  # Both `collect_types/1` and `generate_data_class/2` read
+  # `Ash.Resource.Info.public_attributes/1` of the same resources and embedded
+  # resources, and share the predicates below, so the class a field names always
+  # exists. An enum inside an embedded resource once named a class nothing
+  # declared, because `collect_types/1` saw the RPC resources only (#84). Nothing else may take these branches — a
   # union or `one_of` atom reached through an action argument or a union member has
   # no generated class, and naming one there would emit a dangling reference.
   defp field_kotlin_type(attribute) do

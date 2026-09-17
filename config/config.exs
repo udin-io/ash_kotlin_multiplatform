@@ -20,6 +20,10 @@ config :ash, default_string_length_count: :codepoints
 if config_env() == :test do
   config :ash_kotlin_multiplatform, ash_domains: [AshKotlinMultiplatform.Test.Domain]
 
+  # Code generation reads embedded resources from this manifest, and raises when
+  # none is configured (#84).
+  config :ash_kotlin_multiplatform, manifest: AshKotlinMultiplatform.Test.Manifest
+
   # The ETS data layer logs every write at :debug, which buries the test output.
   config :logger, level: :warning
 end

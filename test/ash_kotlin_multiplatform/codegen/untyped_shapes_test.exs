@@ -25,6 +25,7 @@ defmodule AshKotlinMultiplatform.Codegen.UntypedShapesTest do
   use ExUnit.Case, async: false
 
   alias AshKotlinMultiplatform.Codegen.ResourceSchemas
+  alias AshKotlinMultiplatform.Manifest
   alias AshKotlinMultiplatform.Rpc.Codegen
   alias AshKotlinMultiplatform.Test.{Author, Book, Event, Todo, User}
 
@@ -32,7 +33,7 @@ defmodule AshKotlinMultiplatform.Codegen.UntypedShapesTest do
 
   defp schemas do
     {data_classes, embedded_classes, enum_classes, sealed_classes} =
-      ResourceSchemas.generate_all_schemas(@resources)
+      ResourceSchemas.generate_all_schemas(@resources, Manifest.embedded_resources())
 
     Enum.join([data_classes, embedded_classes, enum_classes, sealed_classes], "\n")
   end

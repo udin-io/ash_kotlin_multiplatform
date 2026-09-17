@@ -26,6 +26,17 @@ defmodule AshKotlinMultiplatform.Test.Book do
       public? true
       allow_nil? false
     end
+
+    # The embedded routes #84 measured, one per fixture. Only `meta` was found
+    # by the one-level attribute walk this library used before it read the
+    # manifest.
+    attribute :meta, AshKotlinMultiplatform.Test.BookMeta, public?: true
+    attribute :private_meta, AshKotlinMultiplatform.Test.PrivateMeta, public?: false
+
+    attribute :extra, :union do
+      public? true
+      constraints types: [note: [type: AshKotlinMultiplatform.Test.UnionNote]]
+    end
   end
 
   relationships do
@@ -46,8 +57,30 @@ defmodule AshKotlinMultiplatform.Test.Book do
     end
   end
 
+  calculations do
+    calculate :cover,
+              AshKotlinMultiplatform.Test.Cover,
+              fn records, _context -> Enum.map(records, fn _record -> nil end) end do
+      public? true
+    end
+  end
+
   actions do
     defaults [:read, :destroy]
+
+    action :summarize, AshKotlinMultiplatform.Test.Summary do
+      argument :opts, AshKotlinMultiplatform.Test.SummaryOpts, public?: true
+
+      run fn input, _context ->
+        label =
+          case input.arguments[:opts] do
+            %{label: label} -> label
+            _ -> nil
+          end
+
+        {:ok, %AshKotlinMultiplatform.Test.Summary{label: label}}
+      end
+    end
 
     create :create do
       primary? true

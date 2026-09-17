@@ -185,6 +185,22 @@ private fun inputEncoding(): String {
     return "re-encoded unchanged: $sent"
 }
 
+// #84: `SummaryOpts` and `Summary` are reachable only through a generic action,
+// so the one-level attribute walk never declared either. The request half
+// encodes the argument the fixture sent; the response half decodes the result.
+private fun embeddedActionResultDecodes(): String {
+    val sent = """{"opts":{"label":"Short"}}"""
+    val input = SummarizeBookInput(opts = SummaryOpts(label = "Short"))
+
+    expect("encoded input", ashRpcJson.encodeToString(input), sent)
+
+    val summary = result("embedded_action_result").dataAs<Summary>()!!
+
+    expect("label", summary.label, "Short")
+
+    return "sent=$sent label=${summary.label}"
+}
+
 // #24: every error map Runner builds writes the key "shortMessage" literally,
 // under every output_field_formatter.
 private fun errorDecodes(): String {
@@ -429,6 +445,7 @@ fun main() {
     check("#54 date fields through the channel client's Json", ::dateFieldsThroughTheChannelJson)
     check("#54 input encoding through the shared Json", ::inputEncoding)
     check("#24 error response decodes", ::errorDecodes)
+    check("#84 an embedded action argument encodes and its result decodes", ::embeddedActionResultDecodes)
     check("#24 validation results decode", ::validationDecodes)
     check("#24 sparse fieldset decodes", ::sparseFieldsetDecodes)
     check("#24 action metadata lands inside data", ::actionMetadataLandsInsideData)

@@ -13,6 +13,7 @@ defmodule AshKotlinMultiplatform.Swift.Codegen do
   - Error types and result wrappers
   """
 
+  alias AshKotlinMultiplatform.Manifest
   alias AshKotlinMultiplatform.Swift.TypeMapper
   alias AshKotlinMultiplatform.Rpc.Codegen.RpcConfigCollector
   alias AshIntrospection.Helpers
@@ -50,7 +51,9 @@ defmodule AshKotlinMultiplatform.Swift.Codegen do
     base_url = Keyword.get(opts, :base_url, "http://localhost:4000")
 
     # Generate all components
-    {data_structs, enums} = generate_all_schemas(rpc_resources)
+    {data_structs, enums} =
+      generate_all_schemas(rpc_resources, Manifest.embedded_resources())
+
     input_types = generate_input_types(rpc_configs)
     rpc_functions = generate_rpc_service(rpc_configs, base_url)
 
@@ -203,8 +206,10 @@ defmodule AshKotlinMultiplatform.Swift.Codegen do
   # Schema Generation
   # ---------------------------------------------------------------------------
 
-  defp generate_all_schemas(resources) do
-    {enums, embedded} = collect_types(resources)
+  # `embedded` comes from `Manifest.embedded_resources/1`, the same list the
+  # Kotlin generator reads (#84).
+  defp generate_all_schemas(resources, embedded) do
+    enums = collect_enums(resources)
 
     data_structs =
       (resources ++ embedded)
@@ -221,47 +226,20 @@ defmodule AshKotlinMultiplatform.Swift.Codegen do
     {data_structs, enum_code}
   end
 
-  defp collect_types(resources) do
+  defp collect_enums(resources) do
     resources
-    |> Enum.reduce({[], []}, fn resource, {enums, embedded} ->
-      attributes = Ash.Resource.Info.public_attributes(resource)
-
-      Enum.reduce(attributes, {enums, embedded}, fn attr, {e, emb} ->
-        collect_types_from_attribute(attr, e, emb)
-      end)
-    end)
+    |> Enum.flat_map(&Ash.Resource.Info.public_attributes/1)
+    |> Enum.reduce([], &collect_enum/2)
   end
 
-  defp collect_types_from_attribute(attr, enums, embedded) do
-    type = attr.type
-    constraints = attr.constraints || []
-
-    case type do
-      Ash.Type.Atom ->
-        case Keyword.get(constraints, :one_of) do
-          nil ->
-            {enums, embedded}
-
-          values ->
-            enum_name = generate_enum_name(attr.name)
-            {[{enum_name, values} | enums], embedded}
-        end
-
-      {:array, inner_type} ->
-        if AshIntrospection.TypeSystem.Introspection.is_embedded_resource?(inner_type) do
-          {enums, [inner_type | embedded]}
-        else
-          {enums, embedded}
-        end
-
-      _ ->
-        if AshIntrospection.TypeSystem.Introspection.is_embedded_resource?(type) do
-          {enums, [type | embedded]}
-        else
-          {enums, embedded}
-        end
+  defp collect_enum(%{type: Ash.Type.Atom} = attr, enums) do
+    case Keyword.get(attr.constraints || [], :one_of) do
+      nil -> enums
+      values -> [{generate_enum_name(attr.name), values} | enums]
     end
   end
+
+  defp collect_enum(_attr, enums), do: enums
 
   defp generate_struct(resource) do
     type_name = get_swift_type_name(resource)

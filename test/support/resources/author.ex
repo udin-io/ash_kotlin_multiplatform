@@ -71,6 +71,12 @@ defmodule AshKotlinMultiplatform.Test.Author do
     count :book_count, :books do
       public? true
     end
+
+    # Reaches `PrivateMeta`, which `Book` keeps private. A `first` aggregate's
+    # type is nil when the manifest is built, so reachability misses it (#84).
+    first :first_private_meta, :books, :private_meta do
+      public? true
+    end
   end
 
   actions do
