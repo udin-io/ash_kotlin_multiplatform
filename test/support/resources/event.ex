@@ -32,6 +32,14 @@ defmodule AshKotlinMultiplatform.Test.Event do
     attribute :reminder_ats, {:array, :utc_datetime}, public?: true
   end
 
+  relationships do
+    # Private, and to a resource no `kotlin_rpc` block names: the only route to
+    # `Vault` and the `VaultSeal` embedded in it (#84).
+    belongs_to :vault, AshKotlinMultiplatform.Test.Vault do
+      public? false
+    end
+  end
+
   actions do
     defaults [:read, :destroy]
 

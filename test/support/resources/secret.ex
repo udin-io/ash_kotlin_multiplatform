@@ -24,6 +24,8 @@ defmodule AshKotlinMultiplatform.Test.Secret do
     attribute :body, :string do
       public? true
     end
+
+    attribute :note, AshKotlinMultiplatform.Test.SecretNote, public?: true
   end
 
   relationships do

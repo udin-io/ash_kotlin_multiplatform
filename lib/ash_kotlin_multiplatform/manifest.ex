@@ -163,6 +163,26 @@ defmodule AshKotlinMultiplatform.Manifest do
   def manifest(manifest_module \\ manifest_module()),
     do: Spark.Dsl.Extension.get_persisted(manifest_module, :manifest)
 
+  @doc """
+  Every embedded resource in the manifest's `types`, sorted by module.
+
+  Both code generators declare one class per module in this list. Ash's
+  reachability walk fills `manifest.types`, so the list holds an embedded
+  resource however it is reached: an attribute, another embedded resource, a
+  union member, an action argument or return, a calculation, or a relationship
+  to a resource no `kotlin_rpc` block names. The one-level attribute walk this
+  replaced found only the first (#84).
+  """
+  @spec embedded_resources(module()) :: [module()]
+  def embedded_resources(manifest_module \\ manifest_module()) do
+    for %Ash.Info.Manifest.Type{kind: :embedded_resource, module: module} <-
+          manifest(manifest_module).types,
+        uniq: true do
+      module
+    end
+    |> Enum.sort()
+  end
+
   @doc "The manifest's entrypoints — one per `rpc_action` and one per `typed_query`."
   @spec entrypoints(module()) :: [Ash.Info.Manifest.Entrypoint.t()]
   def entrypoints(manifest_module \\ manifest_module()),
