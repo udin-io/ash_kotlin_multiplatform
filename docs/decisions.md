@@ -541,9 +541,13 @@ the embedded `Summary`. The runtime `FieldSelector.select_fields/5` does take
 that branch. Fixing the shared classifier first would need an
 ash_introspection release before 0.2.0.
 
-A generic action returning a map with declared `fields` defaults to those
-names, for the same reason. An untyped map and a scalar keep their
-responses.
+A generic action returning a map, struct or keyword list with declared
+`fields` defaults to those names, for the same reason. A tuple with declared
+`fields` takes the positional template `FieldSelector.select_tuple_fields/4`
+builds for an empty request. The map came in #88; the other three sent Book's
+null keys until #95. An untyped container and a scalar keep their responses.
+A union is still wrong with or without `fields`: ash_introspection#84, then
+#96 decides its default.
 
 **Cost.** Breaking on the wire for a client that omitted `fields` on such an
 action, so it ships in 0.2.0 with #84 and #87. `FieldSelector` still carries

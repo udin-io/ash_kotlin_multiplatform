@@ -99,6 +99,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Breaking on the wire, ships in 0.2.0.** A generic action returning a
+  struct, tuple or keyword list with declared `fields`, called with no
+  `fields`, now sends those fields
+  ([#95](https://github.com/udin-io/ash_kotlin_multiplatform/issues/95)).
+  The #88 default covered only a map, so each of these sent Book's five
+  attribute keys, all `null`. `book_stats` now sends
+  `{"bookCount": 2, "topTitle": "Kindred"}`, and a list of any of the three
+  sends a list of those. Untyped containers are unchanged. Union returns
+  are not fixed yet: ash_introspection#84 and #96.
+
 - **Breaking on the wire, ships in 0.2.0.** A generic action called with no
   `fields` now sends the fields of what it returns
   ([#88](https://github.com/udin-io/ash_kotlin_multiplatform/issues/88)).
