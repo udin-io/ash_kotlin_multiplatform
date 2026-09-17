@@ -64,7 +64,10 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.GenRoundtripFixture do
       {"validation_invalid", validation_invalid()},
       {"embedded_action_result", embedded_action_result()},
       {"embedded_list_action_result", embedded_list_action_result()},
-      {"other_resource_action_result", other_resource_action_result()}
+      {"other_resource_action_result", other_resource_action_result()},
+      {"embedded_action_default_fields", embedded_action_default_fields()},
+      {"embedded_list_action_default_fields", embedded_list_action_default_fields()},
+      {"other_resource_action_default_fields", other_resource_action_default_fields()}
     ]
 
     # Bound in three steps rather than piped, so the order these run in is the
@@ -136,8 +139,8 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.GenRoundtripFixture do
   # A generic action whose argument and return are embedded resources that only
   # the manifest finds (#84). The Kotlin side encodes the `SummaryOpts` it sends
   # and decodes the `Summary` it gets back, so both generated classes meet a real
-  # server. `fields` is required: without it `Rpc.Runner` answers with Book's
-  # fields rather than Summary's (#88).
+  # server. This one names its `fields`; `embedded_action_default_fields` below
+  # sends none.
   defp embedded_action_result do
     call(%{
       "action" => "summarize_book",
@@ -147,16 +150,31 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.GenRoundtripFixture do
   end
 
   # A generic action returning a list of embedded resources. The generated
-  # function returns `RpcResult<List<Summary>>` since #87. `fields` for the
-  # same reason as above (#88).
+  # function returns `RpcResult<List<Summary>>` since #87.
   defp embedded_list_action_result do
     call(%{"action" => "summarize_all", "fields" => ["label"]})
   end
 
   # A generic action on Book returning an Author. The generated function
-  # returned `RpcResult<Book>` before #87, naming the owner. `fields` as above.
+  # returned `RpcResult<Book>` before #87, naming the owner.
   defp other_resource_action_result do
     call(%{"action" => "sample_author", "fields" => ["id", "name"]})
+  end
+
+  # The three generic actions above with no `fields`. Before #88 each response
+  # carried Book's keys, nearly all null, and `ashRpcJson` ignores unknown keys,
+  # so Kotlin decoded `Summary(label=null)` with no error. These entries carry
+  # the returned type's own fields.
+  defp embedded_action_default_fields do
+    call(%{"action" => "summarize_book", "input" => %{"opts" => %{"label" => "Short"}}})
+  end
+
+  defp embedded_list_action_default_fields do
+    call(%{"action" => "summarize_all"})
+  end
+
+  defp other_resource_action_default_fields do
+    call(%{"action" => "sample_author"})
   end
 
   # Every date and time shape Event declares, so both `:datetime_library`

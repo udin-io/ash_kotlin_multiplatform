@@ -176,4 +176,62 @@ defmodule AshKotlinMultiplatform.Resource.Info do
       mapped -> mapped
     end
   end
+
+  @doc """
+  The type one element of a generic action's result has, as
+  `{type, constraints}`.
+
+  Drops a top-level `{:array, _}` and takes its `:items` constraints, then
+  unwraps a NewType with
+  `AshIntrospection.TypeSystem.Introspection.unwrap_new_type/3`. That is the
+  order `AshIntrospection.Rpc.FieldProcessing.FieldSelector.select_fields/5`
+  unwraps in, so codegen and the runner see the type the field selector sees.
+
+  Returns `nil` for an action that is not generic or declares no return type.
+  """
+  @spec returned_type(Ash.Resource.Actions.action()) :: {term(), keyword()} | nil
+  def returned_type(%{type: :action, returns: returns} = action) when not is_nil(returns) do
+    constraints = action.constraints || []
+
+    {type, constraints} =
+      case returns do
+        {:array, inner} -> {inner, Keyword.get(constraints, :items, [])}
+        type -> {type, constraints}
+      end
+
+    AshIntrospection.TypeSystem.Introspection.unwrap_new_type(type, constraints)
+  end
+
+  def returned_type(_action), do: nil
+
+  @doc """
+  The resource a generic action returns, or `nil` when it returns none.
+
+  A bare resource module (embedded ones included), a `:struct` whose
+  `instance_of` is a resource, a NewType over either, and a list of any of
+  them all name that resource. `Book.summarize` returns `Summary` and
+  `Book.sample_author` returns `Author`, never `Book`.
+
+  Codegen names the Kotlin class from this (#87), and `Rpc.Runner` takes the
+  default fields of a request with no `fields` from it (#88). Returns `nil`
+  for a read, create, update or destroy: those return the resource that owns
+  them, which the action struct does not carry.
+  """
+  @spec returned_resource(Ash.Resource.Actions.action()) :: module() | nil
+  def returned_resource(action) do
+    case returned_type(action) do
+      {Ash.Type.Struct, constraints} ->
+        resource_or_nil(Keyword.get(constraints, :instance_of))
+
+      {type, _constraints} ->
+        resource_or_nil(type)
+
+      nil ->
+        nil
+    end
+  end
+
+  defp resource_or_nil(module) do
+    if Ash.Resource.Info.resource?(module), do: module
+  end
 end

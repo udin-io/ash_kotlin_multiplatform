@@ -99,6 +99,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Breaking on the wire, ships in 0.2.0.** A generic action called with no
+  `fields` now sends the fields of what it returns
+  ([#88](https://github.com/udin-io/ash_kotlin_multiplatform/issues/88)).
+  `Rpc.Runner` took the default from the resource that owns the action, so
+  `summarize_book` sent Book's five keys, all `null`, and the generated
+  `RpcResult<Summary>` decoded `Summary(label=null)` with no error. It now
+  sends `{"label": "Short"}`. `sample_author` on `Book` sends Author's public
+  attributes, and a generic action returning a map with declared `fields`
+  sends those fields. Reads, mutations, untyped maps and scalars are
+  unchanged. A client that omitted `fields` on such an action and read the
+  owner's keys reads the returned type's keys instead.
+
 - Generated Kotlin compiles when an embedded resource is reached through
   another embedded resource, a union member or a generic action argument.
   With the test fixtures it named `Edition`, `UnionNote` and `SummaryOpts` and

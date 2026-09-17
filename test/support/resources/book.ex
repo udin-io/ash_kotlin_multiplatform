@@ -114,6 +114,24 @@ defmodule AshKotlinMultiplatform.Test.Book do
       end
     end
 
+    # A generic action returning a map that declares its fields. A request
+    # with no `fields` gets those field names; before #88 it got Book's
+    # attribute names, every value nil.
+    action :tally, :map do
+      constraints fields: [
+                    book_count: [type: :integer],
+                    top_title: [type: :string]
+                  ]
+
+      run fn _input, _context -> {:ok, %{book_count: 2, top_title: "Kindred"}} end
+    end
+
+    # A generic action returning a map with no declared fields. The runner
+    # sends it as it is, with or without `fields` (#88 left this unchanged).
+    action :raw_stats, :map do
+      run fn _input, _context -> {:ok, %{"shelf_count" => 3}} end
+    end
+
     create :create do
       primary? true
       accept [:title, :author_id]

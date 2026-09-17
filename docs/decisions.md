@@ -524,22 +524,29 @@ reached only through a `first` aggregate is still missing, because Ash leaves
 the aggregate's `type` `nil` at build time. The embedded classes in a
 generated file reorder once, sorted by module instead of `MapSet` order.
 
-## 2026-09-17 — Generic action results are classified in `FunctionCore`
+## 2026-09-17 — A generic action's return is classified once, in `Resource.Info`
 
-A generated function for a generic action names the resource the action
-returns (#87). `FunctionCore.data_type/1` classifies the return itself rather
-than through ash_introspection's `action_returns_field_selectable_type?/1`.
-That function has no branch for a bare resource module, so it answers
-`{:error, :not_field_selectable_type}` for `Book.summarize`, which returns the
-embedded `Summary`. The runtime `FieldSelector.select_fields/5` does take that
-branch, and `Rpc.Runner` sends `Summary`'s fields.
+`Resource.Info.returned_resource/1` names the resource a generic action
+returns: a bare resource module, a `:struct` whose `instance_of` is a
+resource, a NewType over either, or a list of any of them. Codegen names the
+Kotlin class from it (#87), and `Rpc.Runner` takes the default fields of a
+request with no `fields` from it (#88). Before #88 the runner took the owner's
+attributes, so `summarize_book` sent Book's five keys, all null, and Kotlin
+decoded `Summary(label=null)` with no error.
 
-Fixing the shared classifier first would need an ash_introspection release
-before 0.2.0. The signature change is breaking, and 0.2.0 already breaks the
-generated API (#84), so it ships in that release. The local classifier is two
-functions in `FunctionCore` and names a class only from `emitted`, the list
-`Rpc.Codegen` threads in.
+It is not ash_introspection's `action_returns_field_selectable_type?/1`. That
+function has no branch for a bare resource module, so it answers
+`{:error, :not_field_selectable_type}` for `Book.summarize`, which returns
+the embedded `Summary`. The runtime `FieldSelector.select_fields/5` does take
+that branch. Fixing the shared classifier first would need an
+ash_introspection release before 0.2.0.
 
-**Cost.** Two classifiers now read the same `returns`, and they disagree on
-embedded resources until ash_introspection gains the branch. When it does,
-this one can go.
+A generic action returning a map with declared `fields` defaults to those
+names, for the same reason. An untyped map and a scalar keep their
+responses.
+
+**Cost.** Breaking on the wire for a client that omitted `fields` on such an
+action, so it ships in 0.2.0 with #84 and #87. `FieldSelector` still carries
+its own classifier, and the two disagree on embedded resources until
+ash_introspection gains the branch. When it does, `returned_resource/1` can
+delegate to it.

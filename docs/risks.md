@@ -184,21 +184,6 @@ from the scoped manifest, which fails if the scoping ever widens.
 the correct answer for a domain list with no `kotlin_rpc` blocks and is not the
 same as `nil`.
 
-### A typed generic action result reads nulls when `fields` is absent
-
-Since #87 `summarizeBook` returns `RpcResult<Summary>`. Without `fields`,
-`Rpc.Runner.select_fields/3` (`runner.ex:564-567`) builds its template from
-the owning resource, so the response carries Book's keys, all null. `ashRpcJson`
-sets `ignoreUnknownKeys = true`, so that decodes to `Summary(label=null)` and
-raises nothing. Before #87 the same response reached the caller as a
-`JsonElement` holding Book's keys, which was wrong but visible. This is #88.
-
-**What we watch.** The round-trip fixture sends `fields` on every generic
-action request, so the gate does not see it.
-
-**What we would do.** Fix #88 before 0.2.0 ships, and add a round-trip check
-that sends no `fields`.
-
 ## Operational
 
 ### Two generators, one hex release, alpha API

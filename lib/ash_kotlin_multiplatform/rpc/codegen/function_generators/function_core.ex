@@ -10,10 +10,10 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.FunctionGenerators.FunctionCore do
   returning a structured map that renderers use to emit transport-specific Kotlin code.
   """
 
+  alias AshKotlinMultiplatform.Resource.Info, as: ResourceInfo
   alias AshKotlinMultiplatform.Rpc.Codegen.Helpers.{ActionIntrospection, ConfigBuilder}
   alias AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.MetadataTypes
   alias AshIntrospection.Helpers
-  alias AshIntrospection.TypeSystem.Introspection
 
   @doc """
   Builds the execution function shape for both HTTP and Channel transports.
@@ -155,24 +155,17 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.FunctionGenerators.FunctionCore do
     |> wrap_in_metadata_envelope(shape)
   end
 
-  # Classified here rather than by
+  # Classified by `Resource.Info.returned_resource/1` rather than by
   # `AshIntrospection.Codegen.ActionIntrospection.action_returns_field_selectable_type?/1`,
   # which has no branch for a bare resource module and so answers
-  # `:not_field_selectable_type` for every embedded return. The runtime
-  # `FieldSelector.select_fields/5` does take that branch, and the response
-  # carries the returned resource's fields — measured through `Rpc.Runner`.
+  # `:not_field_selectable_type` for every embedded return. `Rpc.Runner` uses
+  # the same function for its default fields, so the class named here is the
+  # shape a request with no `fields` receives (#88).
   defp data_type(%{action: %{type: :action} = action, emitted: emitted}) do
-    case action.returns do
-      {:array, inner} ->
-        items = Keyword.get(action.constraints || [], :items, [])
-
-        case returned_class(inner, items, emitted) do
-          nil -> "JsonElement"
-          class -> "List<#{class}>"
-        end
-
-      type ->
-        returned_class(type, action.constraints || [], emitted) || "JsonElement"
+    case {returned_class(action, emitted), action.returns} do
+      {nil, _returns} -> "JsonElement"
+      {class, {:array, _inner}} -> "List<#{class}>"
+      {class, _returns} -> class
     end
   end
 
@@ -192,17 +185,10 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.FunctionGenerators.FunctionCore do
 
   # The class name for the resource a generic action returns, or nil when it
   # returns no resource or one the file declares no class for.
-  defp returned_class(type, constraints, emitted) do
-    {type, constraints} = Introspection.unwrap_new_type(type, constraints)
+  defp returned_class(action, emitted) do
+    resource = ResourceInfo.returned_resource(action)
 
-    resource =
-      case type do
-        Ash.Type.Struct -> Keyword.get(constraints, :instance_of)
-        module when is_atom(module) -> module
-        _ -> nil
-      end
-
-    if resource in emitted, do: build_resource_type_name(resource)
+    if resource && resource in emitted, do: build_resource_type_name(resource)
   end
 
   defp wrap_in_metadata_envelope(data_type, %{has_metadata: true, action: %{type: type}} = shape)

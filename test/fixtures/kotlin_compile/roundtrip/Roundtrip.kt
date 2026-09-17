@@ -228,6 +228,38 @@ private fun otherResourceActionResultDecodes(): String {
     return "author=$author"
 }
 
+// #88: with no `fields`, a generic action answered with the fields of Book, the
+// resource that owns it. `ashRpcJson` ignores unknown keys, so each response
+// below decoded with a null where the value belonged, and no error. A non-null
+// value proves the server sent the returned type's own fields.
+private fun embeddedActionDefaultFieldsDecode(): String {
+    val summary = typed<Summary>("embedded_action_default_fields").data!!
+
+    expect("summary", summary.toString(), "Summary(label=Short)")
+
+    return "summary=$summary"
+}
+
+private fun embeddedListActionDefaultFieldsDecode(): String {
+    val summaries = typed<List<Summary>>("embedded_list_action_default_fields").data!!
+
+    expect("summaries", summaries.toString(), "[Summary(label=One), Summary(label=Two)]")
+
+    return "summaries=$summaries"
+}
+
+private fun otherResourceActionDefaultFieldsDecode(): String {
+    val author = typed<Author>("other_resource_action_default_fields").data!!
+
+    expect(
+        "author",
+        author.toString(),
+        "Author(id=00000000-0000-0000-0000-000000000001, name=Sample, email=sample@example.com, addressLine1=null, books=null)"
+    )
+
+    return "author=$author"
+}
+
 // #24: every error map Runner builds writes the key "shortMessage" literally,
 // under every output_field_formatter.
 private fun errorDecodes(): String {
@@ -475,6 +507,9 @@ fun main() {
     check("#84 #87 an embedded action argument encodes and RpcResult<Summary> decodes", ::embeddedActionResultDecodes)
     check("#87 a list of embedded resources decodes into RpcResult<List<Summary>>", ::embeddedListActionResultDecodes)
     check("#87 another resource decodes into RpcResult<Author>, not Book", ::otherResourceActionResultDecodes)
+    check("#88 no fields: RpcResult<Summary> decodes a non-null label", ::embeddedActionDefaultFieldsDecode)
+    check("#88 no fields: RpcResult<List<Summary>> decodes non-null labels", ::embeddedListActionDefaultFieldsDecode)
+    check("#88 no fields: RpcResult<Author> decodes Author's fields, not Book's", ::otherResourceActionDefaultFieldsDecode)
     check("#24 validation results decode", ::validationDecodes)
     check("#24 sparse fieldset decodes", ::sparseFieldsetDecodes)
     check("#24 action metadata lands inside data", ::actionMetadataLandsInsideData)

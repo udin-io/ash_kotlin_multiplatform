@@ -143,9 +143,10 @@ one string is what makes a response decode into a resource class rather than
 a `JsonElement` (#22).
 
 A generic action's `T` is the resource the action returns, not the one that
-owns it (#87). `FunctionCore` classifies the return itself: it unwraps arrays
-and NewTypes and takes a bare resource module or a `:struct` whose
-`instance_of` is a resource. It names that class only when it is in
+owns it (#87). `Resource.Info.returned_resource/1` classifies the return: it
+unwraps arrays and NewTypes and takes a bare resource module or a `:struct`
+whose `instance_of` is a resource. `FunctionCore` names that class only when
+it is in
 `emitted`, the RPC resources plus `Manifest.embedded_resources/1`.
 `Rpc.Codegen` builds that list once and passes it through
 `HttpRenderer.render_execution_function/5`, because `FunctionCore` cannot see
@@ -226,6 +227,15 @@ reaches the core as the *Ash* action's own `get?` field, because
 `AshIntrospection.Rpc.Pipeline.execute_read_action/3` branches on that to pick
 `Ash.read_one/1` over `Ash.read/1` and builds the query from `action.name`.
 Overriding that one field selects the single-record path and nothing else.
+
+A request with no `fields` gets a default template from
+`Rpc.Runner.select_fields/3`: the public attributes of the resource the action
+produces. For a generic action that is `Resource.Info.returned_resource/1`,
+the same function codegen names the Kotlin class from, so the response carries
+the fields of the class the client decodes into (#88). A generic action
+returning a map with declared `fields` gets those names. Any other return
+keeps the owner's attributes, which the shared pipeline ignores for an untyped
+map and a scalar.
 
 `Rpc.Pipeline.build_config/1` is the per-action half of the pipeline config,
 and `not_found_error?` is the only key that varies by action. `build_config/0`
