@@ -67,7 +67,8 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.GenRoundtripFixture do
       {"other_resource_action_result", other_resource_action_result()},
       {"embedded_action_default_fields", embedded_action_default_fields()},
       {"embedded_list_action_default_fields", embedded_list_action_default_fields()},
-      {"other_resource_action_default_fields", other_resource_action_default_fields()}
+      {"other_resource_action_default_fields", other_resource_action_default_fields()},
+      {"typed_struct_action_default_fields", typed_struct_action_default_fields()}
     ]
 
     # Bound in three steps rather than piped, so the order these run in is the
@@ -175,6 +176,14 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.GenRoundtripFixture do
 
   defp other_resource_action_default_fields do
     call(%{"action" => "sample_author"})
+  end
+
+  # A generic action returning a `:struct` with declared fields, no `fields`.
+  # Before #95 the response carried Book's keys, all null; the generated
+  # function returns `RpcResult<JsonElement>`, so Kotlin decoded that without
+  # complaint.
+  defp typed_struct_action_default_fields do
+    call(%{"action" => "book_stats"})
   end
 
   # Every date and time shape Event declares, so both `:datetime_library`
