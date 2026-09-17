@@ -147,8 +147,10 @@ the time:
 A generic action is the opposite case: its return type names what the action
 returns, not the resource that owns it. `Book.summarize` returns `Summary`,
 so `summarizeBook` returns `RpcResult<Summary>`, never `RpcResult<Book>`
-(#87). It names only a class in `emitted`, the list `Rpc.Codegen` threads
-into `FunctionCore`. Do not route it back through ash_introspection's
+(#87). `Resource.Info.returned_resource/1` names that resource for codegen
+and for `Rpc.Runner`'s no-`fields` default alike (#88), and codegen names
+only a class in `emitted`, the list `Rpc.Codegen` threads into
+`FunctionCore`. Do not route it back through ash_introspection's
 `action_returns_field_selectable_type?/1`: that answers
 `:not_field_selectable_type` for every embedded return.
 
