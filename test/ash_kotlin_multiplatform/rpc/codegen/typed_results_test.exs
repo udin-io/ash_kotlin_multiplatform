@@ -2,6 +2,13 @@
 #
 # SPDX-License-Identifier: MIT
 
+defmodule AshKotlinMultiplatform.Rpc.Codegen.TypedResultsTest.AuthorNewType do
+  @moduledoc false
+  use Ash.Type.NewType,
+    subtype_of: :struct,
+    constraints: [instance_of: AshKotlinMultiplatform.Test.Author]
+end
+
 defmodule AshKotlinMultiplatform.Rpc.Codegen.TypedResultsTest do
   @moduledoc """
   Every generated RPC function returns `RpcResult<T>` named for its own action.
@@ -18,16 +25,29 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.TypedResultsTest do
   """
   use ExUnit.Case, async: true
 
+  alias AshKotlinMultiplatform.Manifest
   alias AshKotlinMultiplatform.Rpc.Codegen.FunctionGenerators.HttpRenderer
   alias AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic
   alias AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel
-  alias AshKotlinMultiplatform.Test.{Author, Event, Todo}
+  alias AshKotlinMultiplatform.Rpc.Codegen.RpcConfigCollector
+  alias AshKotlinMultiplatform.Test.{Author, Book, Event, Summary, Todo}
 
-  defp signature(resource, action_name, rpc_name, rpc_action \\ %{}) do
-    action = Ash.Resource.Info.action(resource, action_name)
+  # Every resource the full generation pass declares a class for, built the way
+  # `Rpc.Codegen` builds it.
+  defp emitted do
+    RpcConfigCollector.get_rpc_resources(:ash_kotlin_multiplatform) ++
+      Manifest.embedded_resources()
+  end
 
+  defp signature(resource, action_name, rpc_name, rpc_action \\ %{}, emitted \\ emitted()) do
     resource
-    |> HttpRenderer.render_execution_function(action, rpc_action, rpc_name)
+    |> Ash.Resource.Info.action(action_name)
+    |> render_signature(emitted, resource, rpc_name, rpc_action)
+  end
+
+  defp render_signature(action, emitted, resource \\ Book, rpc_name \\ :sample, rpc_action \\ %{}) do
+    resource
+    |> HttpRenderer.render_execution_function(action, rpc_action, rpc_name, emitted)
     |> String.split("\n")
     |> Enum.find(&String.contains?(&1, "): RpcResult"))
   end
@@ -67,6 +87,61 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.TypedResultsTest do
 
     test "the resource's configured type name is the one used" do
       assert signature(Todo, :create, :create_todo) =~ "): RpcResult<Todo> {"
+    end
+  end
+
+  describe "the type a generic action returns" do
+    # Before #87 a generic action named the resource that OWNS it, or
+    # `JsonElement` for anything the shared classifier called unselectable —
+    # which includes every embedded resource.
+
+    test "an embedded resource names its class" do
+      assert Summary in emitted()
+      assert signature(Book, :summarize, :summarize_book) =~ "): RpcResult<Summary> {"
+    end
+
+    test "a list of embedded resources names a list of its class" do
+      assert signature(Book, :summarize_all, :summarize_all) =~
+               "): RpcResult<List<Summary>> {"
+    end
+
+    test "a different resource names that resource, not the owner" do
+      assert signature(Book, :sample_author, :sample_author) =~ "): RpcResult<Author> {"
+    end
+
+    test "a NewType over a resource names the resource, in a list too" do
+      emitted = emitted()
+      action = Ash.Resource.Info.action(Book, :sample_author)
+      single = %{action | returns: __MODULE__.AuthorNewType, constraints: []}
+      list = %{action | returns: {:array, __MODULE__.AuthorNewType}, constraints: [items: []]}
+
+      assert render_signature(single, emitted) =~ "): RpcResult<Author> {"
+      assert render_signature(list, emitted) =~ "): RpcResult<List<Author>> {"
+    end
+
+    test "a resource the file declares no class for stays JsonElement" do
+      # A signature must never name a class the file does not declare (#44).
+      without_author = List.delete(emitted(), Author)
+
+      assert signature(Book, :sample_author, :sample_author, %{}, without_author) =~
+               "): RpcResult<JsonElement> {"
+    end
+
+    test "an embedded resource the file declares no class for stays JsonElement" do
+      without_summary = List.delete(emitted(), Summary)
+
+      assert signature(Book, :summarize_all, :summarize_all, %{}, without_summary) =~
+               "): RpcResult<JsonElement> {"
+    end
+
+    test "the full generated file threads the declared classes through" do
+      {:ok, kotlin} =
+        AshKotlinMultiplatform.Rpc.Codegen.generate_kotlin_code(:ash_kotlin_multiplatform, [])
+
+      assert kotlin =~ "data class Summary("
+      assert kotlin =~ ~r/fun summarizeBook\([^)]*\): RpcResult<Summary> \{/s
+      assert kotlin =~ ~r/fun summarizeAll\([^)]*\): RpcResult<List<Summary>> \{/s
+      assert kotlin =~ ~r/fun sampleAuthor\([^)]*\): RpcResult<Author> \{/s
     end
   end
 

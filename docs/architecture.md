@@ -106,6 +106,8 @@ flowchart TD
     tuples --> types["TypeGenerators.*<br/>InputTypes, MetadataTypes (+ AshMetadata&lt;T, M&gt;),<br/>PaginationTypes (AshPage&lt;T&gt;)"]
     tuples --> filters["Codegen.FilterTypes<br/>Codegen.TypedQueries"]
     tuples --> fns["FunctionGenerators.HttpRenderer<br/>+ FunctionCore, ConfigBuilder,<br/>ActionIntrospection, PayloadBuilder"]
+    coll -->|"emitted: RPC resources"| fns
+    emb -->|"emitted: embedded resources"| fns
     tuples --> chan["Rpc.Codegen.PhoenixChannel<br/>PhoenixSerializer, PhoenixSocket,<br/>PhoenixChannel, AshRpcChannel"]
 
     schemas --> tm["Codegen.TypeMapper"]
@@ -139,6 +141,15 @@ matters runs between them: `FunctionCore.determine_return_type/1` names the
 into the signature. Ktor resolves `.body()` from that declared type, so this
 one string is what makes a response decode into a resource class rather than
 a `JsonElement` (#22).
+
+A generic action's `T` is the resource the action returns, not the one that
+owns it (#87). `FunctionCore` classifies the return itself: it unwraps arrays
+and NewTypes and takes a bare resource module or a `:struct` whose
+`instance_of` is a resource. It names that class only when it is in
+`emitted`, the RPC resources plus `Manifest.embedded_resources/1`.
+`Rpc.Codegen` builds that list once and passes it through
+`HttpRenderer.render_execution_function/5`, because `FunctionCore` cannot see
+what `ResourceSchemas` declares. Anything else is `JsonElement`.
 
 `TypeMapper` and `KotlinStatic` are a pair wherever the mapper names a class
 rather than a built-in. `AshMoney.Types.Money` maps to `AshMoney`, and

@@ -144,6 +144,14 @@ the time:
   `AshIntrospection.Rpc.Pipeline.execute_destroy_action/3` passes
   `return_records?: true`.
 
+A generic action is the opposite case: its return type names what the action
+returns, not the resource that owns it. `Book.summarize` returns `Summary`,
+so `summarizeBook` returns `RpcResult<Summary>`, never `RpcResult<Book>`
+(#87). It names only a class in `emitted`, the list `Rpc.Codegen` threads
+into `FunctionCore`. Do not route it back through ash_introspection's
+`action_returns_field_selectable_type?/1`: that answers
+`:not_field_selectable_type` for every embedded return.
+
 `AshPage<T>` and `AshMetadata<T, M>` each carry a hand-written `KSerializer`
 that reads both of their shapes (#22). Before adding a branch to
 `FunctionCore.determine_return_type/1`, run the action through `Runner` and

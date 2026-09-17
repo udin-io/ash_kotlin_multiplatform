@@ -16,15 +16,20 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.FunctionGenerators.HttpRenderer do
 
   @doc """
   Renders an HTTP execution function (suspend function with Ktor).
+
+  `emitted` is every resource the same generation pass declares a class for.
+  A generic action's return type names a class only from this list; see
+  `FunctionCore.determine_return_type/1`.
   """
-  def render_execution_function(resource, action, rpc_action, rpc_action_name) do
+  def render_execution_function(resource, action, rpc_action, rpc_action_name, emitted) do
     shape =
       FunctionCore.build_execution_function_shape(
         resource,
         action,
         rpc_action,
         rpc_action_name,
-        transport: :http
+        transport: :http,
+        emitted: emitted
       )
 
     function_name = Helpers.snake_to_camel_case(rpc_action_name)

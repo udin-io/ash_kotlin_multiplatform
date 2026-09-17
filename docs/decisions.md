@@ -523,3 +523,23 @@ generating, which widens the deadlock surface in [risks.md](risks.md). A type
 reached only through a `first` aggregate is still missing, because Ash leaves
 the aggregate's `type` `nil` at build time. The embedded classes in a
 generated file reorder once, sorted by module instead of `MapSet` order.
+
+## 2026-09-17 — Generic action results are classified in `FunctionCore`
+
+A generated function for a generic action names the resource the action
+returns (#87). `FunctionCore.data_type/1` classifies the return itself rather
+than through ash_introspection's `action_returns_field_selectable_type?/1`.
+That function has no branch for a bare resource module, so it answers
+`{:error, :not_field_selectable_type}` for `Book.summarize`, which returns the
+embedded `Summary`. The runtime `FieldSelector.select_fields/5` does take that
+branch, and `Rpc.Runner` sends `Summary`'s fields.
+
+Fixing the shared classifier first would need an ash_introspection release
+before 0.2.0. The signature change is breaking, and 0.2.0 already breaks the
+generated API (#84), so it ships in that release. The local classifier is two
+functions in `FunctionCore` and names a class only from `emitted`, the list
+`Rpc.Codegen` threads in.
+
+**Cost.** Two classifiers now read the same `returns`, and they disagree on
+embedded resources until ash_introspection gains the branch. When it does,
+this one can go.
