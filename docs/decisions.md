@@ -524,6 +524,12 @@ reached only through a `first` aggregate is still missing, because Ash leaves
 the aggregate's `type` `nil` at build time. The embedded classes in a
 generated file reorder once, sorted by module instead of `MapSet` order.
 
+*Settled 2026-09-18.* That last cost is paid. ash 3.33.6 fills the
+aggregate's `type` before the walk runs (ash-project/ash#2950, for
+ash-project/ash#2949), so the route this decision could not cover now
+resolves upstream where it belongs. `mix.exs` floors ash there and
+`Test.PrivateMeta` gets a class (#100).
+
 ## 2026-09-17 — A generic action's return is classified once, in `Resource.Info`
 
 `Resource.Info.returned_resource/1` names the resource a generic action
