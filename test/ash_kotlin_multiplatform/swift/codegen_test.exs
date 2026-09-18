@@ -25,7 +25,8 @@ defmodule AshKotlinMultiplatform.Swift.CodegenTest do
           {"Summary", "a generic action return"},
           {"Cover", "a calculation"},
           {"SecretNote", "a relationship to an unpublished resource"},
-          {"VaultSeal", "a private relationship"}
+          {"VaultSeal", "a private relationship"},
+          {"PrivateMeta", "a first aggregate over a private attribute"}
         ] do
       test "declares #{struct}, reached through #{route}", %{swift: swift} do
         assert swift =~ "struct #{unquote(struct)}: Codable"

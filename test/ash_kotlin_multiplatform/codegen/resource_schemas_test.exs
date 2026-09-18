@@ -31,6 +31,11 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemasTest do
     # one-level attribute walk found only `BookMeta`; the others were either
     # named and never declared (`Edition`, `UnionNote`, `SummaryOpts`) or
     # absent. They come from `manifest.types` now.
+    #
+    # `PrivateMeta` is reached only through a `first` aggregate, and needs ash
+    # 3.33.6 or later: that release is where the reachability walk filling
+    # `manifest.types` started following an aggregate's embedded type
+    # (ash-project/ash#2950). `mix.exs` holds the floor there (#100).
     for {class, route} <- [
           {"BookMeta", "an attribute of a published resource"},
           {"Edition", "another embedded resource"},
@@ -39,7 +44,8 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemasTest do
           {"Summary", "a generic action return"},
           {"Cover", "a calculation"},
           {"SecretNote", "a relationship to an unpublished resource"},
-          {"VaultSeal", "a private relationship"}
+          {"VaultSeal", "a private relationship"},
+          {"PrivateMeta", "a first aggregate over a private attribute"}
         ] do
       test "declares #{class}, reached through #{route}", %{kotlin: kotlin} do
         assert kotlin =~ "data class #{unquote(class)}("
@@ -49,15 +55,6 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemasTest do
     test "declares the enum class an embedded resource's field names", %{kotlin: kotlin} do
       assert kotlin =~ "val format: Format? = null"
       assert kotlin =~ "enum class Format {"
-    end
-
-    test "declares nothing for a type reached only through a first aggregate",
-         %{kotlin: kotlin} do
-      # Upstream gap, out of scope for #84: the aggregate's type is nil when the
-      # manifest is built, so `PrivateMeta` is not in `manifest.types`. Nothing
-      # in the generated file names it either. If this starts failing, Ash
-      # fixed the gap; update `docs/risks.md`.
-      refute kotlin =~ "PrivateMeta"
     end
   end
 
