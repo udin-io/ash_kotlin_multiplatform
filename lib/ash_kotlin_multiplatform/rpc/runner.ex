@@ -573,9 +573,15 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # struct, keyword list or tuple that declares its `fields` gets those fields,
   # for the same reason (#88, #95).
   #
+  # A union return gets an EMPTY template, which is the one case the runner
+  # cannot fill in: which member is active is decided at result time by
+  # `%Ash.Union{type:}`, and the same action can answer with a different one
+  # each call. `ResultProcessor.extract_union_value/4` reads an empty template
+  # as "this member's declared fields", so the member gets exactly what #88 and
+  # #95 give its type (#96).
+  #
   # Any other generic return keeps the owner's attributes, as before #88. The
   # shared pipeline ignores that template for an untyped map and a scalar.
-  # Unions are not handled here yet: ash_introspection#84 and #96.
   defp select_fields(resource, action, []) do
     {:ok, default_selection(resource, action)}
   end
@@ -617,6 +623,12 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
       _untyped -> attribute_selection(resource)
     end
   end
+
+  # No select and no load: a generic action reads nothing from a data layer, and
+  # an empty template is what makes the active member choose its own fields.
+  # Sending Book's attribute names here is what returned `nil` for a single
+  # union and `[]` for a list, whatever the member was (#96).
+  defp map_field_selection({Ash.Type.Union, _constraints}, _resource), do: {[], [], []}
 
   defp map_field_selection(_other_return, resource), do: attribute_selection(resource)
 

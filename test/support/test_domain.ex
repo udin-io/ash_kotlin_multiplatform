@@ -76,6 +76,12 @@ defmodule AshKotlinMultiplatform.Test.Domain do
       rpc_action :book_options, :book_options
       rpc_action :book_options_all, :book_options_all
 
+      # A union return, alone and in a list. Which member is active is decided
+      # at result time, so the no-`fields` default sends an empty template and
+      # lets the member pick its own fields (#96).
+      rpc_action :book_note, :book_note
+      rpc_action :book_notes, :book_notes
+
       # Each of the two read-surface switches on its own, so a test can tell
       # which one dropped which parameter.
       rpc_action :list_books_fixed_order, :read do
