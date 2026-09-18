@@ -47,7 +47,7 @@ Add `ash_kotlin_multiplatform` to your dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:ash_kotlin_multiplatform, "~> 0.1.0"}
+    {:ash_kotlin_multiplatform, "~> 0.2.0"}
   ]
 end
 ```
