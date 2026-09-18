@@ -126,7 +126,14 @@ defmodule AshKotlinMultiplatform.MixProject do
       # ash 3.33.0 is the first release fixing CVE-2026-82752.
       # ash 3.33.4 is the first release fixing EEF-CVE-2026-86338 (field
       # policies not filtering nil forbidden calculations/aggregates).
-      {:ash, ">= 3.33.4 and < 4.0.0-0"},
+      #
+      # 3.33.6 is the floor for a reason of ours, not a security one: it is the
+      # first release whose manifest carries an embedded type reached only
+      # through a `first` or `list` aggregate (ash-project/ash#2950 fixing
+      # #2949). Below it, `manifest.types` drops that type and the generated
+      # Kotlin declares no class for it, so `Manifest.embedded_resources/1`
+      # returns a short list and both generators emit a short file (#100).
+      {:ash, ">= 3.33.6 and < 4.0.0-0"},
       # ash_phoenix 2.3.25 fixes CVE-2026-82724 through CVE-2026-82727.
       {:ash_phoenix, ">= 2.3.25 and < 3.0.0-0"},
       # Both are used directly by AshKotlinMultiplatform.Phoenix.Controller and
