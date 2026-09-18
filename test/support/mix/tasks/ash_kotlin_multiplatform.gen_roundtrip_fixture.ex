@@ -68,7 +68,9 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.GenRoundtripFixture do
       {"embedded_action_default_fields", embedded_action_default_fields()},
       {"embedded_list_action_default_fields", embedded_list_action_default_fields()},
       {"other_resource_action_default_fields", other_resource_action_default_fields()},
-      {"typed_struct_action_default_fields", typed_struct_action_default_fields()}
+      {"typed_struct_action_default_fields", typed_struct_action_default_fields()},
+      {"union_action_default_fields", union_action_default_fields()},
+      {"union_list_action_default_fields", union_list_action_default_fields()}
     ]
 
     # Bound in three steps rather than piped, so the order these run in is the
@@ -184,6 +186,23 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.GenRoundtripFixture do
   # complaint.
   defp typed_struct_action_default_fields do
     call(%{"action" => "book_stats"})
+  end
+
+  # A generic action returning a union, no `fields`. Before #96 the single sent
+  # `"data": null` and the list sent `"data": []`, whatever the active member
+  # was, so nothing on the Kotlin side could tell a working union from a
+  # missing one. Each entry now carries the active member's own fields, which
+  # is what the checks in `Roundtrip.kt` assert key by key.
+  #
+  # `member` is `tally`, the typed-map member: it is the one whose keys are
+  # camelCased on the way out, so a check on `bookCount` proves the member's
+  # declared fields reached the wire and not the member's raw map.
+  defp union_action_default_fields do
+    call(%{"action" => "book_note", "input" => %{"member" => "tally"}})
+  end
+
+  defp union_list_action_default_fields do
+    call(%{"action" => "book_notes"})
   end
 
   # Every date and time shape Event declares, so both `:datetime_library`

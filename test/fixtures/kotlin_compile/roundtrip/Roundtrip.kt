@@ -273,6 +273,58 @@ private fun typedStructActionDefaultFieldsDecode(): String {
     return "data=$data"
 }
 
+// #96: a generic action returning a union, sent with no `fields`, answered
+// `"data": null`. A union outside a resource attribute is a `JsonElement`, so
+// the check reads the JSON: one key, the active member's name, and under it
+// that member's own fields.
+private fun unionActionDefaultFieldsDecode(): String {
+    val data = typed<JsonElement>("union_action_default_fields").data!!.jsonObject
+
+    expect("member", data.keys.toList(), listOf("tally"))
+
+    val tally = data["tally"]!!.jsonObject
+
+    expect("keys", tally.keys.sorted(), listOf("bookCount", "topTitle"))
+    expect("bookCount", tally["bookCount"]?.jsonPrimitive?.int, 2)
+    expect("topTitle", tally["topTitle"]?.jsonPrimitive?.content, "Kindred")
+
+    return "data=$data"
+}
+
+// #96: the list sent `"data": []`, so every item was dropped. Each item now
+// carries its own member, one per default the runner gives a member type: an
+// embedded resource its public attributes, a typed map its declared fields, a
+// scalar the value.
+private fun unionListActionDefaultFieldsDecode(): String {
+    val items = typed<JsonElement>("union_list_action_default_fields").data!!.jsonArray
+
+    expect("size", items.size, 3)
+    expect(
+        "members",
+        items.map { it.jsonObject.keys.single() },
+        listOf("note", "tally", "headline")
+    )
+
+    val note = items[0].jsonObject["note"]!!.jsonObject
+
+    expect("note keys", note.keys.toList(), listOf("label"))
+    expect("label", note["label"]?.jsonPrimitive?.content, "Noted")
+
+    val tally = items[1].jsonObject["tally"]!!.jsonObject
+
+    expect("tally keys", tally.keys.sorted(), listOf("bookCount", "topTitle"))
+    expect("bookCount", tally["bookCount"]?.jsonPrimitive?.int, 2)
+    expect("topTitle", tally["topTitle"]?.jsonPrimitive?.content, "Kindred")
+
+    expect(
+        "headline",
+        items[2].jsonObject["headline"]?.jsonPrimitive?.content,
+        "Front page"
+    )
+
+    return "items=$items"
+}
+
 // #24: every error map Runner builds writes the key "shortMessage" literally,
 // under every output_field_formatter.
 private fun errorDecodes(): String {
@@ -524,6 +576,8 @@ fun main() {
     check("#88 no fields: RpcResult<List<Summary>> decodes non-null labels", ::embeddedListActionDefaultFieldsDecode)
     check("#88 no fields: RpcResult<Author> decodes Author's fields, not Book's", ::otherResourceActionDefaultFieldsDecode)
     check("#95 no fields: a typed :struct result carries its own keys, not Book's", ::typedStructActionDefaultFieldsDecode)
+    check("#96 no fields: a union result carries the active member's own fields", ::unionActionDefaultFieldsDecode)
+    check("#96 no fields: a list of unions keeps every item, each by its member", ::unionListActionDefaultFieldsDecode)
     check("#24 validation results decode", ::validationDecodes)
     check("#24 sparse fieldset decodes", ::sparseFieldsetDecodes)
     check("#24 action metadata lands inside data", ::actionMetadataLandsInsideData)
