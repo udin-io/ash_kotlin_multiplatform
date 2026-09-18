@@ -114,7 +114,15 @@ Two ways to lose one are known:
 - A type reached only through a `first` aggregate. The aggregate's `type` is
   `nil` when the manifest is built, so Ash's reachability walk misses it.
   `Test.PrivateMeta` is the fixture. No data class carries aggregates, so no
-  generated file names it today. This is an upstream Ash gap.
+  generated file names it today. This was an upstream Ash gap and **ash
+  3.33.6 closes it**: measured 2026-09-18, `Test.PrivateMeta` reaches
+  `manifest.types` on 3.33.6 with `ash_introspection` 0.5.1, which fails the
+  `refute` below and the module list in
+  `manifest/embedded_resources_test.exs`. `mix.lock` holds ash at 3.33.5, so
+  this repository has not taken that release. `mix.exs` allows it
+  (`>= 3.33.4`), so a consumer already on 3.33.6 gets a `PrivateMeta` class
+  it did not get before. Taking the release here means flipping both tests
+  and deleting this bullet; it needs its own ticket.
 - A type reached only through a resource that was not loaded when the manifest
   was built. `BuildManifest` now compiles every domain resource first; that
   race dropped a type in 6 of 6 measured edits before.

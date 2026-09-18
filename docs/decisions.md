@@ -546,8 +546,22 @@ A generic action returning a map, struct or keyword list with declared
 `fields` takes the positional template `FieldSelector.select_tuple_fields/4`
 builds for an empty request. The map came in #88; the other three sent Book's
 null keys until #95. An untyped container and a scalar keep their responses.
-A union is still wrong with or without `fields`: ash_introspection#84, then
-#96 decides its default.
+
+A union return is the one case the runner cannot fill in, so since #96 it
+sends an EMPTY template. Which member is active is decided at result time by
+`%Ash.Union{type:}`, and the same action can answer with a different member
+each call, so there is no set of field names to send ahead of the result. An
+empty template is what
+`AshIntrospection.Rpc.ResultProcessor.extract_union_value/4` reads as "this
+member's declared fields", so each member gets exactly what the paragraph
+above gives its own type: a resource member its public attributes, a typed map
+member its declared fields, a scalar member the value. Sending Book's
+attribute names instead returned `nil` for a single union and `[]` for a list,
+whatever the member was.
+
+That empty template needs `ash_introspection` 0.5.1, which is the floor in
+`mix.exs`. On 0.5.0 the same request returns `nil` with or without `fields`
+(ash_introspection#84).
 
 **Cost.** Breaking on the wire for a client that omitted `fields` on such an
 action, so it ships in 0.2.0 with #84 and #87. `FieldSelector` still carries
