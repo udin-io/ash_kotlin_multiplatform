@@ -56,6 +56,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   manifest-only since #86, so this repo has zero callers of the deleted
   module.
 
+- The `ash` floor is now `>= 3.33.6`, and generated output gains one class.
+  Ships as part of 0.2.0
+  ([#100](https://github.com/udin-io/ash_kotlin_multiplatform/issues/100)).
+  3.33.6 is the first release whose reachability walk follows a `first` or
+  `list` aggregate's embedded type, so that type reaches `manifest.types`
+  (ash-project/ash#2950, fixing ash-project/ash#2949). Below it the aggregate's
+  `type` is `nil` when the manifest is built and the type is dropped.
+
+  Both generators declare a class for every embedded resource in
+  `manifest.types`, so an embedded type your schema reaches only through such
+  an aggregate now gets one where it got none. In this library's own fixtures
+  that is one added class, `PrivateMeta`; nothing else in the generated file
+  changes. A consumer whose lock already resolved 3.33.6 has had that class
+  since, because the previous floor was `>= 3.33.4`.
+
 - **Breaking.** Every generated RPC function now returns `RpcResult<T>` named
   for its own action, where it returned the same untyped `RpcResult` with
   `data: JsonElement?` before. `createTodo()` returns `RpcResult<Todo>`,

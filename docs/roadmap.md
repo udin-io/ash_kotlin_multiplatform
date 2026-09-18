@@ -45,6 +45,7 @@ afterwards.
 | 2026-09-17 | Upgraded to `ash_introspection` 0.5.0, which deletes `Codegen.TypeDiscovery` (ash_introspection#23 stage 4b); zero callers here since #86 moved codegen onto the manifest |
 | 2026-09-18 | Upgraded to `ash_introspection` 0.5.1, which extracts a union result at all (ash_introspection#84); the floor is `~> 0.5 and >= 0.5.1` |
 | 2026-09-18 | A union generic-action result with no `fields` sends the active member's own fields; breaking on the wire, 0.2.0 (#96) |
+| 2026-09-18 | Upgraded to `ash` 3.33.6, whose manifest carries an embedded type reached only through a `first` or `list` aggregate (ash-project/ash#2950); generated output gains a `PrivateMeta` class, 0.2.0 (#100) |
 
 ## In progress
 

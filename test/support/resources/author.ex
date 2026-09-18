@@ -72,8 +72,9 @@ defmodule AshKotlinMultiplatform.Test.Author do
       public? true
     end
 
-    # Reaches `PrivateMeta`, which `Book` keeps private. A `first` aggregate's
-    # type is nil when the manifest is built, so reachability misses it (#84).
+    # The only route to `PrivateMeta`, which `Book` keeps private. Ash follows
+    # an aggregate's embedded type since 3.33.6, so this aggregate is what puts
+    # that type in `manifest.types` (#100).
     first :first_private_meta, :books, :private_meta do
       public? true
     end

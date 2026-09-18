@@ -126,14 +126,14 @@ flowchart TD
 `Manifest.embedded_resources/1`, every `kind: :embedded_resource` entry in the
 persisted manifest's `types`, sorted by module. Ash's reachability walk (the
 traversal that fills `manifest.types`) follows nested embedded resources,
-union members, action arguments and returns, calculations and relationships to
-unpublished resources. The one-level attribute walk it replaced found only the
-first level, and the generated Kotlin named classes it never declared (#84).
-Enum and sealed classes are still collected live, from the public attributes
-of the RPC resources and of those embedded resources. `Swift.Codegen` reads the
-same list. A type reached only through a `first` aggregate is missing from
-`manifest.types`, because the aggregate's `type` is `nil` when the manifest is
-built; see [risks.md](risks.md).
+union members, action arguments and returns, calculations, relationships to
+unpublished resources, and a `first` or `list` aggregate's embedded type. The
+one-level attribute walk it replaced found only the first level, and the
+generated Kotlin named classes it never declared (#84). The aggregate route
+needs ash 3.33.6 or later (ash-project/ash#2950); `mix.exs` holds the floor
+there, so `Test.PrivateMeta` gets a class (#100). Enum and sealed classes are
+still collected live, from the public attributes of the RPC resources and of
+those embedded resources. `Swift.Codegen` reads the same list.
 
 `HttpRenderer` and `FunctionCore` are drawn in one box, but the arrow that
 matters runs between them: `FunctionCore.determine_return_type/1` names the

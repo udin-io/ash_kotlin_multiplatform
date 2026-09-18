@@ -5,9 +5,10 @@
 defmodule AshKotlinMultiplatform.Test.PrivateMeta do
   @moduledoc """
   Embedded in the private `Book.private_meta` attribute, reached only through
-  the `Author.first_private_meta` aggregate. A `first` aggregate's `type` is
-  `nil` when the manifest is built, so Ash's reachability misses this type and
-  no generated class declares it. The upstream gap is out of scope for #84.
+  the `Author.first_private_meta` aggregate. It is the fixture for the one
+  route to an embedded type that runs through an aggregate. Ash's reachability
+  walk follows that route since 3.33.6 (ash-project/ash#2950), so this type
+  reaches `manifest.types` and both generators declare a class for it (#100).
   """
   use Ash.Resource, data_layer: :embedded
 

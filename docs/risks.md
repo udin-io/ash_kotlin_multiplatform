@@ -109,23 +109,17 @@ job.
 Both code generators declare one class per embedded resource in the persisted
 manifest's `types` (#84). A type missing from that list is a class the
 generated file does not declare, and Kotlin that names it does not compile.
-Two ways to lose one are known:
+One way to lose one is known:
 
-- A type reached only through a `first` aggregate. The aggregate's `type` is
-  `nil` when the manifest is built, so Ash's reachability walk misses it.
-  `Test.PrivateMeta` is the fixture. No data class carries aggregates, so no
-  generated file names it today. This was an upstream Ash gap and **ash
-  3.33.6 closes it**: measured 2026-09-18, `Test.PrivateMeta` reaches
-  `manifest.types` on 3.33.6 with `ash_introspection` 0.5.1, which fails the
-  `refute` below and the module list in
-  `manifest/embedded_resources_test.exs`. `mix.lock` holds ash at 3.33.5, so
-  this repository has not taken that release. `mix.exs` allows it
-  (`>= 3.33.4`), so a consumer already on 3.33.6 gets a `PrivateMeta` class
-  it did not get before. Taking the release here means flipping both tests
-  and deleting this bullet; it needs its own ticket.
 - A type reached only through a resource that was not loaded when the manifest
   was built. `BuildManifest` now compiles every domain resource first; that
   race dropped a type in 6 of 6 measured edits before.
+
+The aggregate route used to be a second way, and is closed. Ash follows a
+`first` or `list` aggregate's embedded type since 3.33.6
+(ash-project/ash#2950); `mix.exs` holds the floor there, so
+`Test.PrivateMeta` reaches `manifest.types` and both generators declare it
+(#100).
 
 Meanwhile `Rpc.Runner.discover_action/2` still scans `Ash.Info.domains/1` per
 request, so the request path and the manifest can disagree with nothing
@@ -133,14 +127,14 @@ comparing them.
 
 **What we watch.** The Kotlin compile gate, which fails on any undeclared
 class. The embedded-class tests in `resource_schemas_test.exs` and
-`swift/codegen_test.exs`, one per route. The `refute` on `PrivateMeta` in
-`resource_schemas_test.exs` fails the day Ash fixes the aggregate gap.
+`swift/codegen_test.exs`, one per route, nine routes each.
 
-**What we would do.** When the `PrivateMeta` test fails, delete this bullet
-and turn the test into an assertion. If a consumer reports an undeclared
-embedded class, find the route, add a fixture for it, and fix reachability
-upstream rather than walking attributes here again. The request path moves
-onto the manifest in the rest of `ash_introspection#23` stage 4.
+**What we would do.** If a consumer reports an undeclared embedded class, find
+the route, add a fixture for it, and fix reachability upstream rather than
+walking attributes here again. The aggregate route is the worked example: the
+fixture landed with #84, the fix was ash-project/ash#2950, and taking it here
+was #100. The request path moves onto the manifest in the rest of
+`ash_introspection#23` stage 4.
 
 ### `Code.ensure_compiled!` inside a transformer can deadlock
 
