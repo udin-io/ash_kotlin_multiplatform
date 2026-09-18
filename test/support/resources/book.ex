@@ -11,6 +11,17 @@ defmodule AshKotlinMultiplatform.Test.Book do
     data_layer: Ash.DataLayer.Ets,
     extensions: [AshKotlinMultiplatform.Resource]
 
+  # Shared by `book_note` and `book_notes` so the single and the list return
+  # the same three members, one per default the runner gives a union member.
+  @union_members [
+    note: [type: AshKotlinMultiplatform.Test.UnionNote],
+    tally: [
+      type: :map,
+      constraints: [fields: [book_count: [type: :integer], top_title: [type: :string]]]
+    ],
+    headline: [type: :string]
+  ]
+
   ets do
     private? true
   end
@@ -205,9 +216,46 @@ defmodule AshKotlinMultiplatform.Test.Book do
       end
     end
 
+    # A generic action returning a union, alone and in a list. Which member is
+    # active is decided at result time by `%Ash.Union{type:}`, not by the
+    # declaration, so the three members cover the three defaults this library
+    # gives: an embedded resource gets its public attributes, a typed map its
+    # declared fields, a scalar its value (#96).
+    #
+    # `member` picks the active one, so one action measures all three without
+    # the declaration changing.
+    action :book_note, :union do
+      constraints types: @union_members
+
+      argument :member, :string, public?: true, default: "note"
+
+      run fn input, _context -> {:ok, union_member(input.arguments[:member])} end
+    end
+
+    action :book_notes, {:array, :union} do
+      constraints items: [types: @union_members]
+
+      run fn _input, _context ->
+        {:ok, Enum.map(["note", "tally", "headline"], &union_member/1)}
+      end
+    end
+
     create :create do
       primary? true
-      accept [:title, :author_id]
+      # `extra` is accepted so a test can store a union and read it back
+      # through `list_books`, which is the read half of ash_introspection #84.
+      accept [:title, :author_id, :extra]
     end
   end
+
+  # Built as `%Ash.Union{}` rather than a bare value: it is the `type:` field
+  # that names the active member at result time, and that is what
+  # `ResultProcessor.extract_union_value/4` reads.
+  defp union_member("note"),
+    do: %Ash.Union{type: :note, value: %AshKotlinMultiplatform.Test.UnionNote{label: "Noted"}}
+
+  defp union_member("tally"),
+    do: %Ash.Union{type: :tally, value: %{book_count: 2, top_title: "Kindred"}}
+
+  defp union_member("headline"), do: %Ash.Union{type: :headline, value: "Front page"}
 end

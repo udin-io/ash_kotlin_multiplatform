@@ -43,6 +43,8 @@ afterwards.
 | 2026-09-17 | A generic action with no `fields` sends what it returns, not the owner's fields; breaking on the wire, 0.2.0 (#88) |
 | 2026-09-17 | A struct, tuple or keyword generic-action result with no `fields` sends its declared fields; breaking on the wire, 0.2.0 (#95) |
 | 2026-09-17 | Upgraded to `ash_introspection` 0.5.0, which deletes `Codegen.TypeDiscovery` (ash_introspection#23 stage 4b); zero callers here since #86 moved codegen onto the manifest |
+| 2026-09-18 | Upgraded to `ash_introspection` 0.5.1, which extracts a union result at all (ash_introspection#84); the floor is `~> 0.5 and >= 0.5.1` |
+| 2026-09-18 | A union generic-action result with no `fields` sends the active member's own fields; breaking on the wire, 0.2.0 (#96) |
 
 ## In progress
 
@@ -56,8 +58,6 @@ Ordered by what unblocks the most.
 
 | Issue | What | Why now |
 | ----- | ---- | ------- |
-| `ash_introspection#84` | A union generic-action result sends `null` or drops items, with or without `fields`; a nested union member selection reads `null` | On the 0.2.0 path; wrong data on the wire today |
-| #96 | The no-`fields` default for a union generic-action result | Blocked on `ash_introspection#84`; on the 0.2.0 path |
 | `ash_introspection#23` stage 4 | The request path reads the manifest | #84 moved codegen's embedded types onto the manifest; enums, unions and the request path still read live |
 | #65, #53 | Typed `filter` and `page` in the request config | The response is typed now; the request still takes untyped maps, so `FilterTypes` is dead code |
 | #48, #53 | The runner mangles unconstrained map keys on the way IN; FilterTypes emits unpublished resources | #71 fixed the output half: an untyped map's keys now survive as written, but `Runner` parses `input` before it knows a field's type, so a key sent as `createdBy` is still stored as `created_by` |

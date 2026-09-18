@@ -111,7 +111,15 @@ defmodule AshKotlinMultiplatform.MixProject do
       # since #86 — it reads `%Ash.Info.Manifest{}`, not that module — so
       # the deletion has zero callers in this repo and nothing keeps the
       # floor below it.
-      {:ash_introspection, "~> 0.5"},
+      #
+      # 0.5.1 is the floor because it is the first release that extracts a
+      # union result at all (ash_introspection #84). Before it,
+      # `ResultProcessor.extract_union_value/4` matched a member template
+      # against the wire name while `%Ash.Union{type:}` carries the internal
+      # atom, so a selected member came back `null` from a read and a generic
+      # action returning a union sent nothing. `Rpc.Runner`'s no-`fields`
+      # default for a union return is built on that fix (#96).
+      {:ash_introspection, "~> 0.5 and >= 0.5.1"},
       # Floors below are security floors, not preferences. A library's floor is
       # what its consumers inherit, so each one is the lowest release that
       # carries every published fix for that package as of 2026-09-09.

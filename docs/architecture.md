@@ -234,9 +234,12 @@ produces. For a generic action that is `Resource.Info.returned_resource/1`,
 the same function codegen names the Kotlin class from, so the response carries
 the fields of the class the client decodes into (#88). A generic action
 returning a map, struct, keyword list or tuple with declared `fields` gets
-those fields (#88, #95). Any other return keeps the owner's attributes, which
-the shared pipeline ignores for an untyped map and a scalar. A union return is
-still wrong (ash_introspection#84, #96).
+those fields (#88, #95). A union return gets an EMPTY template, because which
+member is active is decided at result time by `%Ash.Union{type:}`: the shared
+pipeline reads an empty template as the active member's declared fields, so
+each member gets the same default its own type would (#96). Any other return
+keeps the owner's attributes, which the shared pipeline ignores for an untyped
+map and a scalar.
 
 `Rpc.Pipeline.build_config/1` is the per-action half of the pipeline config,
 and `not_found_error?` is the only key that varies by action. `build_config/0`

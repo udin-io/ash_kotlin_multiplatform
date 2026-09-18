@@ -97,7 +97,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   declares no class for, such as one no `kotlin_rpc` block names, stays
   `RpcResult<JsonElement>`.
 
+- The `ash_introspection` floor moves to 0.5.1, as
+  `~> 0.5 and >= 0.5.1`. 0.5.1 is the first release that extracts a union
+  result: before it, `ResultProcessor.extract_union_value/4` matched a member
+  template against the wire name while `%Ash.Union{type:}` carries the
+  internal atom, so a read selecting a union member's nested fields read
+  `null` and a generic action returning a union sent nothing
+  (ash_introspection#84). The #96 fix below is built on it.
+
 ### Fixed
+
+- **Breaking on the wire, ships in 0.2.0.** A generic action returning an
+  `Ash.Type.Union`, called with no `fields`, now sends the active member's own
+  fields
+  ([#96](https://github.com/udin-io/ash_kotlin_multiplatform/issues/96)).
+  It sent `null` for a single union and `[]` for a list, whatever the member
+  was, because `Rpc.Runner` sent the owning resource's attribute names and no
+  member has them. Which member is active is decided at result time by
+  `%Ash.Union{type:}`, so the runner now sends an empty extraction template and
+  the member picks: a resource member its public attributes, a typed map member
+  its declared fields, a scalar member the value. Those are the defaults #88
+  and #95 already give those types.
+
+  `book_note` sends `{"tally": {"bookCount": 2, "topTitle": "Kindred"}}` where
+  it sent `null`, and `book_notes` sends one entry per item where it sent `[]`.
+  A client that omitted `fields` on such an action and read `null` reads the
+  member instead. An explicit `fields` selection is unchanged.
 
 - **Breaking on the wire, ships in 0.2.0.** A generic action returning a
   struct, tuple or keyword list with declared `fields`, called with no
@@ -106,8 +131,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The #88 default covered only a map, so each of these sent Book's five
   attribute keys, all `null`. `book_stats` now sends
   `{"bookCount": 2, "topTitle": "Kindred"}`, and a list of any of the three
-  sends a list of those. Untyped containers are unchanged. Union returns
-  are not fixed yet: ash_introspection#84 and #96.
+  sends a list of those. Untyped containers are unchanged. A union return
+  takes the same default since #96, one member at a time.
 
 - **Breaking on the wire, ships in 0.2.0.** A generic action called with no
   `fields` now sends the fields of what it returns
