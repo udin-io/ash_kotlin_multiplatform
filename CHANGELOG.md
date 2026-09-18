@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-18
+
+This is a **breaking** release. The generated RPC return types, several wire
+formats between the generated client and `AshIntrospection.Rpc.Pipeline`, and
+the generated Phoenix channel client's protocol all change. Read
+"Upgrading from 0.1.3" below before bumping the requirement.
+
+### Upgrading from 0.1.3
+
+- Code generation now requires `config :ash_kotlin_multiplatform, :manifest`
+  (#84). Run `mix igniter.install ash_kotlin_multiplatform` to add it.
+- Every generated RPC function returns `RpcResult<T>` typed for its own
+  action. Replace `result.dataAs<Todo>()` with `result.data`.
+- A generic action's generated function returns `RpcResult<T>` named for the
+  resource it returns, not the resource that owns the action (#87). Replace
+  `result.dataAs<Summary>()` with `result.data`.
+- A generic action called with no `fields` now sends the fields of what it
+  returns instead of the owning resource's fields (#88). A client that read
+  the owner's keys now reads the returned type's keys instead.
+- A generic action returning a struct, tuple or keyword list with declared
+  `fields`, called with no `fields`, now sends those fields instead of the
+  owning resource's fields (#95).
+- A generic action returning a union, called with no `fields`, now sends the
+  active member's own fields instead of `null` or `[]` (#96). A client that
+  read `null` or `[]` for such an action now reads the member instead.
+- A union member name or a map member's field name that Kotlin cannot
+  compile now fails the build with the attribute, the member and a
+  suggested name. Rename any member or field the error names.
+- A non-`public?` action named by `rpc_action`, its `read_action`, a
+  `typed_query`, or a public relationship's read action now fails to
+  compile. Mark the action `public? true` or drop the entry.
+- The generated Phoenix channel client now speaks Phoenix's v2 protocol. A
+  socket narrowed to `serializer:` v1 only must add v2.
+- `PhoenixMessage` is no longer `@Serializable`. Encode and decode it
+  through the generated `PhoenixSerializer` instead of serializing it
+  directly; `Push`'s `JsonElement` constructor is unchanged.
+- Every untyped shape (untyped maps and keywords, tuples, an unmapped
+  union, `filter`/`page` configs, `AshRpcError.details`, action metadata)
+  is now `JsonElement` instead of `@Contextual Any`. Read it with the
+  `kotlinx.serialization.json` accessors, e.g.
+  `todo.metadata?.get("retries")?.jsonPrimitive?.int`.
+- Expect one new generated class, `PrivateMeta`, if your schema reaches an
+  embedded type only through a `first` or `list` aggregate (#100). No
+  action needed beyond accepting the new class.
+
 ### Added
 
 - `AshKotlinMultiplatform.Manifest`, the Spark DSL module a consumer declares
@@ -29,6 +74,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `mix ash_kotlin_multiplatform.install`, an Igniter task that writes both of
   those and nothing else. Run it with
   `mix igniter.install ash_kotlin_multiplatform`.
+
+- Six `rpc_action` options, all additive — an `rpc_action` that sets none of
+  them behaves exactly as before
+  ([#25](https://github.com/udin-io/ash_kotlin_multiplatform/issues/25)). The
+  shared core already honoured four of them and the DSL declared none, so
+  those branches were unreachable: `AshIntrospection.Rpc.Pipeline` branches on
+  `get?`, applies `get_by`, reads `identities` and reads `not_found_error?`
+  off the config.
+
+  - `get?` makes a read return one record or nothing instead of a list. The
+    generated function's `data` becomes the resource rather than
+    `AshPage<Resource>`, and `filter`, `sort` and `page` leave its config.
+  - `get_by` names the fields the client sends to select that record, and
+    implies `get?`. It generates a `@Serializable` lookup class —
+    `GetAuthorGetBy` — so the fields are typed rather than a hand-assembled
+    map. The request must carry exactly those fields: a missing one would
+    widen the lookup into a `MultipleResults`, and an extra one reaches
+    `Ash.Query.do_filter/2`, which reads a map operand as an operator
+    expression and turns an exact lookup into an arbitrary predicate.
+  - `not_found_error?` (default `true`) chooses between a not-found error and
+    a successful `null` when a `get?` read matches nothing.
+  - `identities` (default `[:_primary_key]`) lists the identities an update or
+    destroy may be addressed by. `[]` means the action takes no identity and
+    finds its record some other way, such as from the actor. The verifier that
+    checks these names against the resource could never fail before, for want
+    of a way to set the option.
+  - `enable_filter?` and `enable_sort?` (both default `true`) remove that
+    parameter from the generated config class. The server refuses a request
+    that sends it anyway rather than dropping it: a stale client would
+    otherwise be handed the whole table with no way to know it asked for a
+    subset.
+
+  These shape an action's **API surface**, typically to keep a parameter off an
+  endpoint that has no use for it. They are **not** authorization — Ash
+  policies run on every request regardless of what the DSL exposes.
+
+  `allowed_loads` and `denied_loads` are not here. They need
+  `ash_introspection` 0.4.0, whose bump is a separate and breaking change.
+
+- **Breaking for existing users.** Compile-time check that every action
+  reachable from the generated Kotlin client is `public?`. Ash documents
+  `public? false` as "internal-only and must not be exposed by API
+  extensions"; nothing enforced that here, so a `rpc_action` naming a
+  non-public action produced a fully typed client function for it. Four
+  places are checked: the action a `rpc_action` names, the `read_action` a
+  `rpc_action` uses to find records, the action a `typed_query` names, and
+  the read action behind a public relationship whose destination is itself
+  a Kotlin resource. A project that was exposing a non-public action now
+  fails to compile; the error names the offending action and says whether
+  to mark it `public? true` or drop the entry.
+
+- Binary payloads on the generated Phoenix channel client.
+  `PhoenixChannel.pushBinary/3` and `AshRpcChannel.pushBinary/3` send a
+  `ByteArray` as a Phoenix binary frame, which the server receives as
+  `{:binary, data}` in `handle_in/3`; `onBinary/2` and `offBinary/1` bind
+  incoming binary events, and `Push.awaitBinary/0`, `receiveBinary/2` and
+  `awaitPayload/0` read a binary reply. Incoming binary frames were
+  previously dropped by the socket's receive loop. The JSON path is
+  unchanged: `push`, `on`, `receive` and `await` keep their signatures.
 
 ### Changed
 
@@ -119,6 +223,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   internal atom, so a read selecting a union member's nested fields read
   `null` and a generic action returning a union sent nothing
   (ash_introspection#84). The #96 fix below is built on it.
+
+- **Breaking on the wire.** The generated channel client now speaks
+  Phoenix's v2 protocol. It appends `vsn=2.0.0` on connect and frames text
+  messages as the JSON array `[join_ref, ref, topic, event, payload]`.
+  Previously it sent no `vsn`, so Phoenix negotiated v1 and the client was
+  an unmarked v1 client; v1 has no binary frame at all. The stock Phoenix
+  socket offers both versions and needs no change. A host that narrowed its
+  socket's `serializer:` option to v1 only must add v2.
+- **Breaking on the Kotlin API.** `PhoenixMessage` is no longer
+  `@Serializable` — kotlinx.serialization can only emit the v1 object — and
+  its `joinRef` field no longer carries `@SerialName("join_ref")`. Encode
+  and decode it through the generated `PhoenixSerializer`. `Push.payload` is
+  now a `ChannelPayload` rather than a `JsonElement`, so that a binary push
+  stops reporting a JSON payload it never had; `Push`'s `JsonElement`
+  constructor is kept, so no existing call site changes.
+
+- **Breaking on the Kotlin API.** Every untyped shape is now `JsonElement`
+  rather than `@Contextual Any`: untyped maps and keywords are
+  `Map<String, JsonElement>`, tuples are `List<JsonElement>`, and a union
+  without an owning attribute or an Ash type the mapper does not recognise is
+  `JsonElement`. So are the `filter` and `page` config maps,
+  `AshRpcError.details` and the action-result `metadata` map. `@Contextual`
+  only deferred the failure: kotlinx-serialization has no serializer for
+  `Any`, so a field holding a populated map threw
+  `SerializationException: Serializer for class 'Any' is not found` at
+  runtime. Read a value with the `kotlinx.serialization.json` accessors —
+  `todo.metadata?.get("retries")?.jsonPrimitive?.int`. The
+  `:untyped_map_type` default changed with it; a configured value naming
+  `Any` still compiles.
+
+### Removed
+
+- `AshKotlinMultiplatform.Codegen.TypeDiscovery`, 618 lines of resource and
+  type traversal with no caller
+  ([#27](https://github.com/udin-io/ash_kotlin_multiplatform/issues/27)).
+  The module was public in 0.1.3, but nothing in the library called it and
+  no documented entry point reached it. `Codegen.ResourceSchemas` walks the
+  types it needs on its own. Code that called `TypeDiscovery` directly no
+  longer compiles.
+
+- `AshKotlinMultiplatform.Codegen.ValidationSchemas`, the `with_validation`
+  option on `KotlinStatic.generate_imports/1`, and the orphaned
+  `generate_validation_annotations?/0` config accessor. Nothing in the
+  library called any of the three, and the `javax.validation.constraints`
+  annotations they would have emitted are JVM-only, so they could never
+  compile in the common Kotlin Multiplatform source set this library
+  targets. This is a breaking change on paper, since the module and the
+  accessor were public API, but neither was reachable through any
+  documented entry point.
 
 ### Fixed
 
@@ -215,69 +368,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so a `metadata` map holding `retry_count` came back with mixed keys. Keys
   under an untyped map are now snake_cased and always kept as strings.
 
-### Added
-
-- Six `rpc_action` options, all additive — an `rpc_action` that sets none of
-  them behaves exactly as before
-  ([#25](https://github.com/udin-io/ash_kotlin_multiplatform/issues/25)). The
-  shared core already honoured four of them and the DSL declared none, so
-  those branches were unreachable: `AshIntrospection.Rpc.Pipeline` branches on
-  `get?`, applies `get_by`, reads `identities` and reads `not_found_error?`
-  off the config.
-
-  - `get?` makes a read return one record or nothing instead of a list. The
-    generated function's `data` becomes the resource rather than
-    `AshPage<Resource>`, and `filter`, `sort` and `page` leave its config.
-  - `get_by` names the fields the client sends to select that record, and
-    implies `get?`. It generates a `@Serializable` lookup class —
-    `GetAuthorGetBy` — so the fields are typed rather than a hand-assembled
-    map. The request must carry exactly those fields: a missing one would
-    widen the lookup into a `MultipleResults`, and an extra one reaches
-    `Ash.Query.do_filter/2`, which reads a map operand as an operator
-    expression and turns an exact lookup into an arbitrary predicate.
-  - `not_found_error?` (default `true`) chooses between a not-found error and
-    a successful `null` when a `get?` read matches nothing.
-  - `identities` (default `[:_primary_key]`) lists the identities an update or
-    destroy may be addressed by. `[]` means the action takes no identity and
-    finds its record some other way, such as from the actor. The verifier that
-    checks these names against the resource could never fail before, for want
-    of a way to set the option.
-  - `enable_filter?` and `enable_sort?` (both default `true`) remove that
-    parameter from the generated config class. The server refuses a request
-    that sends it anyway rather than dropping it: a stale client would
-    otherwise be handed the whole table with no way to know it asked for a
-    subset.
-
-  These shape an action's **API surface**, typically to keep a parameter off an
-  endpoint that has no use for it. They are **not** authorization — Ash
-  policies run on every request regardless of what the DSL exposes.
-
-  `allowed_loads` and `denied_loads` are not here. They need
-  `ash_introspection` 0.4.0, whose bump is a separate and breaking change.
-
-- **Breaking for existing users.** Compile-time check that every action
-  reachable from the generated Kotlin client is `public?`. Ash documents
-  `public? false` as "internal-only and must not be exposed by API
-  extensions"; nothing enforced that here, so a `rpc_action` naming a
-  non-public action produced a fully typed client function for it. Four
-  places are checked: the action a `rpc_action` names, the `read_action` a
-  `rpc_action` uses to find records, the action a `typed_query` names, and
-  the read action behind a public relationship whose destination is itself
-  a Kotlin resource. A project that was exposing a non-public action now
-  fails to compile; the error names the offending action and says whether
-  to mark it `public? true` or drop the entry.
-
-- Binary payloads on the generated Phoenix channel client.
-  `PhoenixChannel.pushBinary/3` and `AshRpcChannel.pushBinary/3` send a
-  `ByteArray` as a Phoenix binary frame, which the server receives as
-  `{:binary, data}` in `handle_in/3`; `onBinary/2` and `offBinary/1` bind
-  incoming binary events, and `Push.awaitBinary/0`, `receiveBinary/2` and
-  `awaitPayload/0` read a binary reply. Incoming binary frames were
-  previously dropped by the socket's receive loop. The JSON path is
-  unchanged: `push`, `on`, `receive` and `await` keep their signatures.
-
-### Fixed
-
 - Union member names that Kotlin cannot compile are now caught at compile
   time. A union attribute is the one place where a name inside
   `constraints` becomes a Kotlin identifier: the sealed class turns each
@@ -296,59 +386,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   filter input, type discovery and field-name verification. The last of
   those could fail a build outright: a `field?: false` calculation named
   `score_1` was rejected for a name that never reached Kotlin.
-
-### Changed
-
-- **Breaking on the wire.** The generated channel client now speaks
-  Phoenix's v2 protocol. It appends `vsn=2.0.0` on connect and frames text
-  messages as the JSON array `[join_ref, ref, topic, event, payload]`.
-  Previously it sent no `vsn`, so Phoenix negotiated v1 and the client was
-  an unmarked v1 client; v1 has no binary frame at all. The stock Phoenix
-  socket offers both versions and needs no change. A host that narrowed its
-  socket's `serializer:` option to v1 only must add v2.
-- **Breaking on the Kotlin API.** `PhoenixMessage` is no longer
-  `@Serializable` — kotlinx.serialization can only emit the v1 object — and
-  its `joinRef` field no longer carries `@SerialName("join_ref")`. Encode
-  and decode it through the generated `PhoenixSerializer`. `Push.payload` is
-  now a `ChannelPayload` rather than a `JsonElement`, so that a binary push
-  stops reporting a JSON payload it never had; `Push`'s `JsonElement`
-  constructor is kept, so no existing call site changes.
-
-- **Breaking on the Kotlin API.** Every untyped shape is now `JsonElement`
-  rather than `@Contextual Any`: untyped maps and keywords are
-  `Map<String, JsonElement>`, tuples are `List<JsonElement>`, and a union
-  without an owning attribute or an Ash type the mapper does not recognise is
-  `JsonElement`. So are the `filter` and `page` config maps,
-  `AshRpcError.details` and the action-result `metadata` map. `@Contextual`
-  only deferred the failure: kotlinx-serialization has no serializer for
-  `Any`, so a field holding a populated map threw
-  `SerializationException: Serializer for class 'Any' is not found` at
-  runtime. Read a value with the `kotlinx.serialization.json` accessors —
-  `todo.metadata?.get("retries")?.jsonPrimitive?.int`. The
-  `:untyped_map_type` default changed with it; a configured value naming
-  `Any` still compiles.
-
-### Removed
-
-- `AshKotlinMultiplatform.Codegen.TypeDiscovery`, 618 lines of resource and
-  type traversal with no caller
-  ([#27](https://github.com/udin-io/ash_kotlin_multiplatform/issues/27)).
-  The module was public in 0.1.3, but nothing in the library called it and
-  no documented entry point reached it. `Codegen.ResourceSchemas` walks the
-  types it needs on its own. Code that called `TypeDiscovery` directly no
-  longer compiles.
-
-- `AshKotlinMultiplatform.Codegen.ValidationSchemas`, the `with_validation`
-  option on `KotlinStatic.generate_imports/1`, and the orphaned
-  `generate_validation_annotations?/0` config accessor. Nothing in the
-  library called any of the three, and the `javax.validation.constraints`
-  annotations they would have emitted are JVM-only, so they could never
-  compile in the common Kotlin Multiplatform source set this library
-  targets. This is a breaking change on paper, since the module and the
-  accessor were public API, but neither was reachable through any
-  documented entry point.
-
-### Fixed
 
 - Every encode and decode path in the generated client now shares one `Json`,
   the public `ashRpcJson`, which carries the `SerializersModule`. Only
@@ -427,7 +464,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Requires Spark 2.0+
 - Requires Elixir 1.15+
 
-[Unreleased]: https://github.com/udin-io/ash_kotlin_multiplatform/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/udin-io/ash_kotlin_multiplatform/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/udin-io/ash_kotlin_multiplatform/compare/v0.1.3...v0.2.0
 [0.1.3]: https://github.com/udin-io/ash_kotlin_multiplatform/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/udin-io/ash_kotlin_multiplatform/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/udin-io/ash_kotlin_multiplatform/compare/v0.1.0...v0.1.1
