@@ -42,8 +42,8 @@ defmodule AshKotlinMultiplatform.Rpc.Pipeline do
   Builds the Kotlin-specific configuration map for the shared pipeline.
 
   `not_found_error?` is per-action — see `build_config/1`. This arity carries
-  the shared default, `true`, and serves the field selector and the error
-  builder, neither of which reads that key.
+  the shared default, `true`, and serves the error builder, which does not read
+  that key.
 
   **It carries no `:manifest`, and it must stay that way.**
   `AshKotlinMultiplatform.Manifest.Transformers.DecorateManifest` calls this
@@ -97,8 +97,8 @@ defmodule AshKotlinMultiplatform.Rpc.Pipeline do
   The manifest is handed over bare. Each entry point prepares it — four
   `AshIntrospection.ResourceInfo.normalize_config/1` calls per request, one per
   stage — rather than this library persisting a prepared
-  `AshIntrospection.ResourceInfo.Source`. Measured cost is in
-  [decisions.md](../../../docs/decisions.md); stage 5a's PR 6 revisits it.
+  `AshIntrospection.ResourceInfo.Source`. `docs/decisions.md` carries the
+  measured cost and the reason; stage 5a's PR 6 revisits it.
   """
   @spec request_config() :: map()
   def request_config do

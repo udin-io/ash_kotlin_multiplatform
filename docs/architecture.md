@@ -196,12 +196,20 @@ sequenceDiagram
     participant Ctl as Phoenix.Controller
     participant Ch as Host channel module
     participant Run as Rpc.Runner
+    participant Man as Manifest module
     participant Pipe as Rpc.Pipeline
+    participant RI as AshIntrospection.ResourceInfo
     participant Ash as Ash domain
 
     App->>Ctl: POST /rpc/run {action, input, fields, getBy}
     Ctl->>Run: run_action(otp_app, params, actor:, tenant:)
+    Run->>Man: rpc_action_lookup()[action]
+    Man-->>Run: entrypoint — resource, domain, rpc_action
+    Run->>Pipe: request_config(rpc_action)
+    Pipe-->>Run: build_config plus :manifest and :manifest_namespace
     Note over Run: rpc_action options, before the pipeline (issue 25) —<br/>refuse a filter or sort the DSL switched off,<br/>require exactly the configured getBy fields,<br/>set the Ash action's get? from get? or get_by
+    Run->>RI: action/3, attribute/3, public_attributes/2
+    RI-->>Run: from the decoration, live only for a resource<br/>the manifest does not carry
     Run->>Pipe: parse_request, execute, process_result
     Pipe->>Ash: Ash.read_one when get?, else Ash.read / create / update / destroy
     Ash-->>Pipe: records
@@ -219,7 +227,15 @@ sequenceDiagram
     Ch-->>App: phx_reply
 ```
 
-The two parameter checks in the note run in `Rpc.Runner.build_request/8`,
+The action name is resolved against the manifest's `:rpc_action_lookup`, not
+by scanning `Ash.Info.domains/1`. Both are built from the same `kotlin_rpc`
+blocks, so they agree while the manifest is current; when they disagree the
+manifest is what code generation emitted, so it is what the client was built
+against. `otp_app` therefore selects nothing any more —
+`config :ash_kotlin_multiplatform, manifest:` names one module for the library
+and that module names its own otp_app.
+
+The two parameter checks in the note run in `Rpc.Runner.build_request/9`,
 before anything reaches the shared core, and each answers with an ordinary
 error response rather than a raise. The third is applied a level up, in
 `Rpc.Runner.execute_action/7`, and it works differently: a DSL-level `get?`
@@ -229,7 +245,7 @@ reaches the core as the *Ash* action's own `get?` field, because
 Overriding that one field selects the single-record path and nothing else.
 
 A request with no `fields` gets a default template from
-`Rpc.Runner.select_fields/3`: the public attributes of the resource the action
+`Rpc.Runner.select_fields/4`: the public attributes of the resource the action
 produces. For a generic action that is `Resource.Info.returned_resource/1`,
 the same function codegen names the Kotlin class from, so the response carries
 the fields of the class the client decodes into (#88). A generic action
@@ -241,13 +257,47 @@ each member gets the same default its own type would (#96). Any other return
 keeps the owner's attributes, which the shared pipeline ignores for an untyped
 map and a scalar.
 
+### Two config builders, and why they cannot be one
+
 `Rpc.Pipeline.build_config/1` is the per-action half of the pipeline config,
 and `not_found_error?` is the only key that varies by action. `build_config/0`
 used to read that key from
 `AshKotlinMultiplatform.warn_on_missing_rpc_config?/0`, a codegen-time warning
 switch, so a project that silenced codegen warnings also turned every
-not-found into a successful `null`. The field selector and the error builder
-still call `build_config/0`; neither reads the key.
+not-found into a successful `null`. The error builder still calls
+`build_config/0`; it does not read the key.
+
+`request_config/0` and `request_config/1` are those two plus `:manifest` and
+`:manifest_namespace`, and every request entry point takes one of them:
+
+| Caller | Config | What reads the manifest |
+| ------ | ------ | ----------------------- |
+| `Runner.execute_action/7` | `request_config/1` | `ResourceInfo.action/3` for the Ash action |
+| `Runner.field_selector_config/1` | the same map | `FieldSelector.process/4` field classification |
+| `Pipeline.execute_ash_action/1` | `request_config/1` | `primary_key`, `identity_keys`, bulk strategy |
+| `Pipeline.process_result/2` | `request_config/0` | stage 3 per-field `attribute/3` |
+| `Pipeline.format_data/2` | `request_config/0` | stage 4 `ValueFormatter` typing |
+| `Manifest.Transformers.DecorateManifest` | `build_config/0` | nothing — it is building the decoration |
+
+The last row is the reason for the split. The decorator calls
+`build_config/0` while the manifest module is still compiling
+(`decorate_manifest.ex:66`), so a `:manifest` key there would ask the module
+being compiled for its own persisted state. A `request_config` that merged
+into `build_config` would put that key in front of the decorator.
+
+Both manifest keys are required together. `AshIntrospection.ResourceInfo`
+looks the decoration up under `:manifest_namespace`, defaulting to
+`:ash_introspection`; this library decorates under
+`:ash_kotlin_multiplatform`, so a config carrying the manifest and not the
+namespace finds nothing and reads live. That was the bug `ash_introspection`
+0.5.3 fixed in its own two mid-request config rebuilds.
+
+The manifest goes over bare, as the persisted `%Ash.Info.Manifest{}`, and each
+stage prepares it with `ResourceInfo.normalize_config/1`. Four prepares per
+request, measured at 250 ns each on this repo's test manifest (7 resources, 11
+types) — about 1 us against a 41 us request. See
+[decisions.md](decisions.md) for why a prepared `Source` is not persisted
+instead.
 
 ## 5. The compile-time manifest pass
 
@@ -255,8 +305,12 @@ Added by issue #73, stage 3 of five in `ash_introspection#23`. It runs once,
 when the consumer's manifest module compiles, and it is the only place this
 library is meant to introspect a resource. Both code generators read its
 embedded-resource types since #84, so code generation raises when
-`config :ash_kotlin_multiplatform, :manifest` is unset. The request path does
-not read it yet; that is the rest of stage 4.
+`config :ash_kotlin_multiplatform, :manifest` is unset. Since stage 5a's PR 4
+the request path reads it too, through `Rpc.Pipeline.request_config/0` — so
+this pass is now the only place the library introspects a resource for a
+request as well as for codegen. What is left of `ash_introspection#23` is
+stage 5a's PR 6, which makes the manifest required at the core's own entry
+points and raises on a resource it carries but did not decorate.
 
 ```mermaid
 sequenceDiagram

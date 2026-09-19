@@ -10,6 +10,23 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   the `kotlin_rpc` DSL extension. It provides a standard interface for
   processing requests from Kotlin clients.
 
+  ## The manifest answers, not live introspection
+
+  Since `ash_introspection#23` stage 5a an `rpc_action` name is resolved
+  against the manifest's `:rpc_action_lookup`
+  (`AshKotlinMultiplatform.Manifest.rpc_action_lookup/1`), and every read of a
+  resource's actions and attributes goes through
+  `AshIntrospection.ResourceInfo` with
+  `AshKotlinMultiplatform.Rpc.Pipeline.request_config/1`. A request therefore
+  answers from what code generation emitted, which is what the generated client
+  was built against.
+
+  Two consequences. `config :ash_kotlin_multiplatform, manifest:` has to name a
+  current manifest module for requests, not only for code generation: an
+  `rpc_action` the manifest does not carry is `action_not_found`. And `otp_app`
+  selects nothing here — that config key names one module for the library, and
+  the module names its own otp_app.
+
   ## Usage
 
   Typically used via `AshKotlinMultiplatform.Phoenix.Controller`, but can

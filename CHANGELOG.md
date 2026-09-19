@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The request path reads the compile-time manifest instead of introspecting
+  live (`ash_introspection#23` stage 5a, PR 4).
+  `Rpc.Pipeline.request_config/0` and `/1` are `build_config/0` and `/1` plus
+  `:manifest` and `:manifest_namespace`, and stages 2, 3 and 4 take them.
+  `Rpc.Runner` looks an `rpc_action` up in the manifest's
+  `:rpc_action_lookup` instead of scanning `Ash.Info.domains/1`, and its four
+  remaining `Ash.Resource.Info` reads go through
+  `AshIntrospection.ResourceInfo` with that config.
+
+  Additive for a consumer whose `config :ash_kotlin_multiplatform, manifest:`
+  is current, which code generation has required since 0.2.0. A stale or
+  scoped manifest now answers requests too: an `rpc_action` it does not carry
+  is `action_not_found` where the live scan found it. Recompile the manifest
+  module, or widen its `:domains`, if a request stops resolving.
+
+  `build_config/0` still carries no manifest and must not, because
+  `Manifest.Transformers.DecorateManifest` calls it while the manifest module
+  is compiling.
+
+- The `ash_introspection` floor moves to `~> 0.5 and >= 0.5.3`. 0.5.3 is the
+  first release whose request path reads the manifest it is handed, and the
+  first whose `public_relationship/3` answers a private relationship as
+  private when the manifest carries private relationships — which is every
+  manifest this library builds.
+
 ## [0.2.0] - 2026-09-18
 
 This is a **breaking** release. The generated RPC return types, several wire

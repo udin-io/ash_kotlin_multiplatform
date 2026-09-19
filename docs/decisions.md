@@ -574,3 +574,68 @@ action, so it ships in 0.2.0 with #84 and #87. `FieldSelector` still carries
 its own classifier, and the two disagree on embedded resources until
 ash_introspection gains the branch. When it does, `returned_resource/1` can
 delegate to it.
+
+## 2026-09-19 — Two pipeline configs: one for compiling, one for requests
+
+The request path reads the compile-time manifest
+(`ash_introspection#23` stage 5a, PR 4), and the config it reads it from is a
+second builder rather than a widened `build_config/0`.
+
+`AshKotlinMultiplatform.Manifest.Transformers.DecorateManifest` calls
+`Rpc.Pipeline.build_config/0` to build the config it decorates the manifest
+WITH, at `decorate_manifest.ex:66`, while the manifest module is still
+compiling. `build_config/0` reading
+`config :ash_kotlin_multiplatform, manifest:` would therefore ask the module
+being compiled for its own persisted state — a cycle with no useful answer,
+and the decoration is exactly what does not exist yet at that point. The same
+argument covers the compile-time verifiers and both code generators, which call
+the readers before any manifest exists.
+
+So `request_config/0` and `request_config/1` are `build_config/0` and `/1` plus
+`:manifest` and `:manifest_namespace`, and the five request entry points take
+them: `Runner.execute_action/7`, `Runner.field_selector_config/1`,
+`Pipeline.execute_ash_action/1`, `Pipeline.process_result/2` and
+`Pipeline.format_data/2`. `build_config/0` keeps exactly one caller that must
+never see a manifest, and a test asserts the key is absent so merging the two
+fails a test rather than a build.
+
+### The manifest travels bare, not as a prepared `Source`
+
+`AshIntrospection.ResourceInfo` reads through an
+`AshIntrospection.ResourceInfo.Source`, which is two lookup maps built from the
+manifest. A consumer can persist a prepared `Source` once, at compile time, or
+hand over the bare `%Ash.Info.Manifest{}` and let each entry point prepare it.
+This library hands it over bare.
+
+Measured on 2026-09-19 against this repo's test manifest (7 resources, 11
+types), median of 200 batches of 1000 calls:
+
+| Call | Cost |
+| ---- | ---- |
+| `ResourceInfo.prepare/2` — one `Source` | 250 ns |
+| `ResourceInfo.normalize_config/1` | 323 ns |
+| `Pipeline.request_config/0` | 140 ns |
+| `Pipeline.build_config/0` | 81 ns |
+
+Four prepares per request is about 1.0-1.3 us. A full `run_action/3` on the
+same machine is 41 us for a five-record read with no `fields` and 162 us for
+one with a nested relationship, so the prepares are 1-3% of a request — and
+the end-to-end medians did not separate from `main` across two runs (36/148/53
+us against 44/199/65 us, then 41/162/59 against 41/163/55; the spread within
+one side is larger than the difference between them).
+
+The reason is not the number. Persisting a prepared `Source` would put an
+`ash_introspection` internal struct in this library's own persisted DSL state,
+so a change to `Source`'s shape would become a manifest recompile the consumer
+has no way to notice — the same class of staleness the compile edges exist to
+prevent. `ash_introspection#23` stage 5a's PR 6 revisits the hand-over with
+these numbers in hand.
+
+**Cost.** A stale or wrongly scoped manifest now costs requests, not only
+codegen: an `rpc_action` the manifest does not carry answers
+`action_not_found` where the live domain scan found it. That is the point of
+the change and it is what `runner_manifest_source_test.exs` asserts, but a
+consumer who never recompiled their manifest module meets it as a 404 rather
+than a short type list. `run_action/3`'s `otp_app` argument now selects
+nothing, because the manifest config names one module for the library. The
+argument stays on the public entry points.

@@ -46,6 +46,8 @@ afterwards.
 | 2026-09-18 | Upgraded to `ash_introspection` 0.5.1, which extracts a union result at all (ash_introspection#84); the floor is `~> 0.5 and >= 0.5.1` |
 | 2026-09-18 | A union generic-action result with no `fields` sends the active member's own fields; breaking on the wire, 0.2.0 (#96) |
 | 2026-09-18 | Upgraded to `ash` 3.33.6, whose manifest carries an embedded type reached only through a `first` or `list` aggregate (ash-project/ash#2950); generated output gains a `PrivateMeta` class, 0.2.0 (#100) |
+| 2026-09-19 | Upgraded to `ash_introspection` 0.5.3, whose request path reads the manifest it is handed and whose `public_relationship/3` no longer reports a private relationship as public (ash_introspection#23 stage 5a PRs 1 and 2); the floor is `~> 0.5 and >= 0.5.3` |
+| 2026-09-19 | The request path reads the manifest: `request_config/1` on the three pipeline stages, `rpc_action` discovery through `rpc_action_lookup`, and the runner's four live reads through `ResourceInfo` (ash_introspection#23 stage 5a PR 4) |
 
 ## In progress
 
@@ -59,11 +61,11 @@ Ordered by what unblocks the most.
 
 | Issue | What | Why now |
 | ----- | ---- | ------- |
-| `ash_introspection#23` stage 4 | The request path reads the manifest | #84 moved codegen's embedded types onto the manifest; enums, unions and the request path still read live |
+| `ash_introspection#23` stage 5a PR 8 | Require `ash_introspection ~> 0.6` | PR 6 makes the manifest required at the core's entry points and raises on a resource carried but not decorated; this repo takes the breaking release after it ships |
+| #17, #43 | Unstable output order across builds | Measured again on 2026-09-19: three builds put the five `object <Resource>Rpc` blocks in three orders with identical content, so no codegen diff can be read byte for byte |
 | #65, #53 | Typed `filter` and `page` in the request config | The response is typed now; the request still takes untyped maps, so `FilterTypes` is dead code |
 | #48, #53 | The runner mangles unconstrained map keys on the way IN; FilterTypes emits unpublished resources | #71 fixed the output half: an untyped map's keys now survive as written, but `Runner` parses `input` before it knows a field's type, so a key sent as `createdBy` is still stored as `created_by` |
 | #57 | Error keys ignore the output field formatter | The decode gate now reads those keys |
-| #17, #43 | Unstable output order across builds | A regenerated file should diff empty |
 | #35 | The channel client is static and cannot send most params | Blocks any per-action channel work |
 | #31 | Decide the fate of the half-built Swift generator | It is generated and never compiled |
 

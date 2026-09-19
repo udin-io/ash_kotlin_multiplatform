@@ -104,7 +104,7 @@ in review.
 *Do:* close #38 as one mechanical commit, then add the check to the `test`
 job.
 
-### Codegen trusts the manifest's type list, and the request path ignores it
+### Codegen and the request path both trust the manifest's type list
 
 Both code generators declare one class per embedded resource in the persisted
 manifest's `types` (#84). A type missing from that list is a class the
@@ -121,9 +121,14 @@ The aggregate route used to be a second way, and is closed. Ash follows a
 `Test.PrivateMeta` reaches `manifest.types` and both generators declare it
 (#100).
 
-Meanwhile `Rpc.Runner.discover_action/2` still scans `Ash.Info.domains/1` per
-request, so the request path and the manifest can disagree with nothing
-comparing them.
+Since `ash_introspection#23` stage 5a's PR 4 the request path reads the same
+manifest, so the two can no longer disagree — and the failure mode moves with
+it. A stale or wrongly scoped manifest used to cost a short type list and a
+file that would not compile; it now also costs requests, because
+`Rpc.Runner.discover_action/2` answers `action_not_found` for an `rpc_action`
+the manifest does not carry. The compile edges in
+[architecture.md](architecture.md) are what keep it from going stale, and they
+are measured rather than assumed.
 
 **What we watch.** The Kotlin compile gate, which fails on any undeclared
 class. The embedded-class tests in `resource_schemas_test.exs` and
@@ -133,8 +138,8 @@ class. The embedded-class tests in `resource_schemas_test.exs` and
 the route, add a fixture for it, and fix reachability upstream rather than
 walking attributes here again. The aggregate route is the worked example: the
 fixture landed with #84, the fix was ash-project/ash#2950, and taking it here
-was #100. The request path moves onto the manifest in the rest of
-`ash_introspection#23` stage 4.
+was #100. The request path moved onto the manifest in `ash_introspection#23`
+stage 5a's PR 4.
 
 ### `Code.ensure_compiled!` inside a transformer can deadlock
 
@@ -168,7 +173,32 @@ behaviour cannot drift silently, and the installer never writes `:domains`.
 Nothing stops a consumer writing it by hand.
 
 **What we would do.** The moduledoc carries a warning admonition. If it bites
-anyone, make the option raise unless `Mix.env() == :test`.
+anyone, make the option raise unless `Mix.env() == :test`. Since stage 5a's
+PR 4 it costs more than a short type list: a manifest scoped away from a
+domain answers `action_not_found` for every `rpc_action` in it.
+`runner_manifest_source_test.exs` asserts exactly that, which is also what
+proves the request path reads the manifest at all.
+
+### The generated file's wrapper-object order is unstable across builds
+
+`Rpc.Codegen.generate_object_wrappers/2` groups the RPC resources with
+`Enum.group_by/2` and iterates the resulting map, whose keys are resource
+module atoms. A small map iterates in Erlang term order, and term order for
+atoms follows the atom table, which follows module load order — so a change
+anywhere can reorder the five `object <Resource>Rpc` blocks without changing a
+line of their content.
+
+Measured 2026-09-19 while diffing codegen for stage 5a's PR 4: three builds of
+the same test domain — `main`, `main` with only `mix.exs` and `mix.lock`
+changed, and the finished branch — put those five objects in three different
+orders, with an identical multiset of lines every time. That is #17/#43, filed
+before this and not caused by it.
+
+*Watch:* nothing automatic. Any codegen diff has to be read as a multiset of
+lines, not byte for byte.
+*Do:* close #17/#43 by sorting the group before emitting. It is a one-line
+change that reorders generated output once, so it belongs in its own PR with
+its own diff.
 
 ### `generate/1` scopes by entrypoints, not by domains
 
