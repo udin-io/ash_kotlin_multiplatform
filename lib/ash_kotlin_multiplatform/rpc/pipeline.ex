@@ -34,14 +34,25 @@ defmodule AshKotlinMultiplatform.Rpc.Pipeline do
   alias AshIntrospection.FieldFormatter
   alias AshIntrospection.Rpc.Pipeline, as: SharedPipeline
   alias AshIntrospection.Rpc.Request
+  alias AshKotlinMultiplatform.Manifest
+  alias AshKotlinMultiplatform.Manifest.Entrypoints
   alias AshKotlinMultiplatform.Rpc
 
   @doc """
   Builds the Kotlin-specific configuration map for the shared pipeline.
 
   `not_found_error?` is per-action — see `build_config/1`. This arity carries
-  the shared default, `true`, and serves the field selector and the error
-  builder, neither of which reads that key.
+  the shared default, `true`, and serves the error builder, which does not read
+  that key.
+
+  **It carries no `:manifest`, and it must stay that way.**
+  `AshKotlinMultiplatform.Manifest.Transformers.DecorateManifest` calls this
+  function to build the config it decorates the manifest WITH, while the
+  manifest module is still compiling (`decorate_manifest.ex:66`). Reading
+  `config :ash_kotlin_multiplatform, manifest:` there would ask the module
+  being compiled for its own persisted state. The request path calls
+  `request_config/0` and `request_config/1` instead, and they are the only
+  functions here that name a manifest.
   """
   def build_config do
     %{
@@ -69,13 +80,50 @@ defmodule AshKotlinMultiplatform.Rpc.Pipeline do
   end
 
   @doc """
+  `build_config/0` plus the compile-time manifest, for the request path.
+
+  Every request entry point takes this rather than `build_config/0`, so
+  `AshIntrospection.ResourceInfo` answers from the decorated
+  `%Ash.Info.Manifest{}` the consumer's manifest module persisted instead of
+  introspecting the resource live (`ash_introspection#23` stage 5a).
+
+  Two keys, both required by the reader: `:manifest` is the bare persisted
+  struct and `:manifest_namespace` names the `custom` key
+  `AshKotlinMultiplatform.Manifest.Transformers.DecorateManifest` wrote under.
+  Without the namespace the reader looks under `:ash_introspection`, finds
+  nothing and reads live — which is the bug `ash_introspection` 0.5.3 fixed in
+  its own two config rebuilds.
+
+  The manifest is handed over bare. Each entry point prepares it — four
+  `AshIntrospection.ResourceInfo.normalize_config/1` calls per request, one per
+  stage — rather than this library persisting a prepared
+  `AshIntrospection.ResourceInfo.Source`. `docs/decisions.md` carries the
+  measured cost and the reason; stage 5a's PR 6 revisits it.
+  """
+  @spec request_config() :: map()
+  def request_config do
+    Map.merge(build_config(), %{
+      manifest: Manifest.manifest(),
+      manifest_namespace: Entrypoints.namespace()
+    })
+  end
+
+  @doc """
+  `build_config/1` plus the compile-time manifest. See `request_config/0`.
+  """
+  @spec request_config(map()) :: map()
+  def request_config(rpc_action) do
+    Map.put(request_config(), :not_found_error?, Map.get(rpc_action, :not_found_error?, true))
+  end
+
+  @doc """
   Stage 2: Execute Ash action using the parsed request.
 
   Delegates to the shared pipeline with Kotlin configuration.
   """
   @spec execute_ash_action(Request.t()) :: {:ok, term()} | {:error, term()}
   def execute_ash_action(%Request{} = request) do
-    SharedPipeline.execute_ash_action(request, build_config(request.rpc_action))
+    SharedPipeline.execute_ash_action(request, request_config(request.rpc_action))
   end
 
   @doc """
@@ -85,7 +133,7 @@ defmodule AshKotlinMultiplatform.Rpc.Pipeline do
   """
   @spec process_result(term(), Request.t()) :: {:ok, term()} | {:error, term()}
   def process_result(ash_result, %Request{} = request) do
-    SharedPipeline.process_result(ash_result, request, build_config())
+    SharedPipeline.process_result(ash_result, request, request_config())
   end
 
   @doc """
@@ -137,7 +185,7 @@ defmodule AshKotlinMultiplatform.Rpc.Pipeline do
     # formatting, and it always wraps. Unwrapping its envelope costs one
     # `Map.fetch!/2` and keeps this library off a private API.
     %{success: true, data: payload}
-    |> SharedPipeline.format_output_with_request(request, build_config())
+    |> SharedPipeline.format_output_with_request(request, request_config())
     |> Map.fetch!(envelope_key("data"))
   end
 

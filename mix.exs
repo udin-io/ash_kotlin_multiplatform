@@ -119,7 +119,18 @@ defmodule AshKotlinMultiplatform.MixProject do
       # atom, so a selected member came back `null` from a read and a generic
       # action returning a union sent nothing. `Rpc.Runner`'s no-`fields`
       # default for a union return is built on that fix (#96).
-      {:ash_introspection, "~> 0.5 and >= 0.5.1"},
+      #
+      # 0.5.3 is the floor because it is the first release whose request path
+      # reads the manifest it is handed (ash_introspection #23 stage 5a, its
+      # PRs 1 and 2). Below it two config rebuilds drop manifest keys —
+      # `value_formatter_config/2` names neither `:manifest` nor
+      # `:manifest_namespace`, and the stage-3 processor config omits the
+      # namespace — so stages 3 and 4 read live however the config was built,
+      # and `public_relationship/3` answers a private relationship as public
+      # when the manifest carries private relationships, which is every
+      # manifest this library builds (`build_manifest.ex:69`). `request_config/1`
+      # here has nothing to hand a manifest to below 0.5.3.
+      {:ash_introspection, "~> 0.5 and >= 0.5.3"},
       # Floors below are security floors, not preferences. A library's floor is
       # what its consumers inherit, so each one is the lowest release that
       # carries every published fix for that package as of 2026-09-09.
