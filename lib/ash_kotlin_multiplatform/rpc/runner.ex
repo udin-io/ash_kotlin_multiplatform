@@ -50,8 +50,9 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   - `"metadata"` - Optional metadata from the action
   """
 
+  alias AshKotlinMultiplatform.Manifest
+  alias AshKotlinMultiplatform.Manifest.Entrypoints
   alias AshKotlinMultiplatform.Resource.Info, as: ResourceInfo
-  alias AshKotlinMultiplatform.Rpc.Info
   alias AshKotlinMultiplatform.Rpc.Pipeline
   alias AshIntrospection.Rpc.ErrorBuilder
   alias AshIntrospection.Rpc.FieldProcessing.FieldSelector
@@ -112,29 +113,37 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # Action Discovery
   # ---------------------------------------------------------------------------
 
-  defp discover_action(otp_app, action_name) when is_binary(action_name) do
-    domains = Ash.Info.domains(otp_app)
-
-    result =
-      Enum.find_value(domains, fn domain ->
-        rpc_resources = Info.kotlin_rpc(domain)
-
-        Enum.find_value(rpc_resources, fn %{resource: resource, rpc_actions: rpc_actions} ->
-          Enum.find_value(rpc_actions, fn rpc_action ->
-            if to_string(rpc_action.name) == action_name do
-              {domain, resource, rpc_action}
-            end
-          end)
-        end)
-      end)
-
-    case result do
-      nil -> {:error, {:action_not_found, action_name}}
-      found -> {:ok, found}
+  # The manifest's `:rpc_action_lookup` is the answer, not a scan of
+  # `Ash.Info.domains/1`. Both are built from the same `kotlin_rpc` blocks, so
+  # they agree when the manifest is current — and when they disagree, the
+  # manifest is what code generation emitted, so it is the one the client was
+  # built against. Scanning live meant a request could reach an action no
+  # generated function names, and a stale manifest went on answering with
+  # nothing comparing the two (`ash_introspection#23` stage 5a).
+  #
+  # `otp_app` no longer selects anything. `config :ash_kotlin_multiplatform,
+  # manifest:` names one module for the library, and that module names its own
+  # otp_app; see `AshKotlinMultiplatform.Manifest` on why the manifest is
+  # app-wide. The parameter stays because `run_action/3` and `validate_action/3`
+  # are the public entry points and a consumer's call sites carry it.
+  defp discover_action(_otp_app, action_name) when is_binary(action_name) do
+    case Map.fetch(Manifest.rpc_action_lookup(), action_name) do
+      {:ok, entrypoint} -> {:ok, entrypoint_target(entrypoint)}
+      :error -> {:error, {:action_not_found, action_name}}
     end
   end
 
   defp discover_action(_otp_app, _), do: {:error, {:missing_required_parameter, :action}}
+
+  # `Manifest.Entrypoints.entry/5` writes the domain and the `rpc_action` struct
+  # into the entrypoint's `config` under this library's namespace, because
+  # `%Ash.Info.Manifest.Entrypoint{}` carries a resource and an action and
+  # nothing else. The DSL struct comes back whole, so every `rpc_action` option
+  # below reads the same way it did off the live scan.
+  defp entrypoint_target(%Ash.Info.Manifest.Entrypoint{resource: resource, config: config}) do
+    %{domain: domain, rpc_action: rpc_action} = Map.fetch!(config, Entrypoints.namespace())
+    {domain, resource, rpc_action}
+  end
 
   # ---------------------------------------------------------------------------
   # Action Execution
