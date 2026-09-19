@@ -139,6 +139,53 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerManifestSourceTest do
     end
   end
 
+  # `BuildManifest` passes `include_private_relationships?: true`
+  # (`build_manifest.ex:69`), so `Book.editor` — `public? false` — is in this
+  # library's manifest. `%Ash.Info.Manifest.Relationship{}` records no
+  # visibility, so `public_relationship/3` reported it as public whenever it
+  # read the manifest's own relationship map. `ash_introspection` 0.5.3 fixed
+  # that by reading `public?` off the decorated record, and this PR is what
+  # makes the path reachable, so the fix is pinned from this side too.
+  describe "a private relationship the manifest carries" do
+    test "is not selectable through the request path" do
+      assert [error] =
+               errors(run(%{"action" => "list_books", "fields" => [%{"editor" => ["id"]}]}))
+
+      assert error["message"] =~ "editor"
+    end
+
+    test "reads as a relationship but not as a public one" do
+      config = AshKotlinMultiplatform.Rpc.Pipeline.request_config()
+
+      assert %{name: :editor} =
+               AshIntrospection.ResourceInfo.relationship(Test.Book, :editor, config)
+
+      refute AshIntrospection.ResourceInfo.public_relationship(Test.Book, :editor, config)
+    end
+
+    test "is in the manifest, and decorated as private" do
+      book =
+        Manifest.manifest()
+        |> Map.fetch!(:resources)
+        |> Enum.find(&(&1.module == Test.Book))
+
+      assert Map.has_key?(book.relationships, :editor),
+             "`include_private_relationships?: true` stopped reaching the generator"
+
+      assert %{public?: false} =
+               book.custom
+               |> Map.fetch!(@namespace)
+               |> get_in([:by_name, :relationships, :editor])
+    end
+
+    test "the public one beside it still is selectable" do
+      assert %{"success" => true, "data" => books} =
+               run(%{"action" => "list_books", "fields" => [%{"author" => ["id"]}]})
+
+      assert is_list(books)
+    end
+  end
+
   defp run(params), do: Runner.run_action(:ash_kotlin_multiplatform, params)
 
   defp errors(response) do
