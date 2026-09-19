@@ -11,7 +11,10 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerManifestSourceTest do
   is worth asserting. A test that configures a manifest agreeing with the live
   domain passes whichever one the code reads. So every test here points
   `config :ash_kotlin_multiplatform, manifest:` at a manifest that DISAGREES
-  with live introspection, and asserts the response follows the manifest.
+  with live introspection, and asserts the response follows the manifest:
+
+    * a manifest scoped to one domain, which names no `list_todos` at all,
+    * a decoration with one payload rewritten, which no live read can reproduce.
 
   Synchronous, because each test repoints that config key and every other test
   reads it. ExUnit runs synchronous modules after the asynchronous ones.
@@ -22,9 +25,16 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerManifestSourceTest do
   alias AshKotlinMultiplatform.Rpc.Runner
   alias AshKotlinMultiplatform.Test
 
+  @namespace :ash_kotlin_multiplatform
+
   setup do
     original = Application.fetch_env!(:ash_kotlin_multiplatform, :manifest)
-    on_exit(fn -> Application.put_env(:ash_kotlin_multiplatform, :manifest, original) end)
+
+    on_exit(fn ->
+      Test.OverrideManifest.clear()
+      Application.put_env(:ash_kotlin_multiplatform, :manifest, original)
+    end)
+
     :ok
   end
 
@@ -63,10 +73,122 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerManifestSourceTest do
     end
   end
 
+  describe "a tampered decoration" do
+    test "a public attribute the decoration no longer lists is not returned" do
+      tamper(Test.Author, fn payload ->
+        Map.update!(payload, :public_attributes, &Enum.reject(&1, fn a -> a.name == :email end))
+      end)
+
+      create_author("Tampered Attributes", "tampered-attributes@example.com")
+      author = find_author("Tampered Attributes")
+
+      assert Map.has_key?(author, "name")
+      refute Map.has_key?(author, "email")
+    end
+
+    test "a decorated read action marked get? returns one record, not a list" do
+      email = "tampered-read@example.com"
+      create_author("Tampered Read", email)
+
+      tamper(Test.Author, &tamper_by_name(&1, :actions, :read, fn a -> %{a | get?: true} end))
+
+      assert %{"success" => true, "data" => author} =
+               run(%{
+                 "action" => "list_authors",
+                 "fields" => ["name"],
+                 "filter" => %{"email" => email}
+               })
+
+      assert author == %{"name" => "Tampered Read"}
+    end
+
+    test "a decorated create action whose type says read cannot be validated" do
+      tamper(Test.Author, &tamper_by_name(&1, :actions, :create, fn a -> %{a | type: :read} end))
+
+      response =
+        Runner.validate_action(:ash_kotlin_multiplatform, %{
+          "action" => "create_author",
+          "input" => %{"name" => "Tampered Create", "email" => "tampered-create@example.com"}
+        })
+
+      assert [error] = errors(response)
+      assert error["type"] == "unsupported"
+    end
+
+    test "a decorated map attribute given declared fields stops being untyped" do
+      tamper(
+        Test.Todo,
+        &tamper_by_name(&1, :attributes, :metadata, fn attribute ->
+          %{attribute | constraints: [fields: [notify_by_email: [type: :boolean]]]}
+        end)
+      )
+
+      assert %{"success" => true, "data" => todo} =
+               run(%{
+                 "action" => "create_todo",
+                 "input" => %{
+                   "title" => "Tampered Map",
+                   "metadata" => %{"notifyByEmail" => true}
+                 }
+               })
+
+      # Untyped, the key is caller data: snake_cased on the way in and never
+      # renamed on the way out, so it comes back `notify_by_email` (#71). The
+      # decoration says the field is declared, so both halves rename it.
+      assert todo["metadata"] == %{"notifyByEmail" => true}
+    end
+  end
+
   defp run(params), do: Runner.run_action(:ash_kotlin_multiplatform, params)
 
   defp errors(response) do
     assert %{"success" => false, "errors" => errors} = response
     errors
+  end
+
+  defp create_author(name, email) do
+    assert %{"success" => true} =
+             run(%{
+               "action" => "create_author",
+               "input" => %{"name" => name, "email" => email},
+               "fields" => ["id"]
+             })
+  end
+
+  defp find_author(name) do
+    assert %{"success" => true, "data" => authors} = run(%{"action" => "list_authors"})
+
+    Enum.find(authors, &(&1["name"] == name)) || flunk("#{name} is not in the response")
+  end
+
+  # Serves `Test.Manifest`'s own decorated manifest with one resource's payload
+  # rewritten, through a module that answers `persisted/2`. Nothing else
+  # changes, so a difference in the response is the tamper and only the tamper.
+  defp tamper(module, fun) do
+    manifest = Manifest.manifest(Test.Manifest)
+
+    resources =
+      Enum.map(manifest.resources, fn
+        %{module: ^module} = resource ->
+          payload = resource.custom |> Map.fetch!(@namespace) |> fun.()
+          %{resource | custom: Map.put(resource.custom, @namespace, payload)}
+
+        other ->
+          other
+      end)
+
+    Test.OverrideManifest.put(%{manifest: %{manifest | resources: resources}})
+    Application.put_env(:ash_kotlin_multiplatform, :manifest, Test.OverrideManifest)
+  end
+
+  # `AshIntrospection.Manifest.Decorator` keys `by_name` by both the atom and
+  # the string (`decorator.ex:255`), so a tamper writes both or the reader finds
+  # the original under the other key.
+  defp tamper_by_name(payload, kind, name, fun) do
+    tampered = payload |> get_in([:by_name, kind, name]) |> fun.()
+
+    update_in(payload, [:by_name, kind], fn entities ->
+      entities |> Map.put(name, tampered) |> Map.put(to_string(name), tampered)
+    end)
   end
 end

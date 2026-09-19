@@ -58,6 +58,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   alias AshIntrospection.Rpc.FieldProcessing.FieldSelector
   alias AshIntrospection.Rpc.Request
   alias AshIntrospection.FieldFormatter
+  alias AshIntrospection.ResourceInfo, as: SharedResourceInfo
 
   @doc """
   Execute an RPC action based on the request parameters.
@@ -150,8 +151,13 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # ---------------------------------------------------------------------------
 
   defp execute_action(domain, resource, rpc_action, params, actor, tenant, context) do
+    config = Pipeline.request_config(rpc_action)
     action_name = rpc_action.action
-    action_info = resource |> Ash.Resource.Info.action(action_name) |> apply_get?(rpc_action)
+
+    action_info =
+      resource
+      |> SharedResourceInfo.action(action_name, config)
+      |> apply_get?(rpc_action)
 
     with {:ok, request} <-
            build_request(
@@ -162,7 +168,8 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
              params,
              actor,
              tenant,
-             context
+             context,
+             config
            ),
          {:ok, ash_result} <- Pipeline.execute_ash_action(request),
          {:ok, processed} <- Pipeline.process_result(ash_result, request) do
@@ -179,13 +186,23 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     end
   end
 
-  defp build_request(domain, resource, action, rpc_action, params, actor, tenant, context) do
-    input = parse_input(params, resource)
+  defp build_request(
+         domain,
+         resource,
+         action,
+         rpc_action,
+         params,
+         actor,
+         tenant,
+         context,
+         config
+       ) do
+    input = parse_input(params, resource, config)
     fields = params["fields"] || []
-    identity = parse_identity(params, resource)
-    filter = parse_filter(params, resource)
+    identity = parse_identity(params, resource, config)
+    filter = parse_filter(params, resource, config)
     sort = parse_sort(params)
-    page = parse_pagination(params)
+    page = parse_pagination(params, config)
 
     show_metadata =
       action
@@ -193,9 +210,9 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
       |> narrow_metadata_fields(parse_metadata_fields(params))
 
     with :ok <- check_read_surface(rpc_action, filter, sort),
-         {:ok, get_by} <- parse_get_by(params, rpc_action, resource),
+         {:ok, get_by} <- parse_get_by(params, rpc_action, resource, config),
          {:ok, {select, load, extraction_template}} <-
-           select_fields(resource, action, fields) do
+           select_fields(resource, action, fields, config) do
       {:ok,
        %Request{
          domain: domain,
@@ -220,9 +237,10 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   end
 
   defp validate_changeset(domain, resource, rpc_action, params, actor, tenant) do
+    config = Pipeline.request_config(rpc_action)
     action_name = rpc_action.action
-    action_info = Ash.Resource.Info.action(resource, action_name)
-    input = parse_input(params, resource)
+    action_info = SharedResourceInfo.action(resource, action_name, config)
+    input = parse_input(params, resource, config)
 
     opts = [
       actor: actor,
@@ -237,7 +255,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
           {:ok, changeset}
 
         :update ->
-          identity = parse_identity(params, resource)
+          identity = parse_identity(params, resource, config)
 
           with {:ok, record} <- get_record_for_validation(resource, identity, opts) do
             changeset = Ash.Changeset.for_update(record, action_name, input, opts)
@@ -315,9 +333,9 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # update or destroy `allowed` is the schema default `[]` and this returns
   # `{:ok, nil}`. A guard would be a branch no test can reach without disabling
   # the verifier.
-  defp parse_get_by(params, rpc_action, resource) do
+  defp parse_get_by(params, rpc_action, resource, config) do
     allowed = configured_get_by(rpc_action)
-    sent = normalize_get_by(params["getBy"], resource)
+    sent = normalize_get_by(params["getBy"], resource, config)
 
     sent_keys = sent |> Map.keys() |> MapSet.new()
     allowed_keys = MapSet.new(allowed)
@@ -333,10 +351,10 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     end
   end
 
-  defp normalize_get_by(get_by, resource) when is_map(get_by),
-    do: convert_keys_to_atoms(get_by, resource)
+  defp normalize_get_by(get_by, resource, config) when is_map(get_by),
+    do: convert_keys_to_atoms(get_by, resource, config)
 
-  defp normalize_get_by(_, _resource), do: %{}
+  defp normalize_get_by(_, _resource, _config), do: %{}
 
   # ---------------------------------------------------------------------------
   # Read Surface
@@ -408,24 +426,24 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # Input Parsing
   # ---------------------------------------------------------------------------
 
-  defp parse_input(params, resource) do
+  defp parse_input(params, resource, config) do
     input = params["input"] || %{}
-    convert_keys_to_atoms(input, resource)
+    convert_keys_to_atoms(input, resource, config)
   end
 
-  defp parse_identity(params, resource) do
+  defp parse_identity(params, resource, config) do
     case params["identity"] do
       nil -> nil
       id when is_binary(id) -> id
-      id when is_map(id) -> convert_keys_to_atoms(id, resource)
+      id when is_map(id) -> convert_keys_to_atoms(id, resource, config)
       id -> id
     end
   end
 
-  defp parse_filter(params, resource) do
+  defp parse_filter(params, resource, config) do
     case params["filter"] do
       nil -> nil
-      filter -> convert_keys_to_atoms(filter, resource)
+      filter -> convert_keys_to_atoms(filter, resource, config)
     end
   end
 
@@ -437,10 +455,10 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     end
   end
 
-  defp parse_pagination(params) do
+  defp parse_pagination(params, config) do
     case params["page"] do
       nil -> nil
-      page -> convert_keys_to_atoms(page, nil)
+      page -> convert_keys_to_atoms(page, nil, config)
     end
   end
 
@@ -465,26 +483,26 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   defp existing_metadata_atom(name) when is_atom(name) and not is_nil(name), do: [name]
   defp existing_metadata_atom(_), do: []
 
-  defp convert_keys_to_atoms(map, resource) when is_map(map) do
+  defp convert_keys_to_atoms(map, resource, config) when is_map(map) do
     Map.new(map, fn
       {key, value} when is_binary(key) ->
         internal_key = to_internal_key(key, resource)
-        {internal_key, convert_nested(internal_key, value, resource)}
+        {internal_key, convert_nested(internal_key, value, resource, config)}
 
       {key, value} ->
-        {key, convert_keys_to_atoms(value, resource)}
+        {key, convert_keys_to_atoms(value, resource, config)}
     end)
   end
 
-  defp convert_keys_to_atoms(list, resource) when is_list(list) do
-    Enum.map(list, &convert_keys_to_atoms(&1, resource))
+  defp convert_keys_to_atoms(list, resource, config) when is_list(list) do
+    Enum.map(list, &convert_keys_to_atoms(&1, resource, config))
   end
 
-  defp convert_keys_to_atoms(value, _resource), do: value
+  defp convert_keys_to_atoms(value, _resource, _config), do: value
 
   # An untyped `:map` attribute declares no field names of its own, so every
   # key under it is caller data, not something this DSL or Ash ever named.
-  # Recursing into it with `convert_keys_to_atoms/2` risked promoting a data
+  # Recursing into it with `convert_keys_to_atoms/3` risked promoting a data
   # key to an atom via `to_snake_case_key/1`'s `String.to_existing_atom/1`
   # whenever that word happened to be interned somewhere else in the VM —
   # dependent on load order, not on this app's own atom budget (#18 stays
@@ -494,18 +512,19 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # an untyped map's value, keys are only ever snake_cased and kept as
   # strings — this still applies the #71 casing rule that output formatting no
   # longer undoes it, without ever risking a mixed atom/string-keyed map.
-  defp convert_nested(key, value, resource) when is_atom(key) do
-    if untyped_map_attribute?(resource, key) do
+  defp convert_nested(key, value, resource, config) when is_atom(key) do
+    if untyped_map_attribute?(resource, key, config) do
       stringify_keys(value)
     else
-      convert_keys_to_atoms(value, resource)
+      convert_keys_to_atoms(value, resource, config)
     end
   end
 
-  defp convert_nested(_key, value, resource), do: convert_keys_to_atoms(value, resource)
+  defp convert_nested(_key, value, resource, config),
+    do: convert_keys_to_atoms(value, resource, config)
 
-  defp untyped_map_attribute?(resource, key) when not is_nil(resource) do
-    case Ash.Resource.Info.attribute(resource, key) do
+  defp untyped_map_attribute?(resource, key, config) when not is_nil(resource) do
+    case SharedResourceInfo.attribute(resource, key, config) do
       %{type: Ash.Type.Map, constraints: constraints} ->
         Keyword.get(constraints, :fields) in [nil, []]
 
@@ -516,7 +535,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     _ -> false
   end
 
-  defp untyped_map_attribute?(_resource, _key), do: false
+  defp untyped_map_attribute?(_resource, _key, _config), do: false
 
   defp stringify_keys(map) when is_map(map) do
     Map.new(map, fn {key, value} -> {stringify_key(key), stringify_keys(value)} end)
@@ -591,45 +610,48 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   #
   # Any other generic return keeps the owner's attributes, as before #88. The
   # shared pipeline ignores that template for an untyped map and a scalar.
-  defp select_fields(resource, action, []) do
-    {:ok, default_selection(resource, action)}
+  defp select_fields(resource, action, [], config) do
+    {:ok, default_selection(resource, action, config)}
   end
 
-  defp select_fields(resource, action, fields) when is_list(fields) do
-    case FieldSelector.process(resource, action.name, fields, field_selector_config()) do
+  defp select_fields(resource, action, fields, config) when is_list(fields) do
+    case FieldSelector.process(resource, action.name, fields, field_selector_config(config)) do
       {:ok, result} -> {:ok, result}
       {:error, reason} -> {:error, {:invalid_fields, reason}}
     end
   end
 
-  defp select_fields(_resource, _action, fields) do
+  defp select_fields(_resource, _action, fields, _config) do
     {:error, {:invalid_fields, {:fields_must_be_a_list, fields}}}
   end
 
-  defp default_selection(resource, %{type: :action} = action) do
+  defp default_selection(resource, %{type: :action} = action, config) do
     case ResourceInfo.returned_resource(action) do
-      nil -> map_field_selection(ResourceInfo.returned_type(action), resource)
-      returned -> attribute_selection(returned)
+      nil -> map_field_selection(ResourceInfo.returned_type(action), resource, config)
+      returned -> attribute_selection(returned, config)
     end
   end
 
-  defp default_selection(resource, _action), do: attribute_selection(resource)
+  defp default_selection(resource, _action, config), do: attribute_selection(resource, config)
 
   # A tuple has no keys, so its template names each field by position. That is
   # the template `FieldSelector` builds for an empty request, so it is taken
   # from there rather than rebuilt.
-  defp map_field_selection({Ash.Type.Tuple, constraints}, resource) do
+  defp map_field_selection({Ash.Type.Tuple, constraints}, resource, config) do
     case Keyword.get(constraints, :fields) do
-      [_ | _] -> FieldSelector.select_tuple_fields(constraints, [], [], field_selector_config())
-      _untyped -> attribute_selection(resource)
+      [_ | _] ->
+        FieldSelector.select_tuple_fields(constraints, [], [], field_selector_config(config))
+
+      _untyped ->
+        attribute_selection(resource, config)
     end
   end
 
-  defp map_field_selection({type, constraints}, resource)
+  defp map_field_selection({type, constraints}, resource, config)
        when type in [Ash.Type.Map, Ash.Type.Struct, Ash.Type.Keyword] do
     case Keyword.get(constraints, :fields) do
       [_ | _] = fields -> {[], [], Keyword.keys(fields)}
-      _untyped -> attribute_selection(resource)
+      _untyped -> attribute_selection(resource, config)
     end
   end
 
@@ -637,12 +659,13 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # an empty template is what makes the active member choose its own fields.
   # Sending Book's attribute names here is what returned `nil` for a single
   # union and `[]` for a list, whatever the member was (#96).
-  defp map_field_selection({Ash.Type.Union, _constraints}, _resource), do: {[], [], []}
+  defp map_field_selection({Ash.Type.Union, _constraints}, _resource, _config), do: {[], [], []}
 
-  defp map_field_selection(_other_return, resource), do: attribute_selection(resource)
+  defp map_field_selection(_other_return, resource, config),
+    do: attribute_selection(resource, config)
 
-  defp attribute_selection(resource) do
-    template = Enum.map(Ash.Resource.Info.public_attributes(resource), & &1.name)
+  defp attribute_selection(resource, config) do
+    template = Enum.map(SharedResourceInfo.public_attributes(resource, config), & &1.name)
     {template, [], template}
   end
 
@@ -650,9 +673,13 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # published graph: without it `FieldSelector` treats every Ash resource as
   # traversable, so a relationship to a resource the `kotlin_rpc` DSL never
   # exposed would become readable the moment nested selection started working.
-  defp field_selector_config do
+  #
+  # `config` is the request config, so the manifest rides in with it. Building
+  # from `Pipeline.build_config/0` here is what kept every nested field
+  # classification on live introspection.
+  defp field_selector_config(config) do
     Map.put(
-      Pipeline.build_config(),
+      config,
       :is_interop_resource?,
       &AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_resource?/1
     )
