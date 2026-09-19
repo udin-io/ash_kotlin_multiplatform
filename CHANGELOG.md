@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is `action_not_found` where the live scan found it. Recompile the manifest
   module, or widen its `:domains`, if a request stops resolving.
 
+  With no `:manifest` configured at all a request raises the same
+  `ArgumentError` code generation raises, naming the config line and the
+  installer, rather than answering `action_not_found`. Such an app could never
+  have generated a client to send the request with.
+
   `build_config/0` still carries no manifest and must not, because
   `Manifest.Transformers.DecorateManifest` calls it while the manifest module
   is compiling.
