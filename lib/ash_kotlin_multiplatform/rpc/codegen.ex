@@ -22,7 +22,6 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
   """
 
   alias AshKotlinMultiplatform.Manifest
-  alias AshKotlinMultiplatform.Rpc.Info
   alias AshKotlinMultiplatform.Codegen.{FilterTypes, ResourceSchemas, TypedQueries}
 
   alias AshKotlinMultiplatform.Rpc.Codegen.{
@@ -153,9 +152,10 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
         ),
         # Validation functions (if enabled)
         maybe_generate_validation_functions(resources_and_actions, opts),
-        # Object wrappers (OO style)
+        # Object wrappers (OO style), from the configs collected above rather
+        # than a second walk of the domains
         non_empty_or_nil(
-          generate_object_wrappers(otp_app, package_name),
+          render_object_wrappers(rpc_configs, package_name),
           "// Object-Oriented API"
         ),
         # Phoenix Channel client (if enabled)
@@ -258,15 +258,29 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
     end
   end
 
-  defp generate_object_wrappers(otp_app, package_name) do
-    otp_app
-    |> Ash.Info.domains()
-    |> Enum.flat_map(&Info.kotlin_rpc/1)
+  # The object-oriented API section: one `object <Type>Rpc` per RPC resource,
+  # ordered by the type name the wrapper carries.
+  #
+  # `Enum.group_by/2` returns a map, and map iteration over atom keys follows the
+  # atom table — creation order — not the alphabet, so before #43 this section
+  # came out in a different order on every build. The sort makes the order a
+  # property of the source rather than of what the VM loaded first. The resource
+  # module is the tiebreak: `type_name` is unique among resources that use
+  # `AshKotlinMultiplatform.Resource` (`VerifyUniqueTypeNames`), and two that do
+  # not can both fall back to the same last module segment.
+  #
+  # Public for the ordering test, which builds the config list by hand so the
+  # assertion does not depend on the running build's atom table.
+  @doc false
+  def render_object_wrappers(rpc_configs, package_name) do
+    rpc_configs
     |> Enum.group_by(fn %{resource: resource} -> resource end)
-    |> Enum.map(fn {resource, configs} ->
+    |> Enum.sort_by(fn {resource, _configs} ->
+      {to_string(get_resource_type_name(resource)), resource}
+    end)
+    |> Enum.map_join("\n\n", fn {resource, configs} ->
       generate_object_wrapper(resource, List.first(configs), package_name)
     end)
-    |> Enum.join("\n\n")
   end
 
   defp generate_object_wrapper(resource, %{rpc_actions: actions}, package_name) do
