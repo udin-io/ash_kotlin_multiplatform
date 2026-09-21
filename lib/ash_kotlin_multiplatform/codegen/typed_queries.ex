@@ -59,8 +59,15 @@ defmodule AshKotlinMultiplatform.Codegen.TypedQueries do
   def generate_typed_queries_section([], _all_resources), do: ""
 
   def generate_typed_queries_section(typed_queries, all_resources) do
+    # Sorted by the resource name the section header carries. `Enum.group_by/2`
+    # returns a map, and map iteration over atom keys follows the atom table
+    # rather than the alphabet, so the section order shifted with module load
+    # order (#43). The resource module is the tiebreak, since two resources
+    # without `AshKotlinMultiplatform.Resource` can share a last module segment.
     queries_by_resource =
-      Enum.group_by(typed_queries, fn {resource, _action, _query} -> resource end)
+      typed_queries
+      |> Enum.group_by(fn {resource, _action, _query} -> resource end)
+      |> Enum.sort_by(fn {resource, _queries} -> {get_resource_name(resource), resource} end)
 
     sections =
       Enum.map(queries_by_resource, fn {resource, queries} ->

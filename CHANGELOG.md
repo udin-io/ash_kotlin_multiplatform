@@ -39,6 +39,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   private when the manifest carries private relationships — which is every
   manifest this library builds.
 
+### Fixed
+
+- Two generated sections are emitted in a fixed order instead of in module load
+  order (#43). The `object <Type>Rpc` wrappers sort by the type name the wrapper
+  carries, and the `// <Resource> Typed Queries` sections by the resource name
+  the header carries; the resource module is the tiebreak for both. Both piped
+  `Enum.group_by/2` into `Enum.map/2`, and map iteration over atom keys follows
+  the atom table rather than the alphabet, so a rebuild could reorder the blocks
+  with their bodies byte-identical. A regenerated client moves those blocks once
+  and then stops changing.
+
 ### Security
 
 - `mint` moves to 1.10.1, fixing EEF-CVE-2026-82672. `mint` is transitive
