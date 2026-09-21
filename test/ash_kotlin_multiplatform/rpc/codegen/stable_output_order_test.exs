@@ -100,9 +100,11 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.StableOutputOrderTest do
   # Not async: swaps :ash_domains, which is global.
   use ExUnit.Case, async: false
 
+  alias AshKotlinMultiplatform.Codegen.TypedQueries
   alias AshKotlinMultiplatform.Rpc.Codegen
   alias AshKotlinMultiplatform.Rpc.Codegen.RpcConfigCollector
   alias AshKotlinMultiplatform.Rpc.RpcAction
+  alias AshKotlinMultiplatform.Rpc.TypedQuery
   alias AshKotlinMultiplatform.Test
   alias AshKotlinMultiplatform.Test.OutputOrder
 
@@ -160,6 +162,17 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.StableOutputOrderTest do
     end
   end
 
+  describe "typed query sections" do
+    test "are emitted sorted by the resource name the header carries" do
+      section =
+        @reverse_of_alphabetical
+        |> Enum.map(&typed_query/1)
+        |> TypedQueries.generate_typed_queries_section(@reverse_of_alphabetical)
+
+      assert section_names(section) == ["Alpha", "Mike", "Zulu"]
+    end
+  end
+
   defp generated_file do
     {:ok, code} = Codegen.generate_kotlin_code(:ash_kotlin_multiplatform, [])
     code
@@ -169,10 +182,29 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.StableOutputOrderTest do
     ~r/^object (\w+)Rpc \{$/m |> Regex.scan(code) |> Enum.map(&Enum.at(&1, 1))
   end
 
+  defp section_names(code) do
+    ~r|^// (\w+) Typed Queries$|m |> Regex.scan(code) |> Enum.map(&Enum.at(&1, 1))
+  end
+
   defp rpc_config(resource) do
     %AshKotlinMultiplatform.Rpc.Resource{
       resource: resource,
       rpc_actions: [%RpcAction{name: :list_things, action: :read}]
     }
+  end
+
+  # The shape `RpcConfigCollector.get_typed_queries/1` returns. Built by hand
+  # because the test domain declares no `typed_query` — the round-trip gate has
+  # no coverage for one yet, see `AshKotlinMultiplatform.Test.ScopedDomain`.
+  defp typed_query(resource) do
+    name = resource |> Module.split() |> List.last() |> String.downcase()
+
+    {resource, Ash.Resource.Info.action(resource, :read),
+     %TypedQuery{
+       name: :"list_#{name}",
+       resource: resource,
+       action: :read,
+       fields: ["id", "title"]
+     }}
   end
 end
