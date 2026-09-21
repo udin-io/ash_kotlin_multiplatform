@@ -39,6 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   private when the manifest carries private relationships — which is every
   manifest this library builds.
 
+### Security
+
+- `mint` moves to 1.10.1, fixing EEF-CVE-2026-82672. `mint` is transitive
+  through `finch` (`~> 1.8`); nothing in this library calls `mint` directly.
+
 ## [0.2.0] - 2026-09-18
 
 This is a **breaking** release. The generated RPC return types, several wire
