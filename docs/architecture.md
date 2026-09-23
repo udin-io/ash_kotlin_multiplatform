@@ -308,9 +308,11 @@ embedded-resource types since #84, so code generation raises when
 `config :ash_kotlin_multiplatform, :manifest` is unset. Since stage 5a's PR 4
 the request path reads it too, through `Rpc.Pipeline.request_config/0` — so
 this pass is now the only place the library introspects a resource for a
-request as well as for codegen. What is left of `ash_introspection#23` is
-stage 5a's PR 6, which makes the manifest required at the core's own entry
-points and raises on a resource it carries but did not decorate.
+request as well as for codegen. Since `ash_introspection` 0.6.0, taken here
+in stage 5a's PR 8, the core's four request entry points REQUIRE it: a config
+with no `:manifest`, and a resource the manifest carries that the decorator
+skipped, both raise `AshIntrospection.ManifestError` where they used to fall
+back to live `Ash.Resource.Info` and say nothing. That closes stage 5a.
 
 ```mermaid
 sequenceDiagram
