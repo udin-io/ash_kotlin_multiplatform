@@ -52,7 +52,7 @@ C4Container
         Container(sgen, "Swift generator", "Elixir", "AshKotlinMultiplatform.Swift.Codegen; a partial parallel of the Kotlin one")
         Container(dsl, "DSL extensions", "Spark", "AshKotlinMultiplatform.Resource on resources, .Rpc on domains, plus four verifiers")
         Container(man, "Manifest module", "Spark DSL", "AshKotlinMultiplatform.Manifest; the consumer declares one. Two transformers build, decorate and persist one Ash.Info.Manifest at compile time")
-        Container(serve, "RPC server half", "Elixir", "Phoenix.Controller, Rpc.Runner, Rpc.Pipeline, Rpc.Hooks")
+        Container(serve, "RPC server half", "Elixir", "Phoenix.Controller, Rpc.Runner, Rpc.KeyNames, Rpc.Pipeline, Rpc.Hooks")
     }
 
     Container_Ext(gate, "Kotlin compile and round-trip gate", "Gradle + Kotlin 2.4.20", "test/fixtures/kotlin_compile; compiles the emitted Kotlin in CI, then decodes real Runner responses with it")
