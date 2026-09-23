@@ -41,6 +41,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `Rpc.Runner` parses a client key to one type instead of two (#77). The parser
+  returned an atom when `String.to_existing_atom/1` found one and a string when
+  it did not, so a single `input`, `filter`, `page`, `identity` or `getBy` map
+  held `:retry_count` beside `"created_by"`, and which of the two a key got
+  followed the modules the VM had loaded rather than the request. The parser
+  moved to `Rpc.KeyNames` and returns a string for every key.
+
+  The atoms named a known argument, attribute or option, so
+  `KeyNames.resolve/2` does that lookup against a list the caller already
+  holds: Ash's page options for `page`, the resource's attributes for
+  `identity`, the DSL's own list for `getBy`, and a `:map` attribute's declared
+  fields for the keys inside it. `input` and `filter` are handed to
+  `Ash.Changeset.for_create/4` and `Ash.Query.filter_input/2`, which read
+  string keys. `String.to_atom/1` is still called nowhere, so #18 stays closed.
+
+  Not a wire change: Jason encodes an atom key and a string key identically, so
+  a generated client sees the same JSON. **Breaking for Elixir code that
+  pattern-matches these maps inside the request path** — a custom
+  `AshIntrospection.Rpc.Pipeline` stage, or a test asserting on
+  `%Request{input: %{title: "x"}}`, now reads `%{"title" => "x"}`. Nothing in a
+  generated Kotlin or Swift client is affected.
+
 - Two generated sections are emitted in a fixed order instead of in module load
   order (#43). The `object <Type>Rpc` wrappers sort by the type name the wrapper
   carries, and the `// <Resource> Typed Queries` sections by the resource name

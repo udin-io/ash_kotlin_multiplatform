@@ -48,6 +48,7 @@ afterwards.
 | 2026-09-18 | Upgraded to `ash` 3.33.6, whose manifest carries an embedded type reached only through a `first` or `list` aggregate (ash-project/ash#2950); generated output gains a `PrivateMeta` class, 0.2.0 (#100) |
 | 2026-09-19 | Upgraded to `ash_introspection` 0.5.3, whose request path reads the manifest it is handed and whose `public_relationship/3` no longer reports a private relationship as public (ash_introspection#23 stage 5a PRs 1 and 2); the floor is `~> 0.5 and >= 0.5.3` |
 | 2026-09-19 | The request path reads the manifest: `request_config/1` on the three pipeline stages, `rpc_action` discovery through `rpc_action_lookup`, and the runner's four live reads through `ResourceInfo` (ash_introspection#23 stage 5a PR 4) |
+| 2026-09-23 | The RPC key parser returns one type: every parsed client key is a string, and `Rpc.KeyNames.resolve/2` resolves atoms against the names the caller already holds (#77) |
 
 ## In progress
 

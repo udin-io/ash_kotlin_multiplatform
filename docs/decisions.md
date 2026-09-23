@@ -371,9 +371,38 @@ still snake_cased on the way in. A key sent as `createdBy` is stored and
 returned as `created_by`. Resolving input keys by type means minting atoms for
 unknown names, which reopens the atom-table exhaustion #18 closed.
 
+## 2026-09-23 — A parsed client key is a string, and atoms are resolved by name
+
+`Runner.to_snake_case_key/1` returned an atom when `String.to_existing_atom/1`
+found one and a string when it did not. One `input`, `filter`, `page`,
+`identity` or `getBy` map therefore held `:retry_count` beside `"created_by"`,
+and which of the two a key got followed the modules the VM had loaded rather
+than the request (#77). The entry below fixed that for the keys inside an
+untyped map; the parser itself still returned two types, so the map holding
+the attribute did too.
+
+The parser moved to `Rpc.KeyNames` and returns a string for every key. The
+atoms it used to return existed to name a known argument, attribute or option,
+so `KeyNames.resolve/2` does that lookup against a list the caller already
+holds. Four callers need it and each knows its own names: Ash's page options
+for `page` (`Ash.Page.page_opts/1` reads `page[:limit]` with atom keys), the
+resource's attributes for `identity` (the shared pipeline matches with
+`Map.has_key?(identity, :id)`), the DSL's own list for `getBy`, and a `:map`
+attribute's declared fields for the keys inside it. `input` and `filter` need
+no atoms — `Ash.Changeset.for_create/4` and `Ash.Query.filter_input/2` read
+string keys.
+
+Cost: Elixir code that pattern-matches a parsed map inside the request path
+now reads `%{"title" => "x"}` where it read `%{title: "x"}`. No wire change —
+Jason encodes both spellings identically — so no generated client moves.
+`String.to_atom/1` is still called nowhere, so #18 stays closed. The
+camelCase-to-snake_case asymmetry (#76) is untouched and stays open: a key
+sent as `createdBy` inside an untyped map is still stored as `created_by`.
+
 ## 2026-09-16 — Untyped map values never promote a data key to an atom
 
-`Runner.to_snake_case_key/1` promotes a key to an atom with
+`Runner.to_snake_case_key/1` (now `Rpc.KeyNames.internal_key/2`) promoted a
+key to an atom with
 `String.to_existing_atom/1`, which succeeds the moment ANY loaded code has
 interned that exact atom, not only this app's own. The paragraph above only
 ever measured the safe path: "created_by" and "retry_count" were never atoms
@@ -384,7 +413,8 @@ in reactor 1.0.7, whose `Reactor.Error.Invalid.RetriesExceededError` defines a
 atom/string-keyed map that does not round-trip through JSON the same way
 twice.
 
-`Runner.convert_keys_to_atoms/2` now checks, once it resolves a key to an
+`Runner.convert_keys_to_atoms/2` (now `Rpc.KeyNames.parse/3`) checks, once it
+resolves a key to an
 attribute whose type is an unconstrained `Ash.Type.Map`, and stops promoting
 keys under it: they are still snake-cased on the way in, per the rule above,
 but kept as strings always. This closes the atom-promotion half of the risk
