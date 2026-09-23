@@ -11,7 +11,16 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.InstallTest do
   without: `AshKotlinMultiplatform.Manifest.manifest_module/0` raises when the
   config is absent.
   """
-  use ExUnit.Case, async: true
+  # Serial, and it has to be. `Igniter.compose_task/3` and `apply_igniter!/1`
+  # read the test project's `config/config.exs` and apply it to the whole VM
+  # with `Application.put_all_env/1` for the length of the task
+  # (`deps/igniter/lib/igniter.ex:1697`), restoring it after. Inside that window
+  # every other test reads `:ash_kotlin_multiplatform, :manifest` as the test
+  # project's module. `Rpc.Pipeline.request_config/0` then calls
+  # `persisted(:manifest)` on it and raises "is not a Spark DSL module" (#108).
+  # Application env is VM-global with no per-process scope, so no setup/on_exit
+  # pairing closes the window — only not running beside a reader does.
+  use ExUnit.Case, async: false
 
   import Igniter.Test
 
