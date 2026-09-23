@@ -99,38 +99,24 @@ defmodule AshKotlinMultiplatform.MixProject do
   defp deps do
     [
       {:igniter, "~> 0.7", optional: true},
-      # 0.4.0 is the floor because it is the first release whose stage 4 formats
-      # a multi-record read: `Pipeline.format_resource_output/4` gained a clause
-      # for a bare list and one for a page envelope (ash_introspection #57/#64).
-      # Without it `Rpc.Runner` cannot adopt the type-aware formatter at all —
-      # every list and page read would return internal atom keys (#71).
+      # 0.6.0 is the floor because it is the first release whose four request
+      # entry points REQUIRE a manifest: `Pipeline.execute_ash_action/2`,
+      # `Pipeline.process_result/3`, `Pipeline.format_output_with_request/3`
+      # and `FieldSelector.process/4` raise `AshIntrospection.ManifestError`
+      # when the config they are handed carries no `:manifest`, and raise for
+      # a resource the manifest carries that the decorator skipped
+      # (ash_introspection #23 stage 5a, its PR 6). Below it both cases fall
+      # back to live `Ash.Resource.Info` and say nothing, which is how one
+      # pipeline stage stayed on live introspection for five releases after
+      # the key landed. `Rpc.Pipeline.request_config/0` has carried
+      # `:manifest` and `:manifest_namespace` to all four entry points since
+      # #103, so this floor turns a silent fallback into a raise and changes
+      # nothing this library does.
       #
-      # 0.5.0 is the floor because it deletes
-      # `AshIntrospection.Codegen.TypeDiscovery` and its warning helpers
-      # (ash_introspection #23 stage 4b). Codegen here is manifest-only
-      # since #86 — it reads `%Ash.Info.Manifest{}`, not that module — so
-      # the deletion has zero callers in this repo and nothing keeps the
-      # floor below it.
-      #
-      # 0.5.1 is the floor because it is the first release that extracts a
-      # union result at all (ash_introspection #84). Before it,
-      # `ResultProcessor.extract_union_value/4` matched a member template
-      # against the wire name while `%Ash.Union{type:}` carries the internal
-      # atom, so a selected member came back `null` from a read and a generic
-      # action returning a union sent nothing. `Rpc.Runner`'s no-`fields`
-      # default for a union return is built on that fix (#96).
-      #
-      # 0.5.3 is the floor because it is the first release whose request path
-      # reads the manifest it is handed (ash_introspection #23 stage 5a, its
-      # PRs 1 and 2). Below it two config rebuilds drop manifest keys —
-      # `value_formatter_config/2` names neither `:manifest` nor
-      # `:manifest_namespace`, and the stage-3 processor config omits the
-      # namespace — so stages 3 and 4 read live however the config was built,
-      # and `public_relationship/3` answers a private relationship as public
-      # when the manifest carries private relationships, which is every
-      # manifest this library builds (`build_manifest.ex:69`). `request_config/1`
-      # here has nothing to hand a manifest to below 0.5.3.
-      {:ash_introspection, "~> 0.5 and >= 0.5.3"},
+      # `~> 0.6` subsumes the 0.4.0, 0.5.0, 0.5.1 and 0.5.3 floors this line
+      # used to carry. Each reason is in CHANGELOG.md under the release that
+      # took it.
+      {:ash_introspection, "~> 0.6"},
       # Floors below are security floors, not preferences. A library's floor is
       # what its consumers inherit, so each one is the lowest release that
       # carries every published fix for that package as of 2026-09-09.
