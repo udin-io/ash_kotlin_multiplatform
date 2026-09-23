@@ -132,7 +132,12 @@ are measured rather than assumed.
 
 **What we watch.** The Kotlin compile gate, which fails on any undeclared
 class. The embedded-class tests in `resource_schemas_test.exs` and
-`swift/codegen_test.exs`, one per route, nine routes each.
+`swift/codegen_test.exs`, one per route, nine routes each. Since the
+`ash_introspection ~> 0.6` floor (stage 5a's PR 8) one drift case stopped
+being silent: a resource the manifest carries that
+`Manifest.Decorator.decorate/3` skipped raises
+`AshIntrospection.ManifestError` naming the module and the namespace, instead
+of reading live and answering correctly.
 
 **What we would do.** If a consumer reports an undeclared embedded class, find
 the route, add a fixture for it, and fix reachability upstream rather than
