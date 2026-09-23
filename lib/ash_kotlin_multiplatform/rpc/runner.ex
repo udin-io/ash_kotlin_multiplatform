@@ -70,6 +70,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   alias AshKotlinMultiplatform.Manifest
   alias AshKotlinMultiplatform.Manifest.Entrypoints
   alias AshKotlinMultiplatform.Resource.Info, as: ResourceInfo
+  alias AshKotlinMultiplatform.Rpc.KeyNames
   alias AshKotlinMultiplatform.Rpc.Pipeline
   alias AshIntrospection.Rpc.ErrorBuilder
   alias AshIntrospection.Rpc.FieldProcessing.FieldSelector
@@ -369,7 +370,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   end
 
   defp normalize_get_by(get_by, resource, config) when is_map(get_by),
-    do: convert_keys_to_atoms(get_by, resource, config)
+    do: KeyNames.parse(get_by, resource, config)
 
   defp normalize_get_by(_, _resource, _config), do: %{}
 
@@ -445,14 +446,14 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
 
   defp parse_input(params, resource, config) do
     input = params["input"] || %{}
-    convert_keys_to_atoms(input, resource, config)
+    KeyNames.parse(input, resource, config)
   end
 
   defp parse_identity(params, resource, config) do
     case params["identity"] do
       nil -> nil
       id when is_binary(id) -> id
-      id when is_map(id) -> convert_keys_to_atoms(id, resource, config)
+      id when is_map(id) -> KeyNames.parse(id, resource, config)
       id -> id
     end
   end
@@ -460,7 +461,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   defp parse_filter(params, resource, config) do
     case params["filter"] do
       nil -> nil
-      filter -> convert_keys_to_atoms(filter, resource, config)
+      filter -> KeyNames.parse(filter, resource, config)
     end
   end
 
@@ -475,7 +476,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   defp parse_pagination(params, config) do
     case params["page"] do
       nil -> nil
-      page -> convert_keys_to_atoms(page, nil, config)
+      page -> KeyNames.parse(page, nil, config)
     end
   end
 
@@ -492,116 +493,13 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # that does not resolve is dropped rather than raised on: an atom that does not
   # exist cannot name a metadata field either, so there is nothing to report.
   defp existing_metadata_atom(name) when is_binary(name) do
-    [name |> to_snake_case() |> String.to_existing_atom()]
+    [name |> KeyNames.snake_case() |> String.to_existing_atom()]
   rescue
     ArgumentError -> []
   end
 
   defp existing_metadata_atom(name) when is_atom(name) and not is_nil(name), do: [name]
   defp existing_metadata_atom(_), do: []
-
-  defp convert_keys_to_atoms(map, resource, config) when is_map(map) do
-    Map.new(map, fn
-      {key, value} when is_binary(key) ->
-        internal_key = to_internal_key(key, resource)
-        {internal_key, convert_nested(internal_key, value, resource, config)}
-
-      {key, value} ->
-        {key, convert_keys_to_atoms(value, resource, config)}
-    end)
-  end
-
-  defp convert_keys_to_atoms(list, resource, config) when is_list(list) do
-    Enum.map(list, &convert_keys_to_atoms(&1, resource, config))
-  end
-
-  defp convert_keys_to_atoms(value, _resource, _config), do: value
-
-  # An untyped `:map` attribute declares no field names of its own, so every
-  # key under it is caller data, not something this DSL or Ash ever named.
-  # Recursing into it with `convert_keys_to_atoms/3` risked promoting a data
-  # key to an atom via `to_snake_case_key/1`'s `String.to_existing_atom/1`
-  # whenever that word happened to be interned somewhere else in the VM —
-  # dependent on load order, not on this app's own atom budget (#18 stays
-  # closed either way, nothing here mints one). The ash 3.33.4 bump made it
-  # deterministic: reactor 1.0.7's `RetriesExceededError` interns `:retry_count`
-  # at load, and the wire test data used exactly that word (#81). Once inside
-  # an untyped map's value, keys are only ever snake_cased and kept as
-  # strings — this still applies the #71 casing rule that output formatting no
-  # longer undoes it, without ever risking a mixed atom/string-keyed map.
-  defp convert_nested(key, value, resource, config) when is_atom(key) do
-    if untyped_map_attribute?(resource, key, config) do
-      stringify_keys(value)
-    else
-      convert_keys_to_atoms(value, resource, config)
-    end
-  end
-
-  defp convert_nested(_key, value, resource, config),
-    do: convert_keys_to_atoms(value, resource, config)
-
-  defp untyped_map_attribute?(resource, key, config) when not is_nil(resource) do
-    case SharedResourceInfo.attribute(resource, key, config) do
-      %{type: Ash.Type.Map, constraints: constraints} ->
-        Keyword.get(constraints, :fields) in [nil, []]
-
-      _ ->
-        false
-    end
-  rescue
-    _ -> false
-  end
-
-  defp untyped_map_attribute?(_resource, _key, _config), do: false
-
-  defp stringify_keys(map) when is_map(map) do
-    Map.new(map, fn {key, value} -> {stringify_key(key), stringify_keys(value)} end)
-  end
-
-  defp stringify_keys(list) when is_list(list), do: Enum.map(list, &stringify_keys/1)
-  defp stringify_keys(value), do: value
-
-  defp stringify_key(key) when is_binary(key), do: to_snake_case(key)
-  defp stringify_key(key), do: key
-
-  # A `field_names` override is consulted before the generic camelCase parser,
-  # because the two disagree and only the override is right: the DSL maps
-  # `address_line_1` to the client name `addressLine1`, which the parser would
-  # turn back into `address_line1` — an attribute that does not exist. Inbound
-  # and outbound must resolve the same option or the client cannot send back
-  # what the server just sent it (#71).
-  defp to_internal_key(string, nil), do: to_snake_case_key(string)
-
-  defp to_internal_key(string, resource) when is_binary(string) do
-    case AshKotlinMultiplatform.Resource.Info.get_original_field_name(resource, string) do
-      name when is_atom(name) and not is_nil(name) -> name
-      _ -> to_snake_case_key(string)
-    end
-  rescue
-    _ -> to_snake_case_key(string)
-  end
-
-  # `String.to_existing_atom/1`, never `String.to_atom/1`. These keys come from
-  # the client's `input`, `filter`, `page` and `identity` maps, and the atom
-  # table is never garbage collected, so minting one atom per key let a caller
-  # looping on fresh names exhaust it and take the node down (issue #18). A name
-  # no atom exists for names no argument, attribute or option either, so leaving
-  # it a string costs nothing: Ash rejects it downstream as an unknown key.
-  defp to_snake_case_key(string) when is_binary(string) do
-    snake = to_snake_case(string)
-
-    try do
-      String.to_existing_atom(snake)
-    rescue
-      ArgumentError -> snake
-    end
-  end
-
-  defp to_snake_case(string) when is_binary(string) do
-    string
-    |> String.replace(~r/([a-z])([A-Z])/, "\\1_\\2")
-    |> String.downcase()
-  end
 
   # ---------------------------------------------------------------------------
   # Field Selection
