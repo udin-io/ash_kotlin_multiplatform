@@ -78,6 +78,11 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   alias AshIntrospection.FieldFormatter
   alias AshIntrospection.ResourceInfo, as: SharedResourceInfo
 
+  # Every option `Ash.Page.Keyset` and `Ash.Page.Offset` declare
+  # (`deps/ash/lib/ash/page/keyset.ex:43`, `deps/ash/lib/ash/page/offset.ex:34`).
+  # `RunnerKeyTypeTest` fails when an Ash upgrade moves them.
+  @page_option_names [:after, :before, :count, :filter, :limit, :offset]
+
   @doc """
   Execute an RPC action based on the request parameters.
 
@@ -353,7 +358,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # the verifier.
   defp parse_get_by(params, rpc_action, resource, config) do
     allowed = configured_get_by(rpc_action)
-    sent = normalize_get_by(params["getBy"], resource, config)
+    sent = normalize_get_by(params["getBy"], resource, config, allowed)
 
     sent_keys = sent |> Map.keys() |> MapSet.new()
     allowed_keys = MapSet.new(allowed)
@@ -369,10 +374,16 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     end
   end
 
-  defp normalize_get_by(get_by, resource, config) when is_map(get_by),
-    do: KeyNames.parse(get_by, resource, config)
+  # `allowed` is the DSL's list of atoms and the filter below is built from it,
+  # so the fields the DSL named come back as those atoms and anything else
+  # stays the string the client sent — which is what `extra` reports.
+  defp normalize_get_by(get_by, resource, config, allowed) when is_map(get_by) do
+    get_by
+    |> KeyNames.parse(resource, config)
+    |> KeyNames.resolve(allowed)
+  end
 
-  defp normalize_get_by(_, _resource, _config), do: %{}
+  defp normalize_get_by(_, _resource, _config, _allowed), do: %{}
 
   # ---------------------------------------------------------------------------
   # Read Surface
@@ -449,13 +460,36 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     KeyNames.parse(input, resource, config)
   end
 
+  # `AshIntrospection.Rpc.Pipeline` matches an identity map against the
+  # resource's own attribute atoms — `Map.has_key?(identity, :id)`, then
+  # `Map.fetch!/2` on the same atom
+  # (`deps/ash_introspection/lib/ash_introspection/rpc/pipeline.ex:629`) — so
+  # the keys that name an attribute have to arrive as those atoms. The names
+  # come from the resource, never from whatever the VM has interned (#77). A
+  # key naming no attribute stays a string, which no identity matches, and the
+  # pipeline answers `invalid_identity` listing what was sent.
   defp parse_identity(params, resource, config) do
     case params["identity"] do
-      nil -> nil
-      id when is_binary(id) -> id
-      id when is_map(id) -> KeyNames.parse(id, resource, config)
-      id -> id
+      nil ->
+        nil
+
+      id when is_binary(id) ->
+        id
+
+      id when is_map(id) ->
+        id
+        |> KeyNames.parse(resource, config)
+        |> KeyNames.resolve(attribute_names(resource, config))
+
+      id ->
+        id
     end
+  end
+
+  defp attribute_names(resource, config) do
+    resource
+    |> SharedResourceInfo.attributes(config)
+    |> Enum.map(& &1.name)
   end
 
   defp parse_filter(params, resource, config) do
@@ -473,10 +507,17 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     end
   end
 
+  # `Ash.Page.page_opts/1` reads `page[:after]` and `page[:offset]` to pick the
+  # keyset or offset schema and then validates the map with `Spark.Options`, so
+  # pagination is the one parsed map that must carry atoms
+  # (`deps/ash/lib/ash/page/page.ex:17`). A key naming no page option stays a
+  # string and Ash rejects the map, which is what it did before — the
+  # difference is that the shape no longer turns on what the VM has interned
+  # (#77).
   defp parse_pagination(params, config) do
     case params["page"] do
       nil -> nil
-      page -> KeyNames.parse(page, nil, config)
+      page -> page |> KeyNames.parse(nil, config) |> KeyNames.resolve(@page_option_names)
     end
   end
 
