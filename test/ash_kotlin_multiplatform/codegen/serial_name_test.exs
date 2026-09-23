@@ -7,49 +7,25 @@ defmodule AshKotlinMultiplatform.Codegen.SerialNameTest do
 
   alias AshKotlinMultiplatform.Codegen.ResourceSchemas
 
-  describe "SerialName annotation behavior" do
-    test "generates @SerialName when output_field_formatter is :snake_case" do
-      # Set output formatter to snake_case
-      original_value = Application.get_env(:ash_kotlin_multiplatform, :output_field_formatter)
-      Application.put_env(:ash_kotlin_multiplatform, :output_field_formatter, :snake_case)
+  # `output_field_formatter` renames record FIELDS
+  # (`ResourceSchemas` lines 416 and 430). `generate_enum_class/1` never reads
+  # it: an entry's `@SerialName` is `Atom.to_string/1` of the value, so the wire
+  # value survives every formatter setting. These cases used to set the key with
+  # `Application.put_env/3` and restore it in an `after`, which asserted nothing
+  # the function does and put a VM-global write inside an `async: true` file —
+  # the shape that made install_test flake (#108).
+  describe "generate_enum_class/1" do
+    test "serialises a multi-word value as the raw atom, not a formatted name" do
+      result = ResourceSchemas.generate_enum_class({"Status", [:in_progress, :completed]})
 
-      try do
-        enum_spec = {"Status", [:in_progress, :completed]}
-        result = ResourceSchemas.generate_enum_class(enum_spec)
-
-        # Enum values should still have @SerialName for their raw values
-        assert result =~ "@SerialName(\"in_progress\") IN_PROGRESS"
-        assert result =~ "@SerialName(\"completed\") COMPLETED"
-      after
-        # Restore original value
-        if original_value do
-          Application.put_env(:ash_kotlin_multiplatform, :output_field_formatter, original_value)
-        else
-          Application.delete_env(:ash_kotlin_multiplatform, :output_field_formatter)
-        end
-      end
+      assert result =~ "@SerialName(\"in_progress\") IN_PROGRESS"
+      assert result =~ "@SerialName(\"completed\") COMPLETED"
     end
 
-    test "does not generate @SerialName for fields when output_field_formatter is :camel_case (default)" do
-      # Ensure default camel_case formatter
-      original_value = Application.get_env(:ash_kotlin_multiplatform, :output_field_formatter)
-      Application.put_env(:ash_kotlin_multiplatform, :output_field_formatter, :camel_case)
+    test "serialises a single-word value as the raw atom" do
+      result = ResourceSchemas.generate_enum_class({"Status", [:pending]})
 
-      try do
-        # Test that we can run the code gen without errors
-        # The actual @SerialName behavior is tested via output inspection
-        enum_spec = {"Status", [:pending]}
-        result = ResourceSchemas.generate_enum_class(enum_spec)
-
-        # Enum values still get @SerialName for string mapping
-        assert result =~ "@SerialName(\"pending\") PENDING"
-      after
-        if original_value do
-          Application.put_env(:ash_kotlin_multiplatform, :output_field_formatter, original_value)
-        else
-          Application.delete_env(:ash_kotlin_multiplatform, :output_field_formatter)
-        end
-      end
+      assert result =~ "@SerialName(\"pending\") PENDING"
     end
   end
 end
