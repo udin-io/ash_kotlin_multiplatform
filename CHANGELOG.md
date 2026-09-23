@@ -33,11 +33,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Manifest.Transformers.DecorateManifest` calls it while the manifest module
   is compiling.
 
-- The `ash_introspection` floor moves to `~> 0.5 and >= 0.5.3`. 0.5.3 is the
-  first release whose request path reads the manifest it is handed, and the
-  first whose `public_relationship/3` answers a private relationship as
-  private when the manifest carries private relationships — which is every
-  manifest this library builds.
+- The `ash_introspection` floor moves to `~> 0.6` (`ash_introspection#23`
+  stage 5a, PR 8). 0.6.0 is the first release whose four request entry points
+  require a manifest: `Rpc.Pipeline.execute_ash_action/2`,
+  `Rpc.Pipeline.process_result/3`,
+  `Rpc.Pipeline.format_output_with_request/3` and
+  `Rpc.FieldProcessing.FieldSelector.process/4` raise
+  `AshIntrospection.ManifestError` for a config carrying no `:manifest`, and
+  raise for a resource the manifest carries that
+  `Manifest.Decorator.decorate/3` skipped. Below 0.6.0 both cases fall back to
+  live `Ash.Resource.Info` and say nothing.
+
+  No code in this library changes. `Rpc.Pipeline.request_config/0` has put
+  both keys on all four entry points since the entry above, so every request
+  already sends what 0.6.0 insists on. The suite is 405 tests, 0 failures,
+  unchanged, and the generated Kotlin is byte-identical in both datetime
+  variants.
+
+  Not breaking for a consumer of this library. No public function, argument or
+  return value moves, and an app whose
+  `config :ash_kotlin_multiplatform, manifest:` is set — which code generation
+  has required since 0.2.0 — sees no change. An app with no manifest
+  configured already raised at the entry above rather than answering the
+  request.
+
+  `~> 0.6` subsumes `~> 0.5 and >= 0.5.3`. 0.5.3 is still the release that
+  made the request path read the manifest it is handed, and the first whose
+  `public_relationship/3` answers a private relationship as private when the
+  manifest carries private relationships — which is every manifest this
+  library builds.
 
 ### Fixed
 
