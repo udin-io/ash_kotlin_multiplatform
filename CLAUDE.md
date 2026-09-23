@@ -201,3 +201,24 @@ to the embedded fixture, run `MIX_ENV=test mix compile`, then read the type's
 fields off `Manifest.manifest(Test.Manifest).types` with `mix run`. That is
 how the `BuildManifest` pre-compile race was measured, 6 of 6 edits dropped
 before the fix and 6 of 6 kept after.
+
+### A test that writes application env must be `async: false`
+
+`Application.put_env/3` is VM-global with no per-process scope, so a
+`setup`/`on_exit` pair does not contain it: every other test running at that
+instant reads the new value. The keys that matter here are `:manifest`,
+`:ash_domains`, `:datetime_library`, `:output_field_formatter` and
+`:untyped_map_type` — `Rpc.Pipeline.request_config/0` and the generators read
+them on every call.
+
+Igniter counts as writing env. `Igniter.compose_task/3` and `apply_igniter!/1`
+apply the test project's `config/config.exs` with `Application.put_all_env/1`
+for the length of the task (`deps/igniter/lib/igniter.ex:1697`). That is what
+made `install_test.exs` flake at 3 runs in 25 under `--max-cases 8`: a
+concurrent `Rpc.Runner` test read `:manifest` as the test project's module and
+`persisted(:manifest)` raised "is not a Spark DSL module" (#108). It looks
+green locally and goes red on a loaded runner.
+
+Before adding a write, check the function under test actually reads the key.
+Two cases in `serial_name_test.exs` set `:output_field_formatter` around
+`generate_enum_class/1`, which never reads it.
