@@ -33,6 +33,13 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
   use Spark.Dsl.Verifier
   alias Spark.Dsl.Verifier
 
+  # {struct key, default value, DSL option name}. A non-read rpc_action may
+  # only carry the default for each — anything else has no reader on a
+  # non-read action, so it silently does nothing.
+  @read_only_options [
+    {:get?, false, "get?"}
+  ]
+
   @impl true
   def verify(dsl) do
     dsl
@@ -73,14 +80,14 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
         errors =
           errors
           |> validate_get_by_absent(rpc_action, action)
-          |> validate_get_absent(rpc_action, action)
+          |> validate_read_only_options_absent(rpc_action, action)
 
         validate_identities_exist(resource, rpc_action, identities, errors)
 
       true ->
         errors
         |> validate_get_by_absent(rpc_action, action)
-        |> validate_get_absent(rpc_action, action)
+        |> validate_read_only_options_absent(rpc_action, action)
     end
   end
 
@@ -94,14 +101,20 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
     end
   end
 
-  defp validate_get_absent(errors, rpc_action, action) do
-    case Map.get(rpc_action, :get?, false) do
-      false ->
-        errors
+  defp validate_read_only_options_absent(errors, rpc_action, action) do
+    Enum.reduce(@read_only_options, errors, fn {key, default, label}, acc ->
+      case Map.get(rpc_action, key, default) do
+        ^default ->
+          acc
 
-      true ->
-        [{:get_on_non_read, rpc_action.name, rpc_action.action, action.type} | errors]
-    end
+        _value ->
+          [
+            {:read_only_option_on_non_read, label, rpc_action.name, rpc_action.action,
+             action.type}
+            | acc
+          ]
+      end
+    end)
   end
 
   defp validate_get_by_fields(resource, rpc_action, errors) do
@@ -188,11 +201,13 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
     """
   end
 
-  defp format_error_part({:get_on_non_read, rpc_name, action_name, action_type}) do
+  defp format_error_part(
+         {:read_only_option_on_non_read, option, rpc_name, action_name, action_type}
+       ) do
     """
-    get? is set on an action that is not a read:
+    #{option} is set on an action that is not a read:
       - RPC action: #{rpc_name} (action: #{action_name}, type: #{inspect(action_type)})
-      - Remove `get?` from this action; it only affects a read.
+      - Remove `#{option}` from this action; it only affects a read.
     """
   end
 
