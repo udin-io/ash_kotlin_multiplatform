@@ -42,8 +42,11 @@ defmodule AshKotlinMultiplatform.Resource do
       ],
       argument_names: [
         type: :keyword_list,
-        doc:
-          "A keyword list mapping invalid argument names to valid alternatives per action (e.g., [read_with_invalid_arg: [is_active?: :isActive]])",
+        doc: """
+        A keyword list mapping argument names to the names the Kotlin client uses, per Ash action name (e.g., `[create: [confirm?: :confirmed]]`).
+
+        The override is the wire name, used verbatim, and the server accepts it as well as the raw argument name. An exposed argument whose name contains `?` needs one. An entry naming no action, no argument on it, an invalid name, or a name another input of the action already uses is a compile error.
+        """,
         default: []
       ]
     ]

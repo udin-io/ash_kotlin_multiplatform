@@ -89,10 +89,7 @@ defmodule MyApp.Todo do
     type_name "Todo"
 
     # Optional: map Elixir field names to valid Kotlin identifiers
-    field_names %{
-      is_done: :isDone,
-      created_at: :createdAt
-    }
+    field_names is_done: :isDone, created_at: :createdAt
   end
 
   attributes do
@@ -392,14 +389,11 @@ kotlin_multiplatform do
   type_name "MyCustomName"
 
   # Map field names to valid Kotlin identifiers
-  field_names %{
-    elixir_name: :kotlinName
-  }
+  field_names elixir_name: :kotlinName
 
-  # Map argument names per action
-  argument_names %{
-    create: %{from_date: :fromDate}
-  }
+  # Map argument names per action. Required for an exposed action's argument
+  # whose name ends in `?`, which is not a Kotlin identifier.
+  argument_names create: [confirm?: :confirmed]
 end
 ```
 
