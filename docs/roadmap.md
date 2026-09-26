@@ -51,6 +51,7 @@ afterwards.
 | 2026-09-23 | The RPC key parser returns one type: every parsed client key is a string, and `Rpc.KeyNames.resolve/2` resolves atoms against the names the caller already holds (#77) |
 | 2026-09-23 | Upgraded to `ash_introspection` 0.6.0, whose four request entry points require a manifest and raise on a resource the manifest carries but the decorator skipped (ash_introspection#23 stage 5a PR 6); the floor is `~> 0.6` and no code here changed, which closes stage 5a (ash_introspection#23 stage 5a PR 8) |
 | 2026-09-26 | `argument_names` works in the generated Kotlin and the server; an unmapped `?` argument or a bad entry is a compile error, and an override beats the raw name in one request (#23) |
+| 2026-09-26 | `get?`, `not_found_error?`, `enable_filter?` and `enable_sort?` on a create, update, destroy or generic action are compile errors, not silently ignored; slice 2 of #113 (#79) |
 
 ## In progress
 

@@ -177,6 +177,11 @@ attribute, because `ConfigBuilder` takes the lookup class's Kotlin type from
 that attribute. Before #25 the DSL had no way to set `identities`, so the
 verifier could never fail.
 
+It also refuses `get_by`, `get?`, `not_found_error?`, `enable_filter?` and
+`enable_sort?` on anything that is not a read (#69, #79): each is documented
+"Read actions only", and nothing downstream reads any of them on a create,
+update, destroy or generic action, so a value set there did nothing.
+
 Two things about `PhoenixChannel` that the box does not show. It is
 **static**: it takes no resource and no action, so the same text is emitted
 for every application, which is issue #35. And it is the only generated code

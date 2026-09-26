@@ -690,3 +690,23 @@ A `_1` suffix compiles and round-trips as the raw name, so rejecting it would
 break working configs. The manifest decorator's `argument_name_mappings` are
 built without this DSL and read by nothing on the request path; they are left
 alone.
+
+## 2026-09-26 — Four read-only `rpc_action` options, enforced at compile time
+
+All four are documented "Read actions only", the same claim `get_by` made
+before #69. Nothing enforced it: `get?` shaped the generated client into a
+single-record call while `ConfigBuilder` and `Runner.apply_get?/2` both kept
+matching on `type: :read` only, so the server ran the action untouched — a
+decode mismatch at runtime, not a compile error. `not_found_error?`,
+`enable_filter?` and `enable_sort?` have no reader on a non-read at all; a
+value set there did nothing, silently (#79).
+
+`Rpc.Verifiers.VerifyIdentities` now refuses all four the way it already
+refused `get_by` (#69): a data-driven list of `{struct key, default, DSL
+name}` checked against each option's own default, since Spark applies
+defaults into the `RpcAction` struct before the verifier runs and a value
+equal to the default is indistinguishable from never having been set.
+
+Same cost as #69: a project that set one of these on a write and never
+called the action now fails to compile. That build was already broken; it
+just had not been run yet.
