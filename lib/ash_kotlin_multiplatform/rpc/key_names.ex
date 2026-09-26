@@ -53,17 +53,15 @@ defmodule AshKotlinMultiplatform.Rpc.KeyNames do
 
   A list is walked entry by entry, and any other value is returned unchanged.
   Every key a client sent comes back a string; see `internal_key/2`.
+
+  A map carrying both a `field_names` override and the raw name it maps takes
+  the override's value, whatever the key order (#23).
   """
   @spec parse(term(), module() | nil, map()) :: term()
   def parse(map, resource, config) when is_map(map) do
-    Map.new(map, fn
-      {key, value} when is_binary(key) ->
-        internal_key = internal_key(key, resource)
-        {internal_key, parse_value(internal_key, value, resource, config)}
-
-      {key, value} ->
-        {key, parse(value, resource, config)}
-    end)
+    map
+    |> Enum.map(&parse_entry(&1, resource, config))
+    |> overrides_last()
   end
 
   def parse(list, resource, config) when is_list(list) do
@@ -90,21 +88,28 @@ defmodule AshKotlinMultiplatform.Rpc.KeyNames do
       {key, value} when is_binary(key) ->
         case ResourceInfo.original_argument_name(resource, action_name, key) do
           nil ->
-            internal_key = internal_key(key, resource)
-            {:raw, internal_key, parse_value(internal_key, value, resource, config)}
+            parse_entry({key, value}, resource, config)
 
           argument ->
             internal_key = Atom.to_string(argument)
             {:override, internal_key, parse_value(internal_key, value, resource, config)}
         end
 
-      {key, value} ->
-        {:raw, key, parse(value, resource, config)}
+      entry ->
+        parse_entry(entry, resource, config)
     end)
     |> overrides_last()
   end
 
   def parse_input(input, resource, _action_name, config), do: parse(input, resource, config)
+
+  defp parse_entry({key, value}, resource, config) when is_binary(key) do
+    {source, internal_key} = resolve_key(key, resource)
+    {source, internal_key, parse_value(internal_key, value, resource, config)}
+  end
+
+  defp parse_entry({key, value}, resource, config),
+    do: {:raw, key, parse(value, resource, config)}
 
   # `Map.new/1` keeps the last value it sees for a key, so sorting every entry
   # an override named after the rest makes the override's value win. The sort
@@ -126,15 +131,21 @@ defmodule AshKotlinMultiplatform.Rpc.KeyNames do
   what the server just sent it (#71).
   """
   @spec internal_key(String.t(), module() | nil) :: String.t()
-  def internal_key(string, nil) when is_binary(string), do: snake_case(string)
-
   def internal_key(string, resource) when is_binary(string) do
+    string |> resolve_key(resource) |> elem(1)
+  end
+
+  # `{:override, name}` when a `field_names` override named the key, and
+  # `{:raw, name}` when the camelCase parser did.
+  defp resolve_key(string, nil), do: {:raw, snake_case(string)}
+
+  defp resolve_key(string, resource) do
     case ResourceInfo.get_original_field_name(resource, string) do
-      name when is_atom(name) and not is_nil(name) -> Atom.to_string(name)
-      _ -> snake_case(string)
+      name when is_atom(name) and not is_nil(name) -> {:override, Atom.to_string(name)}
+      _ -> {:raw, snake_case(string)}
     end
   rescue
-    _ -> snake_case(string)
+    _ -> {:raw, snake_case(string)}
   end
 
   @doc """

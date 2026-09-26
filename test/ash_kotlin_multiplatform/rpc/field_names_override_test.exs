@@ -92,6 +92,31 @@ defmodule AshKotlinMultiplatform.Rpc.FieldNamesOverrideTest do
     end
   end
 
+  describe "a request carrying both names" do
+    defp create_with(address_input) do
+      run(%{
+        "action" => "create_author",
+        "input" =>
+          Map.merge(
+            %{
+              "name" => "Octavia Butler",
+              "email" => "octavia-#{System.unique_integer([:positive])}@example.com"
+            },
+            address_input
+          ),
+        "fields" => ["addressLine1"]
+      })
+    end
+
+    test "takes the override's value, whichever key comes first" do
+      assert %{"success" => true, "data" => %{"addressLine1" => "mapped"}} =
+               create_with(%{"addressLine1" => "mapped", "address_line_1" => "raw"})
+
+      assert %{"success" => true, "data" => %{"addressLine1" => "mapped"}} =
+               create_with(%{"address_line_1" => "raw", "addressLine1" => "mapped"})
+    end
+  end
+
   describe "the generated Kotlin" do
     test "declares the property under the overridden name" do
       assert author_class() =~ "val addressLine1:"
