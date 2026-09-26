@@ -31,6 +31,10 @@ defmodule AshKotlinMultiplatform.Test.VerifyIdentities.Article do
     update :rename do
       accept [:slug]
     end
+
+    action :info, :string do
+      run fn _input, _context -> {:ok, "info"} end
+    end
   end
 end
 
@@ -268,6 +272,173 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentitiesTest do
               rpc_action(:publish_article, :publish)
               rpc_action(:rename_article, :rename)
               rpc_action(:destroy_article, :destroy)
+            end
+          end
+        end
+      end
+    end
+  end
+
+  # `get?` is documented "Read actions only" but nothing enforced it: it
+  # shapes the client into a single-record call while the server runs the
+  # action untouched, a decode mismatch at runtime rather than a compile
+  # error (#79).
+  describe "get? on an action that is not a read" do
+    test "rejects it on a create" do
+      error =
+        assert_dsl_error do
+          defmodule Elixir.AshKotlinMultiplatform.Test.VerifyIdentities.GetOnCreateDomain do
+            @moduledoc false
+            use Ash.Domain,
+              extensions: [AshKotlinMultiplatform.Rpc],
+              validate_config_inclusion?: false
+
+            resources do
+              resource Article
+            end
+
+            kotlin_rpc do
+              resource Article do
+                rpc_action :publish_article, :publish do
+                  get? true
+                end
+              end
+            end
+          end
+        end
+
+      assert error.message =~ "get? is set on an action that is not a read"
+      assert error.message =~ "publish_article"
+      assert error.message =~ ":create"
+      assert error.message =~ "Remove `get?`"
+    end
+
+    test "rejects it on an update" do
+      error =
+        assert_dsl_error do
+          defmodule Elixir.AshKotlinMultiplatform.Test.VerifyIdentities.GetOnUpdateDomain do
+            @moduledoc false
+            use Ash.Domain,
+              extensions: [AshKotlinMultiplatform.Rpc],
+              validate_config_inclusion?: false
+
+            resources do
+              resource Article
+            end
+
+            kotlin_rpc do
+              resource Article do
+                rpc_action :rename_article, :rename do
+                  get? true
+                end
+              end
+            end
+          end
+        end
+
+      assert error.message =~ "get? is set on an action that is not a read"
+      assert error.message =~ "rename_article"
+      assert error.message =~ ":update"
+    end
+
+    test "rejects it on a destroy" do
+      error =
+        assert_dsl_error do
+          defmodule Elixir.AshKotlinMultiplatform.Test.VerifyIdentities.GetOnDestroyDomain do
+            @moduledoc false
+            use Ash.Domain,
+              extensions: [AshKotlinMultiplatform.Rpc],
+              validate_config_inclusion?: false
+
+            resources do
+              resource Article
+            end
+
+            kotlin_rpc do
+              resource Article do
+                rpc_action :destroy_article, :destroy do
+                  get? true
+                end
+              end
+            end
+          end
+        end
+
+      assert error.message =~ "get? is set on an action that is not a read"
+      assert error.message =~ "destroy_article"
+      assert error.message =~ ":destroy"
+    end
+
+    test "rejects it on a generic action" do
+      error =
+        assert_dsl_error do
+          defmodule Elixir.AshKotlinMultiplatform.Test.VerifyIdentities.GetOnGenericDomain do
+            @moduledoc false
+            use Ash.Domain,
+              extensions: [AshKotlinMultiplatform.Rpc],
+              validate_config_inclusion?: false
+
+            resources do
+              resource Article
+            end
+
+            kotlin_rpc do
+              resource Article do
+                rpc_action :info_article, :info do
+                  get? true
+                end
+              end
+            end
+          end
+        end
+
+      assert error.message =~ "get? is set on an action that is not a read"
+      assert error.message =~ "info_article"
+      assert error.message =~ ":action"
+    end
+
+    test "get? true on a read verifies" do
+      refute_dsl_errors do
+        defmodule Elixir.AshKotlinMultiplatform.Test.VerifyIdentities.GetOnReadDomain do
+          @moduledoc false
+          use Ash.Domain,
+            extensions: [AshKotlinMultiplatform.Rpc],
+            validate_config_inclusion?: false
+
+          resources do
+            resource Article
+          end
+
+          kotlin_rpc do
+            resource Article do
+              rpc_action :get_article, :read do
+                get? true
+              end
+            end
+          end
+        end
+      end
+    end
+
+    # `get? false` is the struct default, indistinguishable from never having
+    # set it at all.
+    test "accepts get? false set explicitly on a create" do
+      refute_dsl_errors do
+        defmodule Elixir.AshKotlinMultiplatform.Test.VerifyIdentities.GetFalseOnCreateDomain do
+          @moduledoc false
+          use Ash.Domain,
+            extensions: [AshKotlinMultiplatform.Rpc],
+            validate_config_inclusion?: false
+
+          resources do
+            resource Article
+          end
+
+          kotlin_rpc do
+            resource Article do
+              rpc_action :publish_article, :publish do
+                get? false
+              end
             end
           end
         end

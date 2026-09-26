@@ -23,6 +23,12 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
   could not send the field, and failed every call with
   `{:missing_get_by_fields, ...}`. A compile error at the offending line beats a
   runtime error on every request.
+
+  `get?` on anything other than a read is rejected the same way (#79). Nothing
+  reads it there — `ConfigBuilder`'s `is_get_action` and `Runner.apply_get?/2`
+  both match a read only — so the generated Kotlin was shaped as a
+  single-record call against a server that still returned the list or the
+  written record, a decode mismatch at runtime instead of a compile error.
   """
   use Spark.Dsl.Verifier
   alias Spark.Dsl.Verifier
@@ -64,21 +70,37 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
       action.type in [:update, :destroy] ->
         identities = Map.get(rpc_action, :identities, [:_primary_key])
 
-        errors = validate_get_by_absent(rpc_action, action, errors)
+        errors =
+          errors
+          |> validate_get_by_absent(rpc_action, action)
+          |> validate_get_absent(rpc_action, action)
+
         validate_identities_exist(resource, rpc_action, identities, errors)
 
       true ->
-        validate_get_by_absent(rpc_action, action, errors)
+        errors
+        |> validate_get_by_absent(rpc_action, action)
+        |> validate_get_absent(rpc_action, action)
     end
   end
 
-  defp validate_get_by_absent(rpc_action, action, errors) do
+  defp validate_get_by_absent(errors, rpc_action, action) do
     case rpc_action |> Map.get(:get_by) |> List.wrap() do
       [] ->
         errors
 
       fields ->
         [{:get_by_on_non_read, rpc_action.name, rpc_action.action, action.type, fields} | errors]
+    end
+  end
+
+  defp validate_get_absent(errors, rpc_action, action) do
+    case Map.get(rpc_action, :get?, false) do
+      false ->
+        errors
+
+      true ->
+        [{:get_on_non_read, rpc_action.name, rpc_action.action, action.type} | errors]
     end
   end
 
@@ -151,8 +173,8 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
        #{message_parts}
 
        Each identity listed in the `identities` option must either be `:_primary_key` (for the resource's primary key)
-       or the name of an identity defined on the resource. Each field listed in `get_by` must be a public attribute,
-       and `get_by` may only be set on a read action.
+       or the name of an identity defined on the resource. Each field listed in `get_by` must be a public attribute.
+       `get?` and `get_by` may only be set on a read action.
        """
      )}
   end
@@ -163,6 +185,14 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
       - RPC action: #{rpc_name} (action: #{action_name}, type: #{inspect(action_type)})
       - Fields: #{Enum.map_join(fields, ", ", &inspect/1)}
       - #{get_by_replacement(action_type)}
+    """
+  end
+
+  defp format_error_part({:get_on_non_read, rpc_name, action_name, action_type}) do
+    """
+    get? is set on an action that is not a read:
+      - RPC action: #{rpc_name} (action: #{action_name}, type: #{inspect(action_type)})
+      - Remove `get?` from this action; it only affects a read.
     """
   end
 

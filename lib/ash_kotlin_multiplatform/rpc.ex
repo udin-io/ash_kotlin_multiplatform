@@ -188,7 +188,8 @@ defmodule AshKotlinMultiplatform.Rpc do
       ],
       get?: [
         type: :boolean,
-        doc: "Return a single record or nothing instead of a list. Read actions only",
+        doc:
+          "Return a single record or nothing instead of a list. Read actions only — on a create, update, destroy or generic action it is a compile error",
         default: false
       ],
       get_by: [
