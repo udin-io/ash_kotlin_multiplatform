@@ -200,17 +200,20 @@ defmodule AshKotlinMultiplatform.Rpc do
       ],
       not_found_error?: [
         type: :boolean,
-        doc: "Whether a `get?` read matching no record is an error rather than a null result",
+        doc:
+          "Whether a `get?` read matching no record is an error rather than a null result. Read actions only — on a create, update, destroy or generic action it is a compile error",
         default: true
       ],
       enable_filter?: [
         type: :boolean,
-        doc: "Whether the client may send `filter` on a list read",
+        doc:
+          "Whether the client may send `filter` on a list read. Read actions only — on a create, update, destroy or generic action it is a compile error",
         default: true
       ],
       enable_sort?: [
         type: :boolean,
-        doc: "Whether the client may send `sort` on a list read",
+        doc:
+          "Whether the client may send `sort` on a list read. Read actions only — on a create, update, destroy or generic action it is a compile error",
         default: true
       ]
     ],

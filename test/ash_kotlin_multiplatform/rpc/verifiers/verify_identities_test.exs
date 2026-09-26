@@ -445,4 +445,153 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentitiesTest do
       end
     end
   end
+
+  # `not_found_error?`, `enable_filter?` and `enable_sort?` are documented
+  # "Read actions only" the same way `get?` is, and get the same compile-time
+  # refusal through the same verifier (#79 widened by #113's "Done looks
+  # like": every documented option is honoured or refused at compile time).
+  describe "the other read-only options on an action that is not a read" do
+    test "rejects not_found_error? false on a create" do
+      error =
+        assert_dsl_error do
+          defmodule Elixir.AshKotlinMultiplatform.Test.VerifyIdentities.NotFoundOnCreateDomain do
+            @moduledoc false
+            use Ash.Domain,
+              extensions: [AshKotlinMultiplatform.Rpc],
+              validate_config_inclusion?: false
+
+            resources do
+              resource Article
+            end
+
+            kotlin_rpc do
+              resource Article do
+                rpc_action :publish_article, :publish do
+                  not_found_error? false
+                end
+              end
+            end
+          end
+        end
+
+      assert error.message =~ "not_found_error? is set on an action that is not a read"
+      assert error.message =~ "publish_article"
+      assert error.message =~ ":create"
+      assert error.message =~ "Remove `not_found_error?`"
+    end
+
+    test "rejects enable_filter? false on an update" do
+      error =
+        assert_dsl_error do
+          defmodule Elixir.AshKotlinMultiplatform.Test.VerifyIdentities.FilterOnUpdateDomain do
+            @moduledoc false
+            use Ash.Domain,
+              extensions: [AshKotlinMultiplatform.Rpc],
+              validate_config_inclusion?: false
+
+            resources do
+              resource Article
+            end
+
+            kotlin_rpc do
+              resource Article do
+                rpc_action :rename_article, :rename do
+                  enable_filter? false
+                end
+              end
+            end
+          end
+        end
+
+      assert error.message =~ "enable_filter? is set on an action that is not a read"
+      assert error.message =~ "rename_article"
+      assert error.message =~ ":update"
+      assert error.message =~ "Remove `enable_filter?`"
+    end
+
+    test "rejects enable_sort? false on a destroy" do
+      error =
+        assert_dsl_error do
+          defmodule Elixir.AshKotlinMultiplatform.Test.VerifyIdentities.SortOnDestroyDomain do
+            @moduledoc false
+            use Ash.Domain,
+              extensions: [AshKotlinMultiplatform.Rpc],
+              validate_config_inclusion?: false
+
+            resources do
+              resource Article
+            end
+
+            kotlin_rpc do
+              resource Article do
+                rpc_action :destroy_article, :destroy do
+                  enable_sort? false
+                end
+              end
+            end
+          end
+        end
+
+      assert error.message =~ "enable_sort? is set on an action that is not a read"
+      assert error.message =~ "destroy_article"
+      assert error.message =~ ":destroy"
+      assert error.message =~ "Remove `enable_sort?`"
+    end
+
+    test "rejects enable_sort? false on a generic action" do
+      error =
+        assert_dsl_error do
+          defmodule Elixir.AshKotlinMultiplatform.Test.VerifyIdentities.SortOnGenericDomain do
+            @moduledoc false
+            use Ash.Domain,
+              extensions: [AshKotlinMultiplatform.Rpc],
+              validate_config_inclusion?: false
+
+            resources do
+              resource Article
+            end
+
+            kotlin_rpc do
+              resource Article do
+                rpc_action :info_article, :info do
+                  enable_sort? false
+                end
+              end
+            end
+          end
+        end
+
+      assert error.message =~ "enable_sort? is set on an action that is not a read"
+      assert error.message =~ "info_article"
+      assert error.message =~ ":action"
+    end
+
+    # A value equal to the default is indistinguishable from absent, the same
+    # allowance `get? false` on a non-read already gets.
+    test "accepts a create that sets each option to its own default value" do
+      refute_dsl_errors do
+        defmodule Elixir.AshKotlinMultiplatform.Test.VerifyIdentities.DefaultReadOnlyOptionsDomain do
+          @moduledoc false
+          use Ash.Domain,
+            extensions: [AshKotlinMultiplatform.Rpc],
+            validate_config_inclusion?: false
+
+          resources do
+            resource Article
+          end
+
+          kotlin_rpc do
+            resource Article do
+              rpc_action :publish_article, :publish do
+                get? false
+                not_found_error? true
+                enable_filter? true
+                enable_sort? true
+              end
+            end
+          end
+        end
+      end
+    end
+  end
 end

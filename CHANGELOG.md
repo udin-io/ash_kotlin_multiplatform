@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `get?`, `not_found_error?`, `enable_filter?` and `enable_sort?` on a
+  create, update, destroy or generic action are compile errors: each was
+  documented "Read actions only" but silently ignored there (#79).
 - The request path reads the compile-time manifest instead of introspecting
   live (`ash_introspection#23` stage 5a, PR 4).
   `Rpc.Pipeline.request_config/0` and `/1` are `build_config/0` and `/1` plus

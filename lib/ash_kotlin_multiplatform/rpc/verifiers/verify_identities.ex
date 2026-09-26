@@ -24,11 +24,20 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
   `{:missing_get_by_fields, ...}`. A compile error at the offending line beats a
   runtime error on every request.
 
-  `get?` on anything other than a read is rejected the same way (#79). Nothing
-  reads it there — `ConfigBuilder`'s `is_get_action` and `Runner.apply_get?/2`
-  both match a read only — so the generated Kotlin was shaped as a
-  single-record call against a server that still returned the list or the
-  written record, a decode mismatch at runtime instead of a compile error.
+  `get?`, `not_found_error?`, `enable_filter?` and `enable_sort?` are all
+  documented "Read actions only" and get the same refusal (#79). `get?` on a
+  non-read was a silent decode mismatch: `ConfigBuilder`'s `is_get_action` and
+  `Runner.apply_get?/2` both match a read only, so the generated Kotlin was
+  shaped as a single-record call against a server that still returned the
+  list or the written record. `not_found_error?`, `enable_filter?` and
+  `enable_sort?` have no reader at all on a non-read — they only ever
+  mattered to a `get?` read or a list read — so a value set there did nothing,
+  the same gap under a different option.
+
+  Each of the four is checked against its own default (the value it would
+  hold if never set), because Spark applies defaults into the struct before
+  this verifier runs: a value equal to the default is indistinguishable from
+  absent, and is let through.
   """
   use Spark.Dsl.Verifier
   alias Spark.Dsl.Verifier
@@ -37,7 +46,10 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
   # only carry the default for each — anything else has no reader on a
   # non-read action, so it silently does nothing.
   @read_only_options [
-    {:get?, false, "get?"}
+    {:get?, false, "get?"},
+    {:not_found_error?, true, "not_found_error?"},
+    {:enable_filter?, true, "enable_filter?"},
+    {:enable_sort?, true, "enable_sort?"}
   ]
 
   @impl true
@@ -187,7 +199,7 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
 
        Each identity listed in the `identities` option must either be `:_primary_key` (for the resource's primary key)
        or the name of an identity defined on the resource. Each field listed in `get_by` must be a public attribute.
-       `get?` and `get_by` may only be set on a read action.
+       `get?`, `get_by`, `not_found_error?`, `enable_filter?` and `enable_sort?` may only be set on a read action.
        """
      )}
   end
