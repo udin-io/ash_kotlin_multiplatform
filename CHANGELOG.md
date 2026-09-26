@@ -65,6 +65,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `argument_names` works (#23). The option was read by nothing, so
+  `argument :confirm?` generated `val confirm?: Boolean`, which does not
+  compile, and the server answered `NoSuchInput` for any renamed key. Now
+  `argument_names create: [confirm?: :confirmed]` generates `val confirmed`,
+  and `run_action` and `validate_action` accept `"confirmed"` as well as the
+  raw `"confirm?"`.
+
+  Two new compile errors. An exposed action's argument whose name contains `?`
+  and has no override fails the domain's build, naming the `argument_names`
+  line to add. An `argument_names` entry naming no action, no argument on it,
+  an invalid name, or a name another input of the action already sends fails
+  the resource's build. Both were silent before.
+
+- A request carrying both an override and the raw name of one input takes the
+  override's value, for `argument_names` and `field_names` alike (#23). The
+  raw name used to win whenever it came later in the map.
+
 - `Rpc.Runner` parses a client key to one type instead of two (#77). The parser
   returned an atom when `String.to_existing_atom/1` found one and a string when
   it did not, so a single `input`, `filter`, `page`, `identity` or `getBy` map
