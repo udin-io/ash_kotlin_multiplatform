@@ -277,6 +277,38 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentitiesTest do
         end
       end
     end
+
+    # A generic action is not `:update` or `:destroy`, so `get_by_replacement/1`
+    # fell through to its default clause and called it "a create" (#79).
+    test "names a generic action instead of calling it a create" do
+      error =
+        assert_dsl_error do
+          defmodule Elixir.AshKotlinMultiplatform.Test.VerifyIdentities.GetByGenericDomain do
+            @moduledoc false
+            use Ash.Domain,
+              extensions: [AshKotlinMultiplatform.Rpc],
+              validate_config_inclusion?: false
+
+            resources do
+              resource Article
+            end
+
+            kotlin_rpc do
+              resource Article do
+                rpc_action :info_article, :info do
+                  get_by [:slug]
+                end
+              end
+            end
+          end
+        end
+
+      assert error.message =~ "get_by is set on an action that is not a read"
+      assert error.message =~ "info_article"
+      assert error.message =~ ":action"
+      refute error.message =~ "A create looks up no record"
+      assert error.message =~ "generic action returns what its `returns` declares"
+    end
   end
 
   # `get?` is documented "Read actions only" but nothing enforced it: it

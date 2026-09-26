@@ -272,6 +272,9 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
     do:
       "Use `identities` to name the lookup key for an update or destroy. `get_by` selects a record on a read only."
 
+  defp get_by_replacement(:action),
+    do: "A generic action returns what its `returns` declares. Remove `get_by` from this action."
+
   defp get_by_replacement(_type),
     do: "A create looks up no record. Remove `get_by` from this action."
 end
