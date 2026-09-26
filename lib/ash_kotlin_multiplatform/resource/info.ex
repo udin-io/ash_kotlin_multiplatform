@@ -100,6 +100,44 @@ defmodule AshKotlinMultiplatform.Resource.Info do
   end
 
   @doc """
+  The name an action argument takes on the wire, as a string.
+
+  An `argument_names` override for that action wins and is used verbatim.
+  Without one the raw argument name is the wire name, which is what the input
+  parser has always accepted: `pen_name`, not `penName`.
+
+      # argument_names sign_up: [anonymous?: :anonymous]
+      client_argument_name(Author, :sign_up, :anonymous?) # => "anonymous"
+      client_argument_name(Author, :sign_up, :pen_name)   # => "pen_name"
+  """
+  @spec client_argument_name(module(), atom(), atom()) :: String.t()
+  def client_argument_name(resource, action_name, argument_name) do
+    case resource |> argument_overrides(action_name) |> Keyword.get(argument_name) do
+      nil -> Atom.to_string(argument_name)
+      override -> to_string(override)
+    end
+  end
+
+  @doc """
+  The argument a client name stands for on `action_name`, or `nil` when no
+  `argument_names` override of that action is `client_name`.
+  """
+  @spec original_argument_name(module(), atom(), String.t()) :: atom() | nil
+  def original_argument_name(resource, action_name, client_name) do
+    resource
+    |> argument_overrides(action_name)
+    |> Enum.find_value(fn {argument, override} ->
+      if to_string(override) == client_name, do: argument
+    end)
+  end
+
+  defp argument_overrides(resource, action_name) do
+    resource
+    |> kotlin_multiplatform_argument_names()
+    |> Keyword.get(action_name, [])
+  end
+
+  @doc """
   Checks if a resource is configured for Kotlin Multiplatform interop.
   """
   def is_kotlin_resource?(resource) do
