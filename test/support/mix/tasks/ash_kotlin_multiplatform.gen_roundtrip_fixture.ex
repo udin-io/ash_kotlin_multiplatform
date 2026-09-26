@@ -59,6 +59,7 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.GenRoundtripFixture do
       # entry creates one, so running it earlier breaks a check that has nothing
       # to do with it.
       {"field_names_override", field_names_override()},
+      {"argument_names_override", argument_names_override()},
       {"error", error()},
       {"validation_valid", validation_valid()},
       {"validation_invalid", validation_invalid()},
@@ -136,6 +137,18 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.GenRoundtripFixture do
       "action" => "create_author",
       "input" => Map.put(author_input("Mapped Name"), "addressLine1", "10 Downing Street"),
       "fields" => ["id", "name", "addressLine1"]
+    })
+  end
+
+  # An `argument_names` override: `anonymous?` goes out as `anonymous` (#23).
+  # The input is the literal `argumentNamesOverride` in `Roundtrip.kt` encodes
+  # from `SignUpAuthorInput`, so the gate proves the generated class writes the
+  # key this server reads. Before #23 that class did not compile.
+  defp argument_names_override do
+    call(%{
+      "action" => "sign_up_author",
+      "input" => %{"anonymous" => true, "name" => "Ursula Le Guin"},
+      "fields" => ["name"]
     })
   end
 

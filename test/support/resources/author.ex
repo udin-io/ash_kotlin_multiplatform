@@ -30,6 +30,10 @@ defmodule AshKotlinMultiplatform.Test.Author do
     # which makes it the one attribute that proves the override is honoured on
     # both sides rather than merely accepted by the DSL (#71).
     field_names(address_line_1: :addressLine1)
+
+    # `anonymous?` is not a Kotlin identifier, so `sign_up` compiles only with
+    # this mapping (#23). `pen_name` stays unmapped beside it.
+    argument_names(sign_up: [anonymous?: :anonymous])
   end
 
   attributes do
@@ -107,6 +111,26 @@ defmodule AshKotlinMultiplatform.Test.Author do
     # and `previousPage`/`nextPage`, which the server sends as `null` on an empty
     # page. Ash picks offset whenever both are allowed and the request carries no
     # cursor, so reaching keyset needs an action that allows nothing else.
+    # A renamed argument whose effect shows in the response: `anonymous?: true`
+    # replaces the name the client sent (#23).
+    create :sign_up do
+      accept [:name, :email]
+
+      argument :anonymous?, :boolean do
+        allow_nil? false
+      end
+
+      argument :pen_name, :string
+
+      change fn changeset, _context ->
+        if Ash.Changeset.get_argument(changeset, :anonymous?) do
+          Ash.Changeset.force_change_attribute(changeset, :name, "Anonymous")
+        else
+          changeset
+        end
+      end
+    end
+
     read :keyset_paged do
       pagination keyset?: true, offset?: false, required?: true, default_limit: 2
     end

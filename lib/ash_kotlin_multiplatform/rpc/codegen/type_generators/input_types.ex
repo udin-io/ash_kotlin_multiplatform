@@ -84,26 +84,25 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.InputTypes do
   end
 
   # Generate field for an input (either argument or attribute)
-  defp generate_input_field({:argument, argument}, action, _resource) do
-    generate_argument_field(argument, action)
+  defp generate_input_field({:argument, argument}, action, resource) do
+    generate_argument_field(argument, action, resource)
   end
 
   defp generate_input_field({:attribute, attribute}, action, resource) do
     generate_attribute_field(attribute, action, resource)
   end
 
-  defp generate_argument_field(argument, _action) do
+  defp generate_argument_field(argument, action, resource) do
     kotlin_type = get_argument_kotlin_type(argument)
-    field_name = format_field_name(argument.name)
-    original_name = Atom.to_string(argument.name)
 
-    # Handle SerialName annotation if names differ
-    serial_name =
-      if original_name != field_name do
-        "@SerialName(\"#{original_name}\")\n    "
-      else
-        ""
-      end
+    wire_name =
+      AshKotlinMultiplatform.Resource.Info.client_argument_name(
+        resource,
+        action.name,
+        argument.name
+      )
+
+    {serial_name, field_name} = property_declaration(wire_name)
 
     # Handle default values
     {type_with_nullability, default} =
@@ -195,12 +194,6 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.InputTypes do
     TypeMapper.get_kotlin_type(attribute, nullable: false)
   end
 
-  defp format_field_name(name) do
-    name
-    |> Atom.to_string()
-    |> Helpers.snake_to_camel_case()
-  end
-
   # The Kotlin property declaration for one accepted attribute:
   # `{annotation, property_name}`.
   #
@@ -216,11 +209,13 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.TypeGenerators.InputTypes do
   # camelCase parser, so a client sending `address_line_1` and one sending
   # `addressLine1` must not both be generated for the same field.
   #
-  # Arguments do not come through here. `field_names` maps resource fields and
-  # an action argument is not one; the DSL's separate `argument_names` option
-  # covers those.
+  # Arguments take their wire name from `argument_names` instead, through
+  # `Resource.Info.client_argument_name/3`, and share the declaration below.
   defp input_property_name(resource, field_name) do
-    wire_name = input_wire_name(resource, field_name)
+    resource |> input_wire_name(field_name) |> property_declaration()
+  end
+
+  defp property_declaration(wire_name) do
     property = Helpers.snake_to_camel_case(wire_name)
 
     if wire_name == property do

@@ -24,6 +24,7 @@ defmodule AshKotlinMultiplatform.Test.Domain do
     resource AshKotlinMultiplatform.Test.Author do
       rpc_action :list_authors, :read
       rpc_action :create_author, :create
+      rpc_action :sign_up_author, :sign_up
 
       # Author is the only resource with a data layer, so it is the only one
       # whose destroy, get and keyset reads can be run for real — which is what

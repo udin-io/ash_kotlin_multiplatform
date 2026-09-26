@@ -170,18 +170,15 @@ nowhere to live. That is the shape (see `docs/decisions.md`), and it is where
 `ResourceSchemas.generate_data_class/2` the set of resources the same pass
 emits a class for. Follow that pattern.
 
-### The runner formats field names, not values
+### A new type needs the server half checked too
 
-`Rpc.Runner.execute_action/7` calls
-`AshIntrospection.Rpc.Pipeline.format_output/1`, which renames keys and stops
-there. Nothing in `lib/` calls `AshIntrospection.Rpc.ValueFormatter`, so the
-shared core's type-aware formatting — the clause that turns `%Ash.Vector{}`
-into a list of numbers, and everything beside it — never runs. A value whose
-in-memory form is not JSON-encodable therefore reaches the encoder raw and
-raises: measured 2026-09-11, a `:vector` attribute raises
-`Jason.EncodeError` on the packed binary (#71).
+`Rpc.Runner.execute_action/7` formats a response with
+`Rpc.Pipeline.format_data/2`, which formats values by Ash type: a `:vector`
+becomes a list of numbers (#71, since `b90fe55`). Before that the runner
+renamed keys only, and a vector reached the encoder as a packed binary and
+raised `Jason.EncodeError`.
 
-So a new type needs both halves checked. A Kotlin type that reads the wire
+A new type still needs both halves checked. A Kotlin type that reads the wire
 format proves nothing about whether this library can produce that wire
 format; run the action through `Runner` and encode the result before
 believing it.

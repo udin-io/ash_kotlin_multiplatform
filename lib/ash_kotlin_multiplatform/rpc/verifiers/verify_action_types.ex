@@ -8,7 +8,9 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyActionTypes do
 
   For each exposed RPC action, this verifier checks:
   1. Return type field names (for generic actions with `:action` type)
-  2. Argument type field names (for all action types)
+  2. Argument names: a `?` needs an `argument_names` override, because the
+     argument becomes a Kotlin property (#23)
+  3. Argument type field names (for all action types)
 
   This ensures that map, keyword, tuple, struct, embedded resource, and union types
   used in action signatures have valid Kotlin-compatible field names.
@@ -46,8 +48,9 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyActionTypes do
 
       if action do
         return_type_errors = validate_return_type(resource, rpc_action, action)
+        argument_name_errors = validate_argument_names(resource, rpc_action, action)
         argument_type_errors = validate_argument_types(resource, rpc_action, action)
-        return_type_errors ++ argument_type_errors
+        return_type_errors ++ argument_name_errors ++ argument_type_errors
       else
         []
       end
@@ -74,6 +77,22 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyActionTypes do
 
   # CRUD actions return the resource itself, which is already validated by resource verifiers
   defp validate_return_type(_resource, _rpc_action, _action), do: []
+
+  # Only `?` is rejected. A `_1` suffix compiles as a Kotlin property and keeps
+  # its raw name on the wire, so rejecting it would break working configs.
+  defp validate_argument_names(resource, rpc_action, action) do
+    action.arguments
+    |> Enum.filter(& &1.public?)
+    |> Enum.filter(fn argument ->
+      resource
+      |> AshKotlinMultiplatform.Resource.Info.client_argument_name(action.name, argument.name)
+      |> String.contains?("?")
+    end)
+    |> Enum.map(fn argument ->
+      {resource, {:argument_name, rpc_action.name, action.name}, :argument, argument.name,
+       String.replace(to_string(argument.name), "?", "")}
+    end)
+  end
 
   # Validate argument types for all actions
   defp validate_argument_types(resource, rpc_action, action) do
@@ -523,7 +542,20 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyActionTypes do
      )}
   end
 
-  defp format_error_group({context, errors}) do
+  defp format_error_group({{:argument_name, _rpc_name, action_name} = context, errors}) do
+    mappings =
+      Enum.map_join(errors, ", ", fn {_resource, _context, _type, name, suggested} ->
+        "#{name}: :#{suggested}"
+      end)
+
+    format_field_group(context, errors) <>
+      "\n    Add to the resource's kotlin_multiplatform block:\n" <>
+      "      argument_names #{action_name}: [#{mappings}]"
+  end
+
+  defp format_error_group({context, errors}), do: format_field_group(context, errors)
+
+  defp format_field_group(context, errors) do
     context_description = format_context(context)
 
     field_suggestions =
@@ -536,6 +568,10 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyActionTypes do
 
   defp format_context({:return_type, rpc_name, action_name}) do
     "Invalid field names in return type of RPC action #{rpc_name} (action: #{action_name})"
+  end
+
+  defp format_context({:argument_name, rpc_name, action_name}) do
+    "Invalid argument names of RPC action #{rpc_name} (action: #{action_name})"
   end
 
   defp format_context({:argument, rpc_name, action_name, arg_name}) do

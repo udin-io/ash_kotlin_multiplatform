@@ -8,16 +8,24 @@ defmodule AshKotlinMultiplatform.Resource.Verifiers.VerifyFieldNames do
 
   Checks public attributes, relationships, calculations, and aggregates to ensure
   they don't contain invalid patterns like question marks or numbers preceded by underscores.
+
+  Also checks every `argument_names` entry: it must name an action and one of
+  its arguments, and map it to a valid name that no other input of that action
+  already takes on the wire (#23).
   """
   use Spark.Dsl.Verifier
 
+  alias Spark.Dsl.Verifier
+
   @impl true
   def verify(dsl) do
-    dsl[:persist][:module]
-    |> validate_resource_field_names()
-    |> case do
-      [] -> :ok
-      errors -> format_name_validation_errors(errors)
+    field_errors = dsl[:persist][:module] |> validate_resource_field_names()
+    argument_errors = validate_argument_names(dsl)
+
+    case {field_errors, argument_errors} do
+      {[], []} -> :ok
+      {[], _} -> format_argument_name_errors(argument_errors)
+      _ -> format_name_validation_errors(field_errors)
     end
   end
 
@@ -91,6 +99,74 @@ defmodule AshKotlinMultiplatform.Resource.Verifiers.VerifyFieldNames do
       [] -> []
       _ -> [{:invalid_resource_fields, resource, invalid_fields}]
     end
+  end
+
+  defp validate_argument_names(dsl) do
+    field_names = Verifier.get_option(dsl, [:kotlin_multiplatform], :field_names, [])
+
+    dsl
+    |> Verifier.get_option([:kotlin_multiplatform], :argument_names, [])
+    |> Enum.flat_map(fn {action_name, mapping} ->
+      case Ash.Resource.Info.action(dsl, action_name) do
+        nil ->
+          ["#{action_name}: no action named #{action_name}"]
+
+        action ->
+          Enum.flat_map(mapping, &validate_argument_mapping(&1, action, mapping, field_names))
+      end
+    end)
+  end
+
+  defp validate_argument_mapping({argument, target}, action, mapping, field_names) do
+    other_wire_names =
+      action
+      |> input_wire_names(mapping, field_names)
+      |> Map.delete(argument)
+      |> Map.values()
+
+    cond do
+      argument not in Enum.map(action.arguments, & &1.name) ->
+        ["#{action.name}: no argument named #{argument}"]
+
+      invalid_name?(target) ->
+        ["#{action.name}: #{argument} maps to #{target}, which is not a valid name either"]
+
+      to_string(target) in other_wire_names ->
+        ["#{action.name}: #{argument} maps to #{target}, which another input already sends"]
+
+      true ->
+        []
+    end
+  end
+
+  # Every input's name on the wire, by internal name: an argument's override or
+  # raw name, and an accepted attribute's `field_names` override or raw name.
+  defp input_wire_names(action, mapping, field_names) do
+    arguments =
+      Map.new(action.arguments, fn argument ->
+        {argument.name, to_string(Keyword.get(mapping, argument.name, argument.name))}
+      end)
+
+    attributes =
+      Map.new(Map.get(action, :accept) || [], fn attribute ->
+        {attribute, to_string(Keyword.get(field_names, attribute, attribute))}
+      end)
+
+    Map.merge(attributes, arguments)
+  end
+
+  defp format_argument_name_errors(errors) do
+    {:error,
+     Spark.Error.DslError.exception(
+       path: [:kotlin_multiplatform, :argument_names],
+       message: """
+       Invalid argument_names entries:
+
+       #{Enum.map_join(errors, "\n", &"  - #{&1}")}
+
+       Each entry maps an argument of an action to the name the Kotlin client uses.
+       """
+     )}
   end
 
   defp format_name_validation_errors(errors) do

@@ -63,7 +63,7 @@ C4Container
     Rel(tasks, sgen, "generate_swift_code/2")
     Rel(man, dsl, "reads every domain's kotlin_rpc block")
     Rel(man, ash, "Ash.Info.Manifest.Generator.generate/1, then AshIntrospection.Manifest.Decorator.decorate/3")
-    Rel(kgen, dsl, "reads rpc_actions, type_name, field_names")
+    Rel(kgen, dsl, "reads rpc_actions, type_name, field_names, argument_names")
     Rel(sgen, dsl, "reads the same DSL")
     Rel(kgen, man, "Manifest.embedded_resources/1; raises without config :manifest")
     Rel(sgen, man, "the same list")
@@ -210,6 +210,7 @@ sequenceDiagram
     Note over Run: rpc_action options, before the pipeline (issue 25) —<br/>refuse a filter or sort the DSL switched off,<br/>require exactly the configured getBy fields,<br/>set the Ash action's get? from get? or get_by
     Run->>RI: action/3, attribute/3, public_attributes/2
     RI-->>Run: from the decoration, live only for a resource<br/>the manifest does not carry
+    Note over Run: Rpc.KeyNames parses input keys —<br/>an argument_names or field_names override names its input,<br/>and wins over the raw name in the same request (issue 23)
     Run->>Pipe: parse_request, execute, process_result
     Pipe->>Ash: Ash.read_one when get?, else Ash.read / create / update / destroy
     Ash-->>Pipe: records

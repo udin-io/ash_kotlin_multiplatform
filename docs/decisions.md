@@ -669,3 +669,24 @@ consumer who never recompiled their manifest module meets it as a 404 rather
 than a short type list. `run_action/3`'s `otp_app` argument now selects
 nothing, because the manifest config names one module for the library. The
 argument stays on the public entry points.
+
+## 2026-09-26 — `argument_names` is resolved in `Resource.Info`, like `field_names`
+
+`Resource.Info.client_argument_name/3` gives the wire name of an argument, and
+`original_argument_name/3` maps it back. `InputTypes` and `Rpc.KeyNames` both
+call them, so the generated client and the server read one answer (#23).
+
+The override is the wire name, used verbatim. Without one the raw argument
+name stays the wire name, as it always has for input: `pen_name`, not
+`penName`.
+
+The server accepts both names of a renamed argument, so a client built before
+the rename keeps working. When a request carries both, the override's value
+wins, for `field_names` too: the override is what the generated client sends.
+`KeyNames` sorts override-named keys last before building the map.
+
+Only `?` is rejected for an unmapped argument, and only on an exposed action.
+A `_1` suffix compiles and round-trips as the raw name, so rejecting it would
+break working configs. The manifest decorator's `argument_name_mappings` are
+built without this DSL and read by nothing on the request path; they are left
+alone.
