@@ -220,7 +220,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
          context,
          config
        ) do
-    input = parse_input(params, resource, config)
+    input = parse_input(params, resource, action.name, config)
     fields = params["fields"] || []
     identity = parse_identity(params, resource, config)
     filter = parse_filter(params, resource, config)
@@ -263,7 +263,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     config = Pipeline.request_config(rpc_action)
     action_name = rpc_action.action
     action_info = SharedResourceInfo.action(resource, action_name, config)
-    input = parse_input(params, resource, config)
+    input = parse_input(params, resource, action_name, config)
 
     opts = [
       actor: actor,
@@ -455,9 +455,9 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # Input Parsing
   # ---------------------------------------------------------------------------
 
-  defp parse_input(params, resource, config) do
+  defp parse_input(params, resource, action_name, config) do
     input = params["input"] || %{}
-    KeyNames.parse(input, resource, config)
+    KeyNames.parse_input(input, resource, action_name, config)
   end
 
   # `AshIntrospection.Rpc.Pipeline` matches an identity map against the

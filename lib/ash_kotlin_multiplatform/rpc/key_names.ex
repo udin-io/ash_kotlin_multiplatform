@@ -73,6 +73,49 @@ defmodule AshKotlinMultiplatform.Rpc.KeyNames do
   def parse(value, _resource, _config), do: value
 
   @doc """
+  Parses a request's `input` map for `action_name`.
+
+  A top-level key that an `argument_names` override of that action names
+  becomes the argument's name. Every other key goes through `parse/3`, so the
+  raw Elixir name of a renamed argument still reaches it: a client built
+  before the rename keeps working. When a request carries both, the override's
+  value wins, because the override is what the generated client sends (#23).
+
+  Top level only: a nested map's keys are never argument names.
+  """
+  @spec parse_input(term(), module(), atom(), map()) :: term()
+  def parse_input(input, resource, action_name, config) when is_map(input) do
+    input
+    |> Enum.map(fn
+      {key, value} when is_binary(key) ->
+        case ResourceInfo.original_argument_name(resource, action_name, key) do
+          nil ->
+            internal_key = internal_key(key, resource)
+            {:raw, internal_key, parse_value(internal_key, value, resource, config)}
+
+          argument ->
+            internal_key = Atom.to_string(argument)
+            {:override, internal_key, parse_value(internal_key, value, resource, config)}
+        end
+
+      {key, value} ->
+        {:raw, key, parse(value, resource, config)}
+    end)
+    |> overrides_last()
+  end
+
+  def parse_input(input, resource, _action_name, config), do: parse(input, resource, config)
+
+  # `Map.new/1` keeps the last value it sees for a key, so sorting every entry
+  # an override named after the rest makes the override's value win. The sort
+  # is stable, so the order of the others does not change.
+  defp overrides_last(entries) do
+    entries
+    |> Enum.sort_by(fn {source, _key, _value} -> source == :override end)
+    |> Map.new(fn {_source, key, value} -> {key, value} end)
+  end
+
+  @doc """
   The internal name a client key stands for, always as a string.
 
   A `field_names` override is consulted before the generic camelCase parser,

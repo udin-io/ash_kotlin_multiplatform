@@ -132,6 +132,22 @@ private fun fieldNamesOverrideDecodes(): String {
     return "addressLine1=${author.addressLine1}"
 }
 
+// #23: an `argument_names` override. `anonymous?` is no Kotlin identifier, so
+// the generated class names it `anonymous` and writes that key; the fixture
+// sent this literal, and the server answered with the argument applied.
+private fun argumentNamesOverride(): String {
+    val sent = """{"anonymous":true,"name":"Ursula Le Guin"}"""
+    val input = SignUpAuthorInput(anonymous = true, name = "Ursula Le Guin")
+
+    expect("encoded input", ashRpcJson.encodeToString(input), sent)
+
+    val author = result("argument_names_override").dataAs<Author>()!!
+
+    expect("name", author.name, "Anonymous")
+
+    return "encoded $sent, name=${author.name}"
+}
+
 // #71: an untyped map's keys are data, so a key stored as `created_by` comes
 // back as `created_by`. Stage 4 used to rename every key it walked, at every
 // depth, because it could not tell a field name from a map key. The typed
@@ -568,6 +584,7 @@ fun main() {
     check("#54 date fields via dataAs()", ::dateFieldsViaDataAs)
     check("#54 date fields through the channel client's Json", ::dateFieldsThroughTheChannelJson)
     check("#54 input encoding through the shared Json", ::inputEncoding)
+    check("#23 an argument_names override encodes and reaches the argument", ::argumentNamesOverride)
     check("#24 error response decodes", ::errorDecodes)
     check("#84 #87 an embedded action argument encodes and RpcResult<Summary> decodes", ::embeddedActionResultDecodes)
     check("#87 a list of embedded resources decodes into RpcResult<List<Summary>>", ::embeddedListActionResultDecodes)
