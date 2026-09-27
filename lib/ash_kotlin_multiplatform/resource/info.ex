@@ -158,19 +158,20 @@ defmodule AshKotlinMultiplatform.Resource.Info do
   end
 
   @doc """
-  Returns the Kotlin type name for a resource, falling back to the module name.
+  Returns the Kotlin type name for a resource, falling back to the last
+  segment of its module name.
+
+  Every generator names a resource's class through this function, so a
+  declaration and a reference cannot disagree. A module with no Spark DSL also
+  takes the fallback.
   """
   def kotlin_multiplatform_type_name!(resource) do
-    case kotlin_multiplatform_type_name(resource) do
-      nil ->
-        resource
-        |> Module.split()
-        |> List.last()
-
-      name ->
-        name
-    end
+    kotlin_multiplatform_type_name(resource) || module_type_name(resource)
+  rescue
+    _ -> module_type_name(resource)
   end
+
+  defp module_type_name(module), do: module |> Module.split() |> List.last()
 
   @doc """
   Returns the field name mappings for a resource (always returns a list).

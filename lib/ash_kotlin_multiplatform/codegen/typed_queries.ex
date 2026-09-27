@@ -67,11 +67,14 @@ defmodule AshKotlinMultiplatform.Codegen.TypedQueries do
     queries_by_resource =
       typed_queries
       |> Enum.group_by(fn {resource, _action, _query} -> resource end)
-      |> Enum.sort_by(fn {resource, _queries} -> {get_resource_name(resource), resource} end)
+      |> Enum.sort_by(fn {resource, _queries} ->
+        {AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name!(resource), resource}
+      end)
 
     sections =
       Enum.map(queries_by_resource, fn {resource, queries} ->
-        resource_name = get_resource_name(resource)
+        resource_name =
+          AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name!(resource)
 
         query_types_and_consts =
           Enum.map(queries, fn {resource, action, typed_query} ->
@@ -403,23 +406,6 @@ defmodule AshKotlinMultiplatform.Codegen.TypedQueries do
     |> Ash.Info.domains()
     |> Enum.flat_map(&Ash.Domain.Info.resources/1)
     |> Enum.uniq()
-  end
-
-  defp get_resource_name(resource) do
-    case AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name(resource) do
-      nil ->
-        resource
-        |> Module.split()
-        |> List.last()
-
-      name ->
-        to_string(name)
-    end
-  rescue
-    _ ->
-      resource
-      |> Module.split()
-      |> List.last()
   end
 
   defp get_attribute_or_calculation(resource, field) do

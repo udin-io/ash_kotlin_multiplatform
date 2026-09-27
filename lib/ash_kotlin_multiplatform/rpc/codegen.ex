@@ -196,23 +196,6 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
     """
   end
 
-  defp get_resource_type_name(resource) do
-    case AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name(resource) do
-      nil ->
-        resource
-        |> Module.split()
-        |> List.last()
-
-      name ->
-        name
-    end
-  rescue
-    _ ->
-      resource
-      |> Module.split()
-      |> List.last()
-  end
-
   # Generate metadata types for all actions that expose metadata
   defp generate_metadata_types(resources_and_actions) do
     resources_and_actions
@@ -276,7 +259,8 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
     rpc_configs
     |> Enum.group_by(fn %{resource: resource} -> resource end)
     |> Enum.sort_by(fn {resource, _configs} ->
-      {to_string(get_resource_type_name(resource)), resource}
+      {to_string(AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name!(resource)),
+       resource}
     end)
     |> Enum.map_join("\n\n", fn {resource, configs} ->
       generate_object_wrapper(resource, List.first(configs), package_name)
@@ -284,7 +268,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
   end
 
   defp generate_object_wrapper(resource, %{rpc_actions: actions}, package_name) do
-    type_name = get_resource_type_name(resource)
+    type_name = AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name!(resource)
     object_name = "#{type_name}Rpc"
 
     functions =

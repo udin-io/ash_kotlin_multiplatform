@@ -102,7 +102,7 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
   resource being generated.
   """
   def generate_data_class(resource, emitted_resources) do
-    type_name = get_kotlin_type_name(resource)
+    type_name = AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name!(resource)
     attributes = Ash.Resource.Info.public_attributes(resource)
 
     attribute_fields =
@@ -218,7 +218,9 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
   defp get_default_for_type(_kotlin_type), do: "null"
 
   defp generate_relationship_field(rel, resource) do
-    related_type_name = get_kotlin_type_name(rel.destination)
+    related_type_name =
+      AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name!(rel.destination)
+
     {serial_name, field_name} = property_name(resource, rel.name)
 
     # Determine the Kotlin type based on relationship type
@@ -369,23 +371,6 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
       |> Helpers.snake_to_pascal_case()
 
     "#{name}Union"
-  end
-
-  defp get_kotlin_type_name(resource) do
-    case AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name(resource) do
-      nil ->
-        resource
-        |> Module.split()
-        |> List.last()
-
-      name ->
-        name
-    end
-  rescue
-    _ ->
-      resource
-      |> Module.split()
-      |> List.last()
   end
 
   defp format_field_name(name) do
