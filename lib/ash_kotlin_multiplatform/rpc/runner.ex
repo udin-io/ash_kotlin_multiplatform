@@ -110,7 +110,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
         execute_action(domain, resource, rpc_action, params, actor, tenant, context)
 
       {:error, reason} ->
-        build_error_response(reason)
+        error_response(reason, %{})
     end
   end
 
@@ -129,7 +129,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
         validate_changeset(domain, resource, rpc_action, params, actor, tenant)
 
       {:error, reason} ->
-        build_error_response(reason)
+        error_response(reason, %{})
     end
   end
 
@@ -205,7 +205,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
       |> build_success_response()
     else
       {:error, error} ->
-        build_error_response(error)
+        error_response(error, target(domain, resource, rpc_action, context))
     end
   end
 
@@ -296,20 +296,8 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
       {:ok, %Ash.Changeset{valid?: false, errors: errors}} ->
         build_validation_error_response(errors)
 
-      {:error, :validation_not_supported} ->
-        %{
-          "success" => false,
-          "errors" => [
-            %{
-              "type" => "unsupported",
-              "message" => "Validation is only supported for create and update actions",
-              "shortMessage" => "Unsupported"
-            }
-          ]
-        }
-
       {:error, error} ->
-        build_error_response(error)
+        error_response(error, target(domain, resource, rpc_action, %{}))
     end
   end
 
@@ -701,6 +689,27 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
         "field" => get_error_field(error)
       }
     end)
+  end
+
+  # What an error is about: the domain, resource and action it came from, and
+  # the caller's context. Empty before an action is found.
+  defp target(domain, resource, rpc_action, context),
+    do: %{domain: domain, resource: resource, action: rpc_action.action, context: context}
+
+  # Every failure reaches the client through here.
+  defp error_response(error, _target), do: build_error_response(error)
+
+  defp build_error_response(:validation_not_supported) do
+    %{
+      "success" => false,
+      "errors" => [
+        %{
+          "type" => "unsupported",
+          "message" => "Validation is only supported for create and update actions",
+          "shortMessage" => "Unsupported"
+        }
+      ]
+    }
   end
 
   # Field selection and getBy errors carry a field path and a suggestion the
