@@ -381,11 +381,8 @@ private fun validationDecodes(): String {
 
     expect("valid", valid is ValidationValid, true)
     expect("invalid", invalid is ValidationInvalid, true)
-    // Asserts `shortMessage` and not the offending field: the server sends
-    // `"field": "title"` and `AshRpcError` declares no property for it, so a
-    // validation error's field is dropped on decode. Out of scope here — it is
-    // the #24 shape again, and wants its own issue.
-    expect("invalid.errors", (invalid as ValidationInvalid).errors.single().shortMessage, "Validation failed")
+    // #28: the core's value for a missing required attribute.
+    expect("invalid.shortMessage", (invalid as ValidationInvalid).errors.single().shortMessage, "Required field")
 
     return "valid=${valid::class.simpleName} invalid=${invalid::class.simpleName}"
 }

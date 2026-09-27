@@ -79,6 +79,18 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerErrorRedactionTest do
       assert %{"success" => false, "errors" => [error]} = response
       assert_title_too_short(error)
     end
+
+    test "names the field the same way from validate_action/3" do
+      response =
+        Runner.validate_action(:ash_kotlin_multiplatform, %{
+          "action" => "create_fault",
+          "input" => %{"title" => "ab"}
+        })
+
+      refute Jason.encode!(response) =~ "Bread Crumbs"
+      assert %{"success" => true, "valid" => false, "errors" => [error]} = response
+      assert_title_too_short(error)
+    end
   end
 
   describe "a required attribute left out" do

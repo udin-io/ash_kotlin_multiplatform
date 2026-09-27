@@ -298,7 +298,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
         build_validation_success_response()
 
       {:ok, %Ash.Changeset{valid?: false, errors: errors}} ->
-        build_validation_error_response(errors)
+        build_validation_error_response(errors, target(domain, resource, rpc_action, %{}))
 
       {:error, error} ->
         error_response(error, target(domain, resource, rpc_action, %{}))
@@ -674,25 +674,12 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     %{"success" => true, "valid" => true}
   end
 
-  defp build_validation_error_response(errors) do
-    formatted_errors = format_validation_errors(errors)
+  # `success` is true because the validation ran; `valid` carries the answer.
+  # The errors take the same path as a failed action's.
+  defp build_validation_error_response(errors, target) do
+    %{"errors" => client_errors} = error_response(errors, target)
 
-    %{
-      "success" => true,
-      "valid" => false,
-      "errors" => formatted_errors
-    }
-  end
-
-  defp format_validation_errors(errors) do
-    Enum.map(List.wrap(errors), fn error ->
-      %{
-        "type" => "validation_error",
-        "message" => Exception.message(error),
-        "shortMessage" => "Validation failed",
-        "field" => get_error_field(error)
-      }
-    end)
+    %{"success" => true, "valid" => false, "errors" => client_errors}
   end
 
   # What an error is about: the domain, resource and action it came from, and
@@ -849,22 +836,5 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
       fields: [],
       path: []
     }
-  end
-
-  defp get_error_field(error) do
-    formatter = AshKotlinMultiplatform.output_field_formatter()
-
-    cond do
-      Map.has_key?(error, :field) && error.field ->
-        FieldFormatter.format_field_name(to_string(error.field), formatter)
-
-      Map.has_key?(error, :fields) && is_list(error.fields) && error.fields != [] ->
-        error.fields
-        |> Enum.map(&FieldFormatter.format_field_name(to_string(&1), formatter))
-        |> Enum.join(", ")
-
-      true ->
-        nil
-    end
   end
 end
