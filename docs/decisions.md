@@ -821,6 +821,18 @@ Error keys stay `:camel_case` whatever `output_field_formatter` says, until
 #57 decides otherwise. `message` arrives as finished text, with `vars` beside
 it (decision 2 on PR #123).
 
+A request error is wrapped in `Rpc.RequestError`, class `:invalid`, so it
+reaches both handlers through the core rather than through a second handler
+path here (decision 5 on PR #123). A plain exception would not do:
+`Ash.Error.to_error_class/1` turns any exception outside an Ash class into an
+`UnknownError`, which the core words as "Something went wrong".
+
+A failure after the action ran answers `result_unavailable` (decision 6 on PR
+#123), static and outside the handlers, so it cannot fail in turn. The runner
+covers a raise while formatting; the controller covers the encoder refusing
+the result. We did not add an encode check to the runner: it would encode
+every success response twice.
+
 Cost: the wire `type` and `shortMessage` values changed, and an unknown input
 key, filter field, filter operator or sort field answers `internal_error`
 until the core names it (see `risks.md`).

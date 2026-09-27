@@ -274,8 +274,12 @@ log.
 
 ### `show_raised_errors? true` sends what the failing code wrote
 
-The option sends `Exception.message/1` of whatever raised, which can carry a
-connection string or a key. It defaults to `false`.
+The core applies the option to every error from the domain, not only a raise.
+It sends `Exception.message/1`, which can carry a connection string or a key,
+and with Ash's own `show_policy_breakdowns?` on it sends the policy report and
+the actor. `type` becomes the exception's module name. It defaults to `false`.
+Limiting it to raised errors needs a change in ash_introspection's
+`Errors.process_single_error/6`.
 
 *Watch:* a production config that sets it.
 *Do:* keep it to development configs; the option's doc says so.

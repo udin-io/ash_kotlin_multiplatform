@@ -264,9 +264,13 @@ defmodule AshKotlinMultiplatform.Rpc do
         type: :boolean,
         default: false,
         doc: """
-        Send an exception's own message to the client instead of
-        "Something went wrong". For development only: the message carries
-        whatever the failing code put in it.
+        Development only. `AshIntrospection.Rpc.Errors` then words EVERY error
+        from this domain by its own `Exception.message/1`, not only a raise:
+        a policy refusal sends Ash's full breakdown, with the actor, whenever
+        `config :ash, :policies, show_policy_breakdowns?: true` is also set,
+        and `type` and `shortMessage` become the exception's module name
+        (`unknown_error`, `request_error`). A client that matches on `type`
+        reads different values with it on.
         """
       ]
     ],

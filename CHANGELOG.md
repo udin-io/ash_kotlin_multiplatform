@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   | action returns an error term or string, or raises | `validation_error`, or HTTP 500 | `unknown_error` / "Unknown error", "Something went wrong" |
   | unknown input key, filter field, filter operator or sort field | `validation_error` | `internal_error`, "Something went wrong. Unique error id: …" |
   | unknown action, missing parameter, identity checks | this library's wording | the core's wording, plus `details.suggestion` |
+  | the action ran but its result cannot be formatted or encoded | `unknown_error`, or HTTP 500 | `result_unavailable` / "Result unavailable", with `errorId` |
+  | `fields` sent as a string | `field_validation_error` | `invalid_fields_type` |
 
   `message` stays finished text. Each error also carries `vars`, `fields`,
   `path`, `details` and, for `internal_error`, `errorId`. `field` repeats the
@@ -30,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `Rpc.Runner.validate_action/3` takes `:context`, which reaches the error
   handlers (#28).
+- A request error, such as an unknown field or a getBy check, passes through
+  the resource's `handle_rpc_error/2` and the domain's `error_handler`, as an
+  action's error does (#28). `action_not_found` and a missing `action` name no
+  domain, so no handler sees them.
+- Request errors name a resource by its Kotlin type and a type without its
+  module: "Unknown field nope for resource Author", not
+  "…for resource MyApp.Blog.Author" (#28). `details.error` is gone.
 
 - `get?`, `not_found_error?`, `enable_filter?` and `enable_sort?` on a
   create, update, destroy or generic action are compile errors: each was
@@ -90,6 +99,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `get_context/1` on `AshKotlinMultiplatform.Phoenix.Controller`, overridable,
+  default `%{}`. Its map reaches the runner as `:context` (#28).
 - `error_handler` and `show_raised_errors?` on the `kotlin_rpc` section (#28).
   `error_handler` transforms or drops each error before it reaches the client,
   and a handler that raises fails closed to `internal_error` with an error id
@@ -159,8 +170,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   string went out verbatim (a database host, an API key); every message began
   with bread crumbs naming the Elixir module. Now the core's error protocol
   words each error, anything it does not recognise is "Something went wrong",
-  and the detail goes to the server log. A raise inside an action is a failed
-  result instead of an HTTP 500.
+  and the detail goes to the server log. A raise, throw or exit inside an
+  action is a failed result instead of an HTTP 500, and so is an error handler
+  that returns something other than a map or `nil`. The log line comes before
+  any handler runs, so a handler cannot drop it.
 
 - `mint` moves to 1.10.1, fixing EEF-CVE-2026-82672. `mint` is transitive
   through `finch` (`~> 1.8`); nothing in this library calls `mint` directly.

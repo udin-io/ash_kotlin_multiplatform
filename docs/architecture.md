@@ -268,9 +268,21 @@ has no such reasons. Everything else, including a raise that
 `AshIntrospection.Rpc.Errors.to_errors/6`, which runs the resource's
 `handle_rpc_error/2`, then the domain's `kotlin_rpc` `error_handler`, and
 reads `show_raised_errors?` from the same section (`rpc_dsl_section:
-:kotlin_rpc` in `Rpc.Pipeline.build_config/0`). An error the client gets as
-`unknown_error` or `internal_error` is logged with its original text and, for
-a raise, its stacktrace.
+:kotlin_rpc` in `Rpc.Pipeline.build_config/0`). A request error takes the same
+route, wrapped in `Rpc.RequestError`, a Splode error of class `:invalid` whose
+`AshIntrospection.Rpc.Error` impl returns the worded map, so both handlers see
+it. A throw or an exit is caught next to each rescue.
+
+Logging is decided before the handlers run: an error the protocol words as
+`unknown_error` is logged with its original text and stacktrace, and one with
+no impl is left to the core, which logs it. If shaping the errors raises (a
+handler returning a string), `client_errors/2` answers a static
+`internal_error` that runs no handler.
+
+Once `Pipeline.execute_ash_action/1` has returned, a failure in
+`Runner.send_result/3` answers `result_unavailable`; so does
+`AshKotlinMultiplatform.Phoenix.Controller`'s `send_json/3` when the encoder
+refuses the result.
 
 A request with no `fields` gets a default template from
 `Rpc.Runner.select_fields/4`: the public attributes of the resource the action
