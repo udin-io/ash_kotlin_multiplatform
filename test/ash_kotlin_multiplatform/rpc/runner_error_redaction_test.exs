@@ -327,6 +327,13 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerErrorRedactionTest do
   end
 
   describe "a generic action returning a forbidden field" do
+    test "in an error's vars, never sends the hidden value" do
+      {response, _log} = with_log(fn -> run(%{"action" => "fault_struct_in_vars"}) end)
+
+      refute Jason.encode!(response) =~ "s3cret-original"
+      assert %{"success" => false, "errors" => [%{"type" => "invalid_attribute"}]} = response
+    end
+
     test "sends null, and never the hidden value" do
       response = run(%{"action" => "fault_hidden_value"})
 

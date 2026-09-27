@@ -124,6 +124,24 @@ defmodule AshKotlinMultiplatform.Test.Fault do
       run fn _input, _context -> {:ok, %{owner: {:pid, self()}}} end
     end
 
+    # An Ash error whose `vars` hold a struct with a value the actor may not see.
+    action :struct_in_vars, :string do
+      run fn _input, _context ->
+        {:error,
+         Ash.Error.Changes.InvalidAttribute.exception(
+           field: :title,
+           message: "is not %{owner}",
+           vars: [
+             owner: %Ash.ForbiddenField{
+               field: :owner,
+               type: :attribute,
+               original_value: "s3cret-original"
+             }
+           ]
+         )}
+      end
+    end
+
     action :hidden_value, :map do
       constraints fields: [hidden: [type: :string]]
 
