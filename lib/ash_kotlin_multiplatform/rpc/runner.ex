@@ -701,7 +701,10 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     do: %{domain: domain, resource: resource, action: rpc_action.action, context: context}
 
   # Reasons this library and the core pipeline return while reading the
-  # request, each worded by a `build_error_response/1` clause below.
+  # request. `ErrorBuilder` words each one, with a field path and a suggestion
+  # the client can act on. The list is closed on purpose: `ErrorBuilder`'s
+  # fallback for a tuple it does not know puts `inspect/1` of it in `details`,
+  # so any other tuple goes to `Errors.to_errors/6` instead.
   @request_reasons [
     :action_not_found,
     :missing_required_parameter,
@@ -710,8 +713,6 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     :unexpected_get_by_fields,
     :invalid_get_by,
     :identity_not_supported,
-    :filter_not_supported,
-    :sort_not_supported,
     :missing_identity,
     :invalid_identity
   ]
@@ -721,28 +722,52 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # error by the `AshIntrospection.Rpc.Error` protocol: an error with no
   # implementation, a bare string or any other term becomes "Something went
   # wrong", so internal detail stays on the server log.
-  defp error_response(:validation_not_supported = reason, _target),
-    do: build_error_response(reason)
-
-  defp error_response(reason, _target)
-       when is_tuple(reason) and tuple_size(reason) > 1 and elem(reason, 0) in @request_reasons,
-       do: build_error_response(reason)
-
   defp error_response(error, target) do
-    errors =
-      error
-      |> Errors.to_errors(
-        target[:domain],
-        target[:resource],
-        target[:action],
-        %{},
-        Pipeline.build_config()
-      )
-      |> Enum.map(&to_client/1)
+    errors = error |> error_maps(target) |> Enum.map(&to_client/1)
 
     log_hidden_detail(errors, error, target)
 
     %{"success" => false, "errors" => errors}
+  end
+
+  # The core has no reason for a read-surface switch or for validating an
+  # action that is not a create or update, so these two are worded here, in
+  # the core's shape.
+  defp error_maps({:filter_not_supported, rpc_action_name}, _target),
+    do: [unsupported_read_parameter("filter", rpc_action_name, "enable_filter?")]
+
+  defp error_maps({:sort_not_supported, rpc_action_name}, _target),
+    do: [unsupported_read_parameter("sort", rpc_action_name, "enable_sort?")]
+
+  defp error_maps(:validation_not_supported, _target) do
+    [
+      %{
+        type: "unsupported",
+        message: "Validation is only supported for create and update actions",
+        short_message: "Unsupported",
+        vars: %{},
+        fields: [],
+        path: []
+      }
+    ]
+  end
+
+  defp error_maps(reason, _target)
+       when is_tuple(reason) and tuple_size(reason) > 1 and elem(reason, 0) in @request_reasons do
+    reason
+    |> ErrorBuilder.build_error_response(Pipeline.build_config())
+    |> List.wrap()
+  end
+
+  defp error_maps(error, target) do
+    Errors.to_errors(
+      error,
+      target[:domain],
+      target[:resource],
+      target[:action],
+      %{},
+      Pipeline.build_config()
+    )
   end
 
   # The client got "Something went wrong" in place of this error, so the log is
@@ -777,104 +802,13 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     |> Map.put("message", render_message(client["message"], vars))
     |> Map.put("fields", fields)
     |> Map.put("field", List.first(fields))
+    |> Map.put("path", Enum.map(Map.get(client, "path") || [], &path_segment/1))
   end
 
-  defp build_error_response(:validation_not_supported) do
-    %{
-      "success" => false,
-      "errors" => [
-        %{
-          "type" => "unsupported",
-          "message" => "Validation is only supported for create and update actions",
-          "shortMessage" => "Unsupported"
-        }
-      ]
-    }
-  end
-
-  # Field selection and getBy errors carry a field path and a suggestion the
-  # client can act on, so they are rendered from the shared `ErrorBuilder`
-  # rather than flattened into a generic "error". The message arrives as a
-  # template plus vars, which `render_message/2` fills in.
-  defp build_error_response({:invalid_fields, _reason} = error),
-    do: build_error_response_from_builder(error)
-
-  defp build_error_response({:missing_get_by_fields, _missing} = error),
-    do: build_error_response_from_builder(error)
-
-  defp build_error_response({:unexpected_get_by_fields, _extra, _allowed} = error),
-    do: build_error_response_from_builder(error)
-
-  defp build_error_response({:invalid_get_by, _details} = error),
-    do: build_error_response_from_builder(error)
-
-  # Raised by the core pipeline, not here: a read that is sent an `identity` is
-  # refused. The shared message names `get_by` as the replacement, which is the
-  # reason this clause is worth having over the generic `inspect/1` fallback.
-  defp build_error_response({:identity_not_supported, _details} = error),
-    do: build_error_response_from_builder(error)
-
-  defp build_error_response({:filter_not_supported, rpc_action_name}) do
-    unsupported_read_parameter_response("filter", rpc_action_name, "enable_filter?")
-  end
-
-  defp build_error_response({:sort_not_supported, rpc_action_name}) do
-    unsupported_read_parameter_response("sort", rpc_action_name, "enable_sort?")
-  end
-
-  defp build_error_response({:action_not_found, action_name}) do
-    %{
-      "success" => false,
-      "errors" => [
-        %{
-          "type" => "action_not_found",
-          "message" => "RPC action '#{action_name}' not found",
-          "shortMessage" => "Action not found"
-        }
-      ]
-    }
-  end
-
-  defp build_error_response({:missing_required_parameter, param}) do
-    %{
-      "success" => false,
-      "errors" => [
-        %{
-          "type" => "missing_required_parameter",
-          "message" => "Required parameter '#{param}' is missing",
-          "shortMessage" => "Missing parameter"
-        }
-      ]
-    }
-  end
-
-  defp build_error_response({:missing_identity, details}) do
-    expected = Map.get(details, :expected_keys, []) |> Enum.join(", ")
-
-    %{
-      "success" => false,
-      "errors" => [
-        %{
-          "type" => "missing_identity",
-          "message" => "Identity required. Expected one of: #{expected}",
-          "shortMessage" => "Missing identity"
-        }
-      ]
-    }
-  end
-
-  defp build_error_response({:invalid_identity, details}) do
-    %{
-      "success" => false,
-      "errors" => [
-        %{
-          "type" => "invalid_identity",
-          "message" => Map.get(details, :message, "Invalid identity provided"),
-          "shortMessage" => "Invalid identity"
-        }
-      ]
-    }
-  end
+  # `ErrorBuilder` leaves path segments as atoms; `Errors.to_errors/6` has
+  # already turned them into strings. A list index stays a number.
+  defp path_segment(segment) when is_atom(segment), do: Atom.to_string(segment)
+  defp path_segment(segment), do: segment
 
   defp render_message(message, vars) when is_binary(message) and is_map(vars) do
     Enum.reduce(vars, message, fn {key, value}, acc ->
@@ -889,40 +823,16 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   defp render_value(value) when is_atom(value) or is_number(value), do: to_string(value)
   defp render_value(value), do: inspect(value)
 
-  defp build_error_response_from_builder(reason) do
-    errors =
-      reason
-      |> ErrorBuilder.build_error_response(Pipeline.build_config())
-      |> List.wrap()
-      |> Enum.map(fn error ->
-        %{
-          "type" => to_string(error.type),
-          "message" => render_message(error.message, Map.get(error, :vars, %{})),
-          "shortMessage" => error.short_message,
-          "field" => error |> Map.get(:fields, []) |> List.first() |> field_name_or_nil()
-        }
-      end)
-
-    %{"success" => false, "errors" => errors}
-  end
-
-  # `fields` reaches here as strings from field selection and as atoms from the
-  # getBy checks, and the client reads one shape.
-  defp field_name_or_nil(nil), do: nil
-  defp field_name_or_nil(field), do: to_string(field)
-
-  defp unsupported_read_parameter_response(parameter, rpc_action_name, dsl_option) do
+  defp unsupported_read_parameter(parameter, rpc_action_name, dsl_option) do
     %{
-      "success" => false,
-      "errors" => [
-        %{
-          "type" => "#{parameter}_not_supported",
-          "message" =>
-            "RPC action '#{rpc_action_name}' does not accept '#{parameter}'. " <>
-              "Set `#{dsl_option} true` on the rpc_action to enable it, or regenerate the client.",
-          "shortMessage" => "#{String.capitalize(parameter)} not supported"
-        }
-      ]
+      type: "#{parameter}_not_supported",
+      message:
+        "RPC action '#{rpc_action_name}' does not accept '#{parameter}'. " <>
+          "Set `#{dsl_option} true` on the rpc_action to enable it, or regenerate the client.",
+      short_message: "#{String.capitalize(parameter)} not supported",
+      vars: %{},
+      fields: [],
+      path: []
     }
   end
 
