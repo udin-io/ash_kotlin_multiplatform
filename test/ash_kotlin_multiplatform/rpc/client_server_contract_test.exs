@@ -57,6 +57,38 @@ defmodule AshKotlinMultiplatform.Rpc.ClientServerContractTest do
     end
   end
 
+  # #61: kotlinx-serialization drops a key the class does not declare, with no
+  # error, so a key the server sends and the class lacks never reaches the app.
+  describe "AshRpcError properties" do
+    test "cover every key the server sends in an error" do
+      responses = [
+        run(%{"action" => "no_such_action"}),
+        run(%{"action" => "create_fault", "input" => %{"title" => "ab"}}),
+        run(%{"action" => "list_authors", "fields" => ["nope"]}),
+        ExUnit.CaptureLog.with_log(fn ->
+          run(%{"action" => "create_fault", "input" => %{"title" => "Fine", "zzqq" => 1}})
+        end)
+        |> elem(0)
+      ]
+
+      sent =
+        for %{"errors" => errors} <- responses,
+            error <- errors,
+            key <- Map.keys(error),
+            into: MapSet.new(),
+            do: key
+
+      declared =
+        ~r/val (\w+):/
+        |> Regex.scan(KotlinStatic.generate_error_types(), capture: :all_but_first)
+        |> List.flatten()
+        |> MapSet.new()
+
+      assert MapSet.subset?(MapSet.new(["field", "errorId", "vars"]), sent)
+      assert MapSet.difference(sent, declared) == MapSet.new()
+    end
+  end
+
   describe "ValidationResult" do
     test "the server sends no class discriminator, so the sealed class must not need one" do
       assert validate(%{"action" => "create_todo", "input" => %{"title" => "Ship it"}}) ==

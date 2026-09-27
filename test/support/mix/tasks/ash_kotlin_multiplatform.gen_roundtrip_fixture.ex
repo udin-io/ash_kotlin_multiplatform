@@ -63,6 +63,8 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.GenRoundtripFixture do
       {"error", error()},
       {"validation_valid", validation_valid()},
       {"validation_invalid", validation_invalid()},
+      {"invalid_attribute", invalid_attribute()},
+      {"internal_error", internal_error()},
       {"embedded_action_result", embedded_action_result()},
       {"embedded_list_action_result", embedded_list_action_result()},
       {"other_resource_action_result", other_resource_action_result()},
@@ -350,6 +352,17 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.GenRoundtripFixture do
 
   defp validation_invalid do
     validate(%{"action" => "create_todo", "input" => %{}})
+  end
+
+  defp invalid_attribute do
+    call(%{"action" => "create_fault", "input" => %{"title" => "ab"}})
+  end
+
+  # An input key the action does not accept. ash_introspection 0.6.0 has no
+  # `Rpc.Error` impl for `NoSuchInput`, so the core answers `internal_error`
+  # with an error id (decision 4 on #123).
+  defp internal_error do
+    call(%{"action" => "create_fault", "input" => %{"title" => "Fine", "zzqq" => 1}})
   end
 
   defp call(params), do: Runner.run_action(:ash_kotlin_multiplatform, params)

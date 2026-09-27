@@ -262,10 +262,12 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
         val type: String? = null,
         val message: String? = null,
         val shortMessage: String? = null,
-        val vars: Map<String, String> = emptyMap(),
+        val vars: Map<String, JsonElement> = emptyMap(),
+        val field: String? = null,
         val fields: List<String> = emptyList(),
         val path: List<String> = emptyList(),
-        val details: Map<String, JsonElement>? = null
+        val details: Map<String, JsonElement>? = null,
+        val errorId: String? = null
     )
     """
   end
