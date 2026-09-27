@@ -211,6 +211,9 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
       {:error, error} ->
         error_response(error, target(domain, resource, rpc_action, context))
     end
+  rescue
+    exception ->
+      error_response(exception, target(domain, resource, rpc_action, context), __STACKTRACE__)
   end
 
   defp build_request(
@@ -303,6 +306,9 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
       {:error, error} ->
         error_response(error, target(domain, resource, rpc_action, %{}))
     end
+  rescue
+    exception ->
+      error_response(exception, target(domain, resource, rpc_action, %{}), __STACKTRACE__)
   end
 
   defp get_record_for_validation(resource, identity, opts) when not is_nil(identity) do
@@ -709,10 +715,12 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # error by the `AshIntrospection.Rpc.Error` protocol: an error with no
   # implementation, a bare string or any other term becomes "Something went
   # wrong", so internal detail stays on the server log.
-  defp error_response(error, target) do
+  # A raise inside an action comes here too, with its stacktrace: a failed
+  # result like any other, never a 500 (decision 3 on #123).
+  defp error_response(error, target, stacktrace \\ []) do
     errors = error |> error_maps(target) |> Enum.map(&to_client/1)
 
-    log_hidden_detail(errors, error, target)
+    log_hidden_detail(errors, error, target, stacktrace)
 
     %{"success" => false, "errors" => errors}
   end
@@ -760,7 +768,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # Splode prefixes `Exception.message/1` with the bread crumbs Ash leaves on an
   # error ("Error returned from: MyApp.Post.create"), and several core
   # `Rpc.Error` impls send that message, so the module name would reach the
-  # client. The log keeps them: `log_hidden_detail/3` gets the original error.
+  # client. The log keeps them: `log_hidden_detail/4` gets the original error.
   defp without_bread_crumbs(error) when is_list(error),
     do: Enum.map(error, &without_bread_crumbs/1)
 
@@ -775,16 +783,16 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # The client got "Something went wrong" in place of this error, so the log is
   # the only place its text survives. An `internal_error` carries the id the
   # client was given, so the two ends can be joined.
-  defp log_hidden_detail(errors, error, target) do
+  defp log_hidden_detail(errors, error, target, stacktrace) do
     case Enum.find(errors, &(&1["type"] in ["unknown_error", "internal_error"])) do
       nil ->
         :ok
 
       hidden ->
         Logger.error("""
-        RPC action #{inspect(target[:action])} on #{inspect(target[:resource])} failed; \\
+        RPC action #{inspect(target[:action])} on #{inspect(target[:resource])} failed; \
         the client got #{hidden["type"]}#{if id = hidden["errorId"], do: " (error id #{id})"}.
-        #{if is_exception(error), do: Exception.format(:error, error), else: inspect(error)}\\
+        #{if is_exception(error), do: Exception.format(:error, error, stacktrace), else: inspect(error)}
         """)
     end
   end

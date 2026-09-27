@@ -121,6 +121,7 @@ defmodule AshKotlinMultiplatform.Test.Domain do
     # Each way an action fails, for the error redaction tests (#28).
     resource AshKotlinMultiplatform.Test.Fault do
       rpc_action :create_fault, :create
+      rpc_action :create_fault_raising, :create_raising
       rpc_action :list_refused_faults, :refused
       rpc_action :fault_return_string, :return_string
       rpc_action :fault_return_term, :return_term

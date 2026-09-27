@@ -71,6 +71,32 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerErrorRedactionTest do
     end
   end
 
+  describe "an action that raises" do
+    test "returns a failed result, and the exception stays on the server" do
+      {response, log} = with_log(fn -> run(%{"action" => "fault_raise"}) end)
+
+      refute Jason.encode!(response) =~ "hunter2"
+      assert %{"success" => false, "errors" => [error]} = response
+      assert error["type"] == "unknown_error"
+      assert error["message"] == "Something went wrong"
+      assert log =~ "hunter2"
+    end
+
+    test "returns a failed result from validate_action/3 too" do
+      {response, log} =
+        with_log(fn ->
+          Runner.validate_action(:ash_kotlin_multiplatform, %{
+            "action" => "create_fault_raising",
+            "input" => %{"title" => "Fine title"}
+          })
+        end)
+
+      refute Jason.encode!(response) =~ "hunter2"
+      assert %{"success" => false, "errors" => [%{"type" => "unknown_error"}]} = response
+      assert log =~ "hunter2"
+    end
+  end
+
   describe "an attribute that fails a constraint" do
     test "names the field, in fields and in field, with no bread crumbs" do
       response = run(%{"action" => "create_fault", "input" => %{"title" => "ab"}})

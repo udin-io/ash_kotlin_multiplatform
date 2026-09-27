@@ -61,6 +61,12 @@ defmodule AshKotlinMultiplatform.Test.Fault do
       accept [:title]
     end
 
+    # Raises while the changeset is built, so `validate_action/3` meets it too.
+    create :create_raising do
+      accept [:title]
+      change fn _changeset, _context -> raise "db password=hunter2" end
+    end
+
     read :refused do
       prepare AshKotlinMultiplatform.Test.Fault.RefuseByPolicy
     end
