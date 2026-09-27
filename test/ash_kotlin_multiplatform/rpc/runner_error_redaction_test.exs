@@ -81,6 +81,35 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerErrorRedactionTest do
     end
   end
 
+  describe "a required attribute left out" do
+    test "names the field, with no bread crumbs" do
+      response = run(%{"action" => "create_fault", "input" => %{}})
+
+      refute Jason.encode!(response) =~ "Bread Crumbs"
+      assert %{"success" => false, "errors" => [error]} = response
+      assert error["type"] == "required"
+      assert error["message"] == "attribute title is required"
+      assert error["field"] == "title"
+    end
+  end
+
+  # Decision 4 on #123: ash_introspection 0.6.0 words none of these, so the
+  # client gets internal_error until the core names the key.
+  describe "a request naming an input key that does not exist" do
+    test "gets internal_error, with no module name, and the log keeps the key" do
+      {response, log} =
+        with_log(fn ->
+          run(%{"action" => "create_fault", "input" => %{"title" => "Fine", "zzqq" => 1}})
+        end)
+
+      refute Jason.encode!(response) =~ "AshKotlinMultiplatform"
+      assert %{"success" => false, "errors" => [error]} = response
+      assert error["type"] == "internal_error"
+      assert error["message"] == "Something went wrong. Unique error id: #{error["errorId"]}"
+      assert log =~ "zzqq"
+    end
+  end
+
   describe "a generic action returning a forbidden field" do
     test "sends null, and never the hidden value" do
       response = run(%{"action" => "fault_hidden_value"})

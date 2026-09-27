@@ -761,7 +761,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
 
   defp error_maps(error, target) do
     Errors.to_errors(
-      error,
+      without_bread_crumbs(error),
       target[:domain],
       target[:resource],
       target[:action],
@@ -769,6 +769,21 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
       Pipeline.build_config()
     )
   end
+
+  # Splode prefixes `Exception.message/1` with the bread crumbs Ash leaves on an
+  # error ("Error returned from: MyApp.Post.create"), and several core
+  # `Rpc.Error` impls send that message, so the module name would reach the
+  # client. The log keeps them: `log_hidden_detail/3` gets the original error.
+  defp without_bread_crumbs(error) when is_list(error),
+    do: Enum.map(error, &without_bread_crumbs/1)
+
+  defp without_bread_crumbs(%{errors: errors} = error) when is_list(errors),
+    do: %{drop_bread_crumbs(error) | errors: Enum.map(errors, &without_bread_crumbs/1)}
+
+  defp without_bread_crumbs(error), do: drop_bread_crumbs(error)
+
+  defp drop_bread_crumbs(%{bread_crumbs: _} = error), do: %{error | bread_crumbs: []}
+  defp drop_bread_crumbs(error), do: error
 
   # The client got "Something went wrong" in place of this error, so the log is
   # the only place its text survives. An `internal_error` carries the id the
