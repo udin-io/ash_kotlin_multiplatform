@@ -184,6 +184,16 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerErrorRedactionTest do
       serve_under(Test.JunkHandlerDomain, "fault_return_string")
     end
 
+    test "a handler that drops the error cannot keep it out of the log" do
+      {response, log} =
+        with_log(fn ->
+          run(%{"action" => "fault_return_string"}, context: %{handler_returns: nil})
+        end)
+
+      assert %{"success" => false, "errors" => []} = response
+      assert log =~ "10.0.0.5"
+    end
+
     for {label, context} <- [
           {"returns a string", quote(do: %{handler_returns: "db password=hunter2"})},
           {"returns a struct",
@@ -256,6 +266,9 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerErrorRedactionTest do
       assert error["type"] == "internal_error"
       assert error["message"] == "Something went wrong. Unique error id: #{error["errorId"]}"
       assert log =~ "zzqq"
+
+      assert length(Regex.scan(~r/\[(error|warning)\]/, log)) == 1,
+             "logged more than once:\n#{log}"
     end
   end
 

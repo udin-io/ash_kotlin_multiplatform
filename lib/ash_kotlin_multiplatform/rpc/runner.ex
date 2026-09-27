@@ -736,12 +736,69 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # stacktrace: a failed result like any other, never a 500 (decision 3 on
   # #123).
   defp error_response(error, target, stacktrace \\ []) do
+    kinds = protocol_kinds(error)
+
+    # Logged before any handler runs, so a handler that relabels or drops the
+    # error cannot keep it out of the log. An error with no protocol impl is
+    # logged by the core itself, so it is not logged here as well.
+    if :unknown in kinds,
+      do: log_hidden_detail("the error protocol answers unknown_error", error, target, stacktrace)
+
     errors = client_errors(error, target)
 
-    log_hidden_detail(errors, error, target, stacktrace)
+    # What remains is a handler or `client_errors/2` failing: the client got
+    # an error id, and only this line joins it to the original error.
+    if kinds == [:known] or kinds == [] do
+      errors
+      |> Enum.filter(&(&1["type"] in ["unknown_error", "internal_error"]))
+      |> Enum.each(fn hidden ->
+        log_hidden_detail(
+          "the client got #{hidden["type"]} (error id #{hidden["errorId"]})",
+          error,
+          target,
+          stacktrace
+        )
+      end)
+    end
 
     %{"success" => false, "errors" => errors}
   end
+
+  # How the `AshIntrospection.Rpc.Error` protocol words each error, before any
+  # handler sees it: `:known`, `:unknown` for `UnknownError`, whose impl sends
+  # "Something went wrong" and logs nothing, or `:unimplemented`, which the
+  # core logs itself.
+  defp protocol_kinds(error) do
+    if request_reason?(error) do
+      []
+    else
+      error
+      |> Ash.Error.to_error_class()
+      |> Errors.unwrap_errors()
+      |> Enum.map(&protocol_kind/1)
+      |> Enum.uniq()
+      |> Enum.sort()
+    end
+  rescue
+    _ -> [:unknown]
+  end
+
+  defp protocol_kind(%Ash.Error.Unknown.UnknownError{}), do: :unknown
+
+  defp protocol_kind(error) do
+    if AshIntrospection.Rpc.Error.impl_for(error), do: :known, else: :unimplemented
+  end
+
+  defp request_reason?(:validation_not_supported), do: true
+
+  defp request_reason?({tag, _}) when tag in [:filter_not_supported, :sort_not_supported],
+    do: true
+
+  defp request_reason?(reason)
+       when is_tuple(reason) and tuple_size(reason) > 1 and elem(reason, 0) in @request_reasons,
+       do: true
+
+  defp request_reason?(_), do: false
 
   # The last resort. An error handler is consumer code: one that returns a
   # string or a struct makes the core or `to_client/1` raise, and a raise here
@@ -898,18 +955,11 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # The client got "Something went wrong" in place of this error, so the log is
   # the only place its text survives. An `internal_error` carries the id the
   # client was given, so the two ends can be joined.
-  defp log_hidden_detail(errors, error, target, stacktrace) do
-    case Enum.find(errors, &(&1["type"] in ["unknown_error", "internal_error"])) do
-      nil ->
-        :ok
-
-      hidden ->
-        Logger.error("""
-        RPC action #{inspect(target[:action])} on #{inspect(target[:resource])} failed; \
-        the client got #{hidden["type"]}#{if id = hidden["errorId"], do: " (error id #{id})"}.
-        #{format_for_log(error, stacktrace)}
-        """)
-    end
+  defp log_hidden_detail(outcome, error, target, stacktrace) do
+    Logger.error("""
+    RPC action #{inspect(target[:action])} on #{inspect(target[:resource])} failed; #{outcome}.
+    #{format_for_log(error, stacktrace)}
+    """)
   end
 
   # A throw or an exit is caught as `{kind, reason}`, which the core treats as
