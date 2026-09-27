@@ -159,6 +159,62 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerRpcActionOptionsTest do
     end
   end
 
+  # #29. `Ash.Query.do_filter/2` reads a map operand as an operator
+  # expression, so an unchecked identity value turns "destroy this record" into
+  # "destroy the first record matching a predicate". The core refuses a
+  # non-scalar value before it builds the filter; these prove the refusal
+  # reaches a client and that nothing is destroyed.
+  describe "a non-scalar identity value" do
+    defp listed?(id) do
+      assert %{"success" => true, "data" => authors} =
+               run(%{"action" => "list_authors", "fields" => ["id"]})
+
+      Enum.any?(authors, &(&1["id"] == id))
+    end
+
+    test "on the primary key is refused and destroys nothing" do
+      id = create_author("Ursula Le Guin", unique_email())
+
+      assert %{"type" => "invalid_identity"} =
+               error(
+                 run(%{
+                   "action" => "destroy_author",
+                   "identity" => %{"id" => %{"greaterThan" => ""}}
+                 })
+               )
+
+      assert listed?(id)
+    end
+
+    # A bare identity value, not a map, goes straight to the primary key. A list
+    # there reaches the scalar check; a map under a key fails the key match
+    # first, so it does not.
+    test "as a list for the primary key is refused, naming the key, and destroys nothing" do
+      id = create_author("Ursula Le Guin", unique_email())
+
+      assert %{"type" => "invalid_identity", "message" => message} =
+               error(run(%{"action" => "destroy_author", "identity" => [id]}))
+
+      assert message =~ "Non-scalar value provided for: id"
+      assert listed?(id)
+    end
+
+    test "on a named identity is refused, naming the key, and destroys nothing" do
+      id = create_author("Ursula Le Guin", unique_email())
+
+      assert %{"type" => "invalid_identity", "message" => message} =
+               error(
+                 run(%{
+                   "action" => "destroy_author_by_email",
+                   "identity" => %{"email" => %{"greaterThan" => ""}}
+                 })
+               )
+
+      assert message =~ "Non-scalar value provided for: email"
+      assert listed?(id)
+    end
+  end
+
   describe "identity on a read" do
     # The core refuses it rather than dropping it, and the message names the
     # replacement. Worth a test here because the runner has to route that error

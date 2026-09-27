@@ -31,6 +31,13 @@ defmodule AshKotlinMultiplatform.Test.Domain do
       # the round-trip gate needs in order to decode each typed return shape
       # `FunctionCore.determine_return_type/1` can produce (#22).
       rpc_action :destroy_author, :destroy
+
+      # A destroy addressed by a named identity rather than the primary key, so
+      # a non-scalar value reaches the core's scalar check (#29).
+      rpc_action :destroy_author_by_email, :destroy do
+        identities [:unique_email]
+      end
+
       rpc_action :get_author, :by_id
       rpc_action :keyset_authors, :keyset_paged
 
