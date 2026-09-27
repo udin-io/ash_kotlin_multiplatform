@@ -508,16 +508,38 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   end
 
   # `Ash.Page.page_opts/1` reads `page[:after]` and `page[:offset]` to pick the
-  # keyset or offset schema and then validates the map with `Spark.Options`, so
-  # pagination is the one parsed map that must carry atoms
+  # keyset or offset schema and then validates the result with `Spark.Options`,
+  # so pagination is the one parsed map that must carry atoms
   # (`deps/ash/lib/ash/page/page.ex:17`). A key naming no page option stays a
-  # string and Ash rejects the map, which is what it did before — the
-  # difference is that the shape no longer turns on what the VM has interned
-  # (#77).
+  # string and Ash rejects it, which is what it did before — the difference is
+  # that the shape no longer turns on what the VM has interned (#77).
+  #
+  # ash 3.33.10 added a guard that rejects the whole `page` term up front
+  # unless it is already a list (`deps/ash/lib/ash/page/page.ex:16`), before
+  # `resolve/2`'s map ever reaches the option-by-option validation above. A
+  # map with only known names is still a valid page, so it becomes a keyword
+  # list to clear that guard. A map holding an unresolved (string) key stays a
+  # map on purpose: `Ash.Error.Query.InvalidPage` inspects whatever it is
+  # handed verbatim (`deps/ash/lib/ash/error/query/invalid_page.ex:10`), and
+  # `RunnerKeyTypeTest` pins that an unknown key's error message reads back
+  # the client's own map shape, `"key" => value`, not a list of tuples
+  # (issue #116).
   defp parse_pagination(params, config) do
     case params["page"] do
-      nil -> nil
-      page -> page |> KeyNames.parse(nil, config) |> KeyNames.resolve(@page_option_names)
+      nil ->
+        nil
+
+      page ->
+        resolved =
+          page
+          |> KeyNames.parse(nil, config)
+          |> KeyNames.resolve(@page_option_names)
+
+        if Enum.all?(Map.keys(resolved), &is_atom/1) do
+          Map.to_list(resolved)
+        else
+          resolved
+        end
     end
   end
 
