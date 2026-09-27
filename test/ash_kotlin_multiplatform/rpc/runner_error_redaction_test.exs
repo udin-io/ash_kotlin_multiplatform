@@ -18,7 +18,10 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerErrorRedactionTest do
 
   import ExUnit.CaptureLog
 
+  alias AshKotlinMultiplatform.Manifest
+  alias AshKotlinMultiplatform.Manifest.Entrypoints
   alias AshKotlinMultiplatform.Rpc.Runner
+  alias AshKotlinMultiplatform.Test
 
   describe "a read a policy refuses" do
     test "sends forbidden, with no stack frame and no module name" do
@@ -97,6 +100,39 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerErrorRedactionTest do
     end
   end
 
+  describe "a domain with show_raised_errors? true" do
+    setup do
+      serve_under(Test.RaisedErrorsDomain, "fault_raise")
+    end
+
+    test "sends the exception's own message" do
+      {response, _log} = with_log(fn -> run(%{"action" => "fault_raise"}) end)
+
+      assert %{"success" => false, "errors" => [error]} = response
+      assert error["message"] =~ "db password=hunter2"
+    end
+  end
+
+  describe "a domain whose error_handler raises" do
+    setup do
+      serve_under(Test.FailingHandlerDomain, "fault_return_string")
+    end
+
+    test "fails closed: internal_error, with an id the log shares" do
+      {response, log} = with_log(fn -> run(%{"action" => "fault_return_string"}) end)
+
+      json = Jason.encode!(response)
+      refute json =~ "10.0.0.5"
+      refute json =~ "hunter2"
+
+      assert %{"success" => false, "errors" => [error]} = response
+      assert error["type"] == "internal_error"
+      assert error["message"] == "Something went wrong. Unique error id: #{error["errorId"]}"
+      assert log =~ error["errorId"]
+      assert log =~ "10.0.0.5"
+    end
+  end
+
   describe "an attribute that fails a constraint" do
     test "names the field, in fields and in field, with no bread crumbs" do
       response = run(%{"action" => "create_fault", "input" => %{"title" => "ab"}})
@@ -164,6 +200,29 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerErrorRedactionTest do
     assert error["vars"]["min"] == 3
     assert error["fields"] == ["title"]
     assert error["field"] == "title"
+  end
+
+  # `Test.OverrideManifest` serves the real lookup with one entrypoint's domain
+  # swapped. The domain is the only thing that differs, so it is what the
+  # response follows.
+  defp serve_under(domain, rpc_action_name) do
+    original = Application.fetch_env!(:ash_kotlin_multiplatform, :manifest)
+    namespace = Entrypoints.namespace()
+
+    lookup =
+      Test.Manifest
+      |> Manifest.rpc_action_lookup()
+      |> Map.update!(rpc_action_name, fn entrypoint ->
+        %{entrypoint | config: put_in(entrypoint.config, [namespace, :domain], domain)}
+      end)
+
+    Test.OverrideManifest.put(%{rpc_action_lookup: lookup})
+    Application.put_env(:ash_kotlin_multiplatform, :manifest, Test.OverrideManifest)
+
+    on_exit(fn ->
+      Test.OverrideManifest.clear()
+      Application.put_env(:ash_kotlin_multiplatform, :manifest, original)
+    end)
   end
 
   defp run(params, opts \\ []),

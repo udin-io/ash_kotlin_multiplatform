@@ -248,7 +248,28 @@ defmodule AshKotlinMultiplatform.Rpc do
     - Object-oriented API wrappers (e.g., TodoRpc.create())
     - Phoenix Channel client (if enabled)
     """,
-    schema: [],
+    schema: [
+      error_handler: [
+        type: {:or, [:mfa, :module]},
+        doc: """
+        Transforms each error before it reaches the client. A module is called as
+        `module.handle_error(error, context)`; `{module, function, args}` as
+        `apply(module, function, [error, context | args])`. Returning `nil` drops
+        the error. A handler that raises fails closed: the client gets an
+        `internal_error` carrying an error id, and the server log carries the
+        original error under the same id.
+        """
+      ],
+      show_raised_errors?: [
+        type: :boolean,
+        default: false,
+        doc: """
+        Send an exception's own message to the client instead of
+        "Something went wrong". For development only: the message carries
+        whatever the failing code put in it.
+        """
+      ]
+    ],
     entities: [
       @resource
     ]
