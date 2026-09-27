@@ -11,6 +11,40 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.PayloadBuilder do
   """
 
   @doc """
+  The Kotlin source of a function that turns one `fields` element into a
+  `JsonElement` by an explicit `when` over its runtime type, instead of
+  asking kotlinx-serialization to resolve a serializer for `Any` (#62).
+
+  Embedded once per generated action as a local function
+  (`build_payload_code/3`), or once at file scope, prefixed `internal`, by
+  `PhoenixChannel.generate_rpc_channel/0` — both from this one Elixir source
+  so the two copies never drift apart. `visibility` is `""` for a local
+  declaration (Kotlin forbids a visibility modifier there) or `"internal "`
+  for the file-scope one.
+  """
+  def field_to_json_element_source(visibility \\ "") do
+    """
+    #{visibility}fun ashFieldToJsonElement(value: Any?): JsonElement = when (value) {
+        null -> JsonNull
+        is String -> JsonPrimitive(value)
+        is Boolean -> JsonPrimitive(value)
+        is Number -> JsonPrimitive(value)
+        is Map<*, *> -> JsonObject(
+            value.entries.associate { (k, v) ->
+                k.toString() to ashFieldToJsonElement(v)
+            }
+        )
+        is List<*> -> JsonArray(value.map { ashFieldToJsonElement(it) })
+        else -> throw IllegalArgumentException(
+            "Cannot encode field selection element of type " +
+                "${value::class.simpleName}"
+        )
+    }
+    """
+    |> String.trim()
+  end
+
+  @doc """
   Generates the payload construction code for an RPC function.
 
   ## Parameters
@@ -76,13 +110,11 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.Helpers.PayloadBuilder do
       if include_fields do
         payload_lines ++
           [
+            field_to_json_element_source(),
             """
             putJsonArray("fields") {
                             config.fields.forEach { field ->
-                                when (field) {
-                                    is String -> add(field)
-                                    else -> add(ashRpcJson.encodeToJsonElement(field))
-                                }
+                                add(ashFieldToJsonElement(field))
                             }
                         }
             """

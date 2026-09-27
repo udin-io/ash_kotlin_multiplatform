@@ -97,15 +97,18 @@ defmodule AshKotlinMultiplatform.Codegen.UntypedShapesTest do
       kotlin
     end
 
-    # `fields: List<Any>` and the hook context maps are the exceptions: neither
-    # sits inside a `@Serializable` declaration, so neither reaches a serializer
-    # through a generated class.
+    # `fields: List<Any>`, the hook context maps, and
+    # `ashFieldToJsonElement(value: Any?)` are the exceptions: none sits inside
+    # a `@Serializable` declaration, so none reaches a serializer through a
+    # generated class (#62's `value` is a plain function parameter, walked by
+    # hand with `when`, never encoded through kotlinx).
     test "puts Any in no serializable declaration" do
       remaining =
         generated()
         |> anys()
         |> Enum.reject(&String.contains?(&1, "fields: List<Any>"))
         |> Enum.reject(&String.contains?(&1, "Map<String, Any?>"))
+        |> Enum.reject(&String.contains?(&1, "ashFieldToJsonElement(value: Any?)"))
 
       assert remaining == []
     end
