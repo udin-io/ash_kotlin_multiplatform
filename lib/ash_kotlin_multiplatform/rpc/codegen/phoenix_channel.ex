@@ -42,6 +42,8 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
   it lives in another package and can change without this repository noticing.
   """
 
+  alias AshKotlinMultiplatform.Rpc.Codegen.Helpers.PayloadBuilder
+
   @doc """
   Generates the complete Phoenix Channel client code for Kotlin.
 
@@ -906,6 +908,8 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
 
   defp generate_rpc_channel do
     """
+    #{PayloadBuilder.field_to_json_element_source("internal ")}
+
     /**
      * AshRpcChannel provides a convenient wrapper for Ash RPC operations over Phoenix Channels.
      *
@@ -979,10 +983,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.PhoenixChannel do
                 }
                 putJsonArray("fields") {
                     fields.forEach { field ->
-                        when (field) {
-                            is String -> add(field)
-                            else -> add(ashRpcJson.encodeToJsonElement(field))
-                        }
+                        add(ashFieldToJsonElement(field))
                     }
                 }
                 tenant?.let { put("tenant", it) }

@@ -574,6 +574,23 @@ private fun refusedReadParametersDecode(): String {
     return "filter=${filter.type} sort=${sort.type}"
 }
 
+// #62: a nested field selection - a Map element inside `fields: List<Any>` -
+// threw `SerializationException: Serializer for class 'Any' is not found`,
+// because the old code asked kotlinx to `encodeToJsonElement` a value statically
+// typed `Any`. `ashFieldToJsonElement` (PhoenixChannel's copy, `internal` and
+// so module-visible) walks the runtime type by hand instead. Calls the real
+// generated function, not a reimplementation of it.
+private fun nestedFieldSelectionEncodes(): String {
+    val fields = listOf("name", mapOf("books" to listOf("title")))
+    val built = buildJsonArray {
+        fields.forEach { field -> add(ashFieldToJsonElement(field)) }
+    }
+
+    expect("fields", built.toString(), """["name",{"books":["title"]}]""")
+
+    return "fields=$built"
+}
+
 fun main() {
     check("#51 populated untyped map via dataAs()", ::populatedUntypedMap)
     check("#51 untyped map keeps number literals", ::untypedMapKeepsNumberLiterals)
@@ -612,6 +629,7 @@ fun main() {
     check("#25 not_found_error? false decodes a null", ::notFoundErrorFalseDecodesANull)
     check("#25 getBy validation errors decode", ::getByValidationErrorsDecode)
     check("#25 a refused filter or sort decodes", ::refusedReadParametersDecode)
+    check("#62 a nested field selection encodes", ::nestedFieldSelectionEncodes)
 
     if (failures > 0) {
         println("$failures round-trip check(s) failed")
