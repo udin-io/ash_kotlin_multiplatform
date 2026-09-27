@@ -54,6 +54,7 @@ defmodule AshKotlinMultiplatform.Rpc.ClientServerContractTest do
                run(%{"action" => "list_authors", "fields" => ["nope"]})
 
       assert error["shortMessage"] == "Unknown field"
+      refute Jason.encode!(error) =~ "AshKotlinMultiplatform"
     end
   end
 

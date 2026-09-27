@@ -48,5 +48,25 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerRequestErrorTest do
              "Identity fields do not match any configured identity. Provided: [nope], expected: [id]"
   end
 
+  describe "a field selection the resource cannot answer" do
+    test "an unknown field names the Kotlin type, not the Elixir module" do
+      response = run(%{"action" => "list_authors", "fields" => ["nope"]})
+
+      refute Jason.encode!(response) =~ "AshKotlinMultiplatform"
+      assert %{"success" => false, "errors" => [error]} = response
+      assert error["type"] == "unknown_field"
+      assert error["message"] == "Unknown field nope for resource Author"
+      assert error["vars"]["resource"] == "Author"
+    end
+
+    test "fields on a primitive return name the type without its module" do
+      response = run(%{"action" => "fault_return_string", "fields" => ["length"]})
+
+      refute Jason.encode!(response) =~ "Ash.Type"
+      assert %{"success" => false, "errors" => [error]} = response
+      assert error["message"] == "Cannot select fields from primitive type String"
+    end
+  end
+
   defp run(params), do: Runner.run_action(:ash_kotlin_multiplatform, params)
 end

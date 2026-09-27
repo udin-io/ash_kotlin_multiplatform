@@ -803,6 +803,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     reason
     |> ErrorBuilder.build_error_response(Pipeline.build_config())
     |> List.wrap()
+    |> Enum.map(&without_module_names/1)
   end
 
   defp error_maps(error, target) do
@@ -814,6 +815,36 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
       Map.get(target, :context, %{}),
       Pipeline.build_config()
     )
+  end
+
+  # `ErrorBuilder` puts `inspect/1` of a resource or an Ash type into `vars`
+  # ("for resource MyApp.Blog.Post", "primitive type Ash.Type.String"). The
+  # client names a resource by its Kotlin type and has never seen the module,
+  # so each loaded module a value names becomes that type name, or the last
+  # segment of the module for anything that is not a resource. Messages are
+  # templates over `vars`, so the rendered message follows.
+  @module_name ~r/\b[A-Z][A-Za-z0-9_]*(?:\.[A-Z][A-Za-z0-9_]*)+\b/
+
+  defp without_module_names(%{vars: vars} = error) when is_map(vars),
+    do: %{error | vars: Map.new(vars, fn {key, value} -> {key, client_names(value)} end)}
+
+  defp without_module_names(error), do: error
+
+  defp client_names(value) when is_binary(value),
+    do: Regex.replace(@module_name, value, &client_name/1)
+
+  defp client_names(value), do: value
+
+  defp client_name(text) do
+    module = String.to_existing_atom("Elixir." <> text)
+
+    cond do
+      not Code.ensure_loaded?(module) -> text
+      Ash.Resource.Info.resource?(module) -> ResourceInfo.kotlin_multiplatform_type_name!(module)
+      true -> module |> Module.split() |> List.last()
+    end
+  rescue
+    ArgumentError -> text
   end
 
   # Splode prefixes `Exception.message/1` with the bread crumbs Ash leaves on an
