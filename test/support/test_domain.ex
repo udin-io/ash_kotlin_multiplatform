@@ -122,10 +122,13 @@ defmodule AshKotlinMultiplatform.Test.Domain do
     resource AshKotlinMultiplatform.Test.Fault do
       rpc_action :create_fault, :create
       rpc_action :create_fault_raising, :create_raising
+      rpc_action :create_fault_exiting, :create_exiting
       rpc_action :list_refused_faults, :refused
       rpc_action :fault_return_string, :return_string
       rpc_action :fault_return_term, :return_term
       rpc_action :fault_raise, :raise
+      rpc_action :fault_exit, :exit
+      rpc_action :fault_throw, :throw
       rpc_action :fault_hidden_value, :hidden_value
     end
 

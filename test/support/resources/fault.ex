@@ -73,6 +73,11 @@ defmodule AshKotlinMultiplatform.Test.Fault do
       change fn _changeset, _context -> raise "db password=hunter2" end
     end
 
+    create :create_exiting do
+      accept [:title]
+      change fn _changeset, _context -> exit({:timeout, "db password=hunter2"}) end
+    end
+
     read :refused do
       prepare AshKotlinMultiplatform.Test.Fault.RefuseByPolicy
     end
@@ -91,6 +96,16 @@ defmodule AshKotlinMultiplatform.Test.Fault do
 
     action :raise, :string do
       run fn _input, _context -> raise "db password=hunter2" end
+    end
+
+    # What a `GenServer.call/3` timeout does, and a bare throw. Neither is an
+    # exception, so a `rescue` alone lets both through.
+    action :exit, :string do
+      run fn _input, _context -> exit({:timeout, "db password=hunter2"}) end
+    end
+
+    action :throw, :string do
+      run fn _input, _context -> throw({:db, "password=hunter2"}) end
     end
 
     action :hidden_value, :map do

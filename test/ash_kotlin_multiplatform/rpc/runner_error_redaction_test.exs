@@ -85,6 +85,30 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerErrorRedactionTest do
       assert log =~ "hunter2"
     end
 
+    for action <- ["fault_exit", "fault_throw"] do
+      test "#{action}: an exit or a throw is a failed result too" do
+        {response, log} = with_log(fn -> run(%{"action" => unquote(action)}) end)
+
+        refute Jason.encode!(response) =~ "hunter2"
+        assert %{"success" => false, "errors" => [%{"type" => "unknown_error"}]} = response
+        assert log =~ "hunter2"
+      end
+    end
+
+    test "an exit is a failed result from validate_action/3 too" do
+      {response, log} =
+        with_log(fn ->
+          Runner.validate_action(:ash_kotlin_multiplatform, %{
+            "action" => "create_fault_exiting",
+            "input" => %{"title" => "Fine title"}
+          })
+        end)
+
+      refute Jason.encode!(response) =~ "hunter2"
+      assert %{"success" => false, "errors" => [%{"type" => "unknown_error"}]} = response
+      assert log =~ "hunter2"
+    end
+
     test "returns a failed result from validate_action/3 too" do
       {response, log} =
         with_log(fn ->

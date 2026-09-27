@@ -217,6 +217,13 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   rescue
     exception ->
       error_response(exception, target(domain, resource, rpc_action, context), __STACKTRACE__)
+  catch
+    kind, reason ->
+      error_response(
+        {kind, reason},
+        target(domain, resource, rpc_action, context),
+        __STACKTRACE__
+      )
   end
 
   defp build_request(
@@ -312,6 +319,13 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   rescue
     exception ->
       error_response(exception, target(domain, resource, rpc_action, context), __STACKTRACE__)
+  catch
+    kind, reason ->
+      error_response(
+        {kind, reason},
+        target(domain, resource, rpc_action, context),
+        __STACKTRACE__
+      )
   end
 
   defp get_record_for_validation(resource, identity, opts) when not is_nil(identity) do
@@ -718,8 +732,9 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # error by the `AshIntrospection.Rpc.Error` protocol: an error with no
   # implementation, a bare string or any other term becomes "Something went
   # wrong", so internal detail stays on the server log.
-  # A raise inside an action comes here too, with its stacktrace: a failed
-  # result like any other, never a 500 (decision 3 on #123).
+  # A raise, throw or exit inside an action comes here too, with its
+  # stacktrace: a failed result like any other, never a 500 (decision 3 on
+  # #123).
   defp error_response(error, target, stacktrace \\ []) do
     errors = error |> error_maps(target) |> Enum.map(&to_client/1)
 
@@ -795,10 +810,20 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
         Logger.error("""
         RPC action #{inspect(target[:action])} on #{inspect(target[:resource])} failed; \
         the client got #{hidden["type"]}#{if id = hidden["errorId"], do: " (error id #{id})"}.
-        #{if is_exception(error), do: Exception.format(:error, error, stacktrace), else: inspect(error)}
+        #{format_for_log(error, stacktrace)}
         """)
     end
   end
+
+  # A throw or an exit is caught as `{kind, reason}`, which the core treats as
+  # any other term: "Something went wrong".
+  defp format_for_log({kind, reason}, stacktrace) when kind in [:throw, :exit],
+    do: Exception.format(kind, reason, stacktrace)
+
+  defp format_for_log(error, stacktrace) when is_exception(error),
+    do: Exception.format(:error, error, stacktrace)
+
+  defp format_for_log(error, _stacktrace), do: inspect(error)
 
   # `:camel_case` is pinned rather than read from `output_field_formatter`:
   # the Kotlin and Swift clients read `shortMessage` whatever that setting is
