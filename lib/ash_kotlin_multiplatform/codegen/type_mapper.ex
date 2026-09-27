@@ -352,18 +352,19 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
   def get_interop_field_names_map(_), do: %{}
 
   @doc """
-  Generates a Kotlin class name from an Elixir module.
+  The name of the class the generated file declares for a resource: its
+  `type_name`, else the last segment of its module.
+
+  `ResourceSchemas` declares the class under the same name, so a field and
+  its class cannot disagree.
 
   ## Examples
 
       iex> get_kotlin_class_name(MyApp.Accounts.User)
       "User"
   """
-  def get_kotlin_class_name(module) when is_atom(module) do
-    module
-    |> Module.split()
-    |> List.last()
-  end
+  def get_kotlin_class_name(module) when is_atom(module),
+    do: AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name!(module)
 
   @doc """
   Checks if an Ash type should be generated as a Kotlin enum class.

@@ -44,6 +44,10 @@ defmodule AshKotlinMultiplatform.Test.Book do
     attribute :meta, AshKotlinMultiplatform.Test.BookMeta, public?: true
     attribute :private_meta, AshKotlinMultiplatform.Test.PrivateMeta, public?: false
 
+    # An embedded resource declared under its `type_name`, `BookStamp`. The
+    # field named its module, `Stamp`, before.
+    attribute :stamp, AshKotlinMultiplatform.Test.Stamp, public?: true
+
     attribute :extra, :union do
       public? true
       constraints types: [note: [type: AshKotlinMultiplatform.Test.UnionNote]]

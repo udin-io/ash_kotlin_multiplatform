@@ -24,6 +24,7 @@ defmodule AshKotlinMultiplatform.Manifest.EmbeddedResourcesTest do
              Test.Edition,
              Test.PrivateMeta,
              Test.SecretNote,
+             Test.Stamp,
              Test.Summary,
              Test.SummaryOpts,
              Test.UnionNote,

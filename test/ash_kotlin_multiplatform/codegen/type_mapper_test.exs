@@ -143,6 +143,26 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapperTest do
     end
   end
 
+  # A class is declared under the resource's `type_name`, so a type that
+  # names the resource must use it too. `Stamp` declares `BookStamp`.
+  describe "a resource's class name" do
+    test "is its type_name for an embedded resource type" do
+      assert TypeMapper.get_kotlin_type_for_type(AshKotlinMultiplatform.Test.Stamp) ==
+               "BookStamp"
+    end
+
+    test "is its type_name for a :struct instance_of" do
+      assert TypeMapper.get_kotlin_type_for_type(Ash.Type.Struct,
+               instance_of: AshKotlinMultiplatform.Test.Stamp
+             ) == "BookStamp"
+    end
+
+    test "is its module's last segment when it has no type_name" do
+      assert TypeMapper.get_kotlin_type_for_type(AshKotlinMultiplatform.Test.Summary) ==
+               "Summary"
+    end
+  end
+
   describe "is_enum_type?/2" do
     test "is true for an atom constrained to a list of values" do
       assert TypeMapper.is_enum_type?(Ash.Type.Atom, one_of: [:a, :b])
