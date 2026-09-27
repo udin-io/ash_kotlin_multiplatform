@@ -202,15 +202,8 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
              context,
              config
            ),
-         {:ok, ash_result} <- Pipeline.execute_ash_action(request),
-         {:ok, processed} <- Pipeline.process_result(ash_result, request) do
-      # `format_data/2` and not `format_output/1`: the latter renames field names
-      # and never looks at a value, so a vector left here as the packed binary
-      # `Jason` refuses (#71). `format_data/2` returns the payload alone, which
-      # is what lets this library keep its own envelope below.
-      processed
-      |> Pipeline.format_data(request)
-      |> build_success_response()
+         {:ok, ash_result} <- Pipeline.execute_ash_action(request) do
+      send_result(ash_result, request, target(domain, resource, rpc_action, context))
     else
       {:error, error} ->
         error_response(error, target(domain, resource, rpc_action, context))
@@ -225,6 +218,61 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
         target(domain, resource, rpc_action, context),
         __STACKTRACE__
       )
+  end
+
+  # The action has run, so a failure from here on must not read as one that
+  # changed nothing: the client gets `result_unavailable` (decision 6 on
+  # #123), never `unknown_error`.
+  defp send_result(ash_result, request, target) do
+    case Pipeline.process_result(ash_result, request) do
+      # `format_data/2` and not `format_output/1`: the latter renames field
+      # names and never looks at a value, so a vector left here as the packed
+      # binary `Jason` refuses (#71). `format_data/2` returns the payload
+      # alone, which is what lets this library keep its own envelope below.
+      {:ok, processed} ->
+        processed
+        |> Pipeline.format_data(request)
+        |> build_success_response()
+
+      {:error, error} ->
+        error_response(error, target)
+    end
+  rescue
+    exception ->
+      result_unavailable(target, Exception.format(:error, exception, __STACKTRACE__))
+  catch
+    kind, reason ->
+      result_unavailable(target, Exception.format(kind, reason, __STACKTRACE__))
+  end
+
+  @doc false
+  # Also called by `AshKotlinMultiplatform.Phoenix.Controller` when the JSON
+  # encoder refuses a result. Static, and it runs no error handler: it answers
+  # a failure after the action ran, and must not fail itself.
+  def result_unavailable(target, failure) do
+    uuid = Ash.UUID.generate()
+
+    Logger.error("""
+    RPC action #{inspect(target[:action])} on #{inspect(target[:resource])} ran, but its \
+    result could not be sent; the client got result_unavailable (error id #{uuid}).
+    #{failure}
+    """)
+
+    %{
+      "success" => false,
+      "errors" => [
+        %{
+          "type" => "result_unavailable",
+          "message" => "The action ran, but its result could not be sent",
+          "shortMessage" => "Result unavailable",
+          "vars" => %{},
+          "fields" => [],
+          "field" => nil,
+          "path" => [],
+          "errorId" => uuid
+        }
+      ]
+    }
   end
 
   defp build_request(

@@ -108,6 +108,22 @@ defmodule AshKotlinMultiplatform.Test.Fault do
       run fn _input, _context -> throw({:db, "password=hunter2"}) end
     end
 
+    # Both run to completion; what they return cannot be sent. The malformed
+    # vector raises while the runner formats it, the PID when the controller
+    # encodes the JSON.
+    action :bad_vector, :map do
+      constraints fields: [v: [type: :vector]]
+
+      run fn _input, _context ->
+        {:ok, %{v: %Ash.Vector{data: "db password=hunter2", dimensions: 3}}}
+      end
+    end
+
+    action :unencodable, :map do
+      constraints fields: [owner: [type: :integer]]
+      run fn _input, _context -> {:ok, %{owner: {:pid, self()}}} end
+    end
+
     action :hidden_value, :map do
       constraints fields: [hidden: [type: :string]]
 

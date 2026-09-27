@@ -310,6 +310,22 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerErrorRedactionTest do
     end
   end
 
+  # Decision 6 on #123: the action ran, so the client must not read the
+  # failure as "nothing happened".
+  describe "an action that ran but whose result cannot be formatted" do
+    test "answers result_unavailable, and the log keeps the detail" do
+      {response, log} = with_log(fn -> run(%{"action" => "fault_bad_vector"}) end)
+
+      refute Jason.encode!(response) =~ "hunter2"
+      assert %{"success" => false, "errors" => [error]} = response
+      assert error["type"] == "result_unavailable"
+      assert error["shortMessage"] == "Result unavailable"
+      assert error["message"] == "The action ran, but its result could not be sent"
+      assert log =~ error["errorId"]
+      assert log =~ "hunter2"
+    end
+  end
+
   describe "a generic action returning a forbidden field" do
     test "sends null, and never the hidden value" do
       response = run(%{"action" => "fault_hidden_value"})

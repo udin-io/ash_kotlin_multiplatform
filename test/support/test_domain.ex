@@ -130,6 +130,8 @@ defmodule AshKotlinMultiplatform.Test.Domain do
       rpc_action :fault_exit, :exit
       rpc_action :fault_throw, :throw
       rpc_action :fault_hidden_value, :hidden_value
+      rpc_action :fault_bad_vector, :bad_vector
+      rpc_action :fault_unencodable, :unencodable
     end
 
     resource AshKotlinMultiplatform.Test.Todo do

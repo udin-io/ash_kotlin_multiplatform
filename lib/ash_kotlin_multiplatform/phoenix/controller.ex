@@ -151,7 +151,7 @@ defmodule AshKotlinMultiplatform.Phoenix.Controller do
           tenant: tenant
         )
 
-      Phoenix.Controller.json(conn, result)
+      send_json(conn, result, params)
     end
   end
 
@@ -179,6 +179,22 @@ defmodule AshKotlinMultiplatform.Phoenix.Controller do
 
       Phoenix.Controller.json(conn, result)
     end
+  end
+
+  # `Phoenix.Controller.json/2` encodes before it sends, so an action whose
+  # result the encoder refuses (a PID, a tuple) raised here, after the action
+  # had run. The client gets `result_unavailable` instead of a 500.
+  defp send_json(conn, result, params) do
+    Phoenix.Controller.json(conn, result)
+  rescue
+    exception ->
+      unavailable =
+        AshKotlinMultiplatform.Rpc.Runner.result_unavailable(
+          %{action: params["action"]},
+          Exception.format(:error, exception, __STACKTRACE__)
+        )
+
+      Phoenix.Controller.json(conn, unavailable)
   end
 
   @doc false
