@@ -10,6 +10,7 @@ defmodule AshKotlinMultiplatform.Test.Domain do
     resource AshKotlinMultiplatform.Test.Author
     resource AshKotlinMultiplatform.Test.Book
     resource AshKotlinMultiplatform.Test.Event
+    resource AshKotlinMultiplatform.Test.Fault
     resource AshKotlinMultiplatform.Test.Secret
     resource AshKotlinMultiplatform.Test.Todo
     resource AshKotlinMultiplatform.Test.User
@@ -115,6 +116,16 @@ defmodule AshKotlinMultiplatform.Test.Domain do
       rpc_action :register_event_narrow, :register do
         show_metadata [:registered_at]
       end
+    end
+
+    # Each way an action fails, for the error redaction tests (#28).
+    resource AshKotlinMultiplatform.Test.Fault do
+      rpc_action :create_fault, :create
+      rpc_action :list_refused_faults, :refused
+      rpc_action :fault_return_string, :return_string
+      rpc_action :fault_return_term, :return_term
+      rpc_action :fault_raise, :raise
+      rpc_action :fault_hidden_value, :hidden_value
     end
 
     resource AshKotlinMultiplatform.Test.Todo do

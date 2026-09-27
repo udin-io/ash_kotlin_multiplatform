@@ -67,12 +67,16 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   - `"metadata"` - Optional metadata from the action
   """
 
+  require Logger
+
   alias AshKotlinMultiplatform.Manifest
   alias AshKotlinMultiplatform.Manifest.Entrypoints
   alias AshKotlinMultiplatform.Resource.Info, as: ResourceInfo
   alias AshKotlinMultiplatform.Rpc.KeyNames
   alias AshKotlinMultiplatform.Rpc.Pipeline
+  alias AshIntrospection.ErrorFormatter
   alias AshIntrospection.Rpc.ErrorBuilder
+  alias AshIntrospection.Rpc.Errors
   alias AshIntrospection.Rpc.FieldProcessing.FieldSelector
   alias AshIntrospection.Rpc.Request
   alias AshIntrospection.FieldFormatter
@@ -696,8 +700,84 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   defp target(domain, resource, rpc_action, context),
     do: %{domain: domain, resource: resource, action: rpc_action.action, context: context}
 
-  # Every failure reaches the client through here.
-  defp error_response(error, _target), do: build_error_response(error)
+  # Reasons this library and the core pipeline return while reading the
+  # request, each worded by a `build_error_response/1` clause below.
+  @request_reasons [
+    :action_not_found,
+    :missing_required_parameter,
+    :invalid_fields,
+    :missing_get_by_fields,
+    :unexpected_get_by_fields,
+    :invalid_get_by,
+    :identity_not_supported,
+    :filter_not_supported,
+    :sort_not_supported,
+    :missing_identity,
+    :invalid_identity
+  ]
+
+  # Every failure reaches the client through here. A request reason is worded
+  # below. Anything else goes through `Errors.to_errors/6`, which words each
+  # error by the `AshIntrospection.Rpc.Error` protocol: an error with no
+  # implementation, a bare string or any other term becomes "Something went
+  # wrong", so internal detail stays on the server log.
+  defp error_response(:validation_not_supported = reason, _target),
+    do: build_error_response(reason)
+
+  defp error_response(reason, _target)
+       when is_tuple(reason) and tuple_size(reason) > 1 and elem(reason, 0) in @request_reasons,
+       do: build_error_response(reason)
+
+  defp error_response(error, target) do
+    errors =
+      error
+      |> Errors.to_errors(
+        target[:domain],
+        target[:resource],
+        target[:action],
+        %{},
+        Pipeline.build_config()
+      )
+      |> Enum.map(&to_client/1)
+
+    log_hidden_detail(errors, error, target)
+
+    %{"success" => false, "errors" => errors}
+  end
+
+  # The client got "Something went wrong" in place of this error, so the log is
+  # the only place its text survives. An `internal_error` carries the id the
+  # client was given, so the two ends can be joined.
+  defp log_hidden_detail(errors, error, target) do
+    case Enum.find(errors, &(&1["type"] in ["unknown_error", "internal_error"])) do
+      nil ->
+        :ok
+
+      hidden ->
+        Logger.error("""
+        RPC action #{inspect(target[:action])} on #{inspect(target[:resource])} failed; \\
+        the client got #{hidden["type"]}#{if id = hidden["errorId"], do: " (error id #{id})"}.
+        #{if is_exception(error), do: Exception.format(:error, error), else: inspect(error)}\\
+        """)
+    end
+  end
+
+  # `:camel_case` is pinned rather than read from `output_field_formatter`:
+  # the Kotlin and Swift clients read `shortMessage` whatever that setting is
+  # (#24). Issue 57 decides whether error keys follow it.
+  #
+  # `message` arrives as finished text, with `vars` beside it for an app that
+  # translates. `field` repeats the first of `fields` for the Swift client.
+  defp to_client(error) do
+    client = ErrorFormatter.format(error, :camel_case)
+    vars = Map.get(client, "vars") || %{}
+    fields = Enum.map(Map.get(client, "fields") || [], &to_string/1)
+
+    client
+    |> Map.put("message", render_message(client["message"], vars))
+    |> Map.put("fields", fields)
+    |> Map.put("field", List.first(fields))
+  end
 
   defp build_error_response(:validation_not_supported) do
     %{
@@ -768,46 +848,6 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     }
   end
 
-  defp build_error_response(%Ash.Error.Invalid{errors: errors}) do
-    formatted_errors =
-      Enum.map(errors, fn error ->
-        %{
-          "type" => "validation_error",
-          "message" => Exception.message(error),
-          "shortMessage" => "Validation failed",
-          "field" => get_error_field(error)
-        }
-      end)
-
-    %{"success" => false, "errors" => formatted_errors}
-  end
-
-  defp build_error_response(%Ash.Error.Forbidden{} = error) do
-    %{
-      "success" => false,
-      "errors" => [
-        %{
-          "type" => "forbidden",
-          "message" => Exception.message(error),
-          "shortMessage" => "Access denied"
-        }
-      ]
-    }
-  end
-
-  defp build_error_response(%Ash.Error.Query.NotFound{} = error) do
-    %{
-      "success" => false,
-      "errors" => [
-        %{
-          "type" => "not_found",
-          "message" => Exception.message(error),
-          "shortMessage" => "Not found"
-        }
-      ]
-    }
-  end
-
   defp build_error_response({:missing_identity, details}) do
     expected = Map.get(details, :expected_keys, []) |> Enum.join(", ")
 
@@ -836,44 +876,18 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     }
   end
 
-  defp build_error_response(errors) when is_list(errors) do
-    formatted_errors =
-      Enum.flat_map(errors, fn
-        %Ash.Error.Invalid{errors: inner_errors} ->
-          Enum.map(inner_errors, &format_single_error/1)
-
-        error ->
-          [format_single_error(error)]
-      end)
-
-    %{"success" => false, "errors" => formatted_errors}
-  end
-
-  defp build_error_response(error) when is_exception(error) do
-    %{
-      "success" => false,
-      "errors" => [format_single_error(error)]
-    }
-  end
-
-  defp build_error_response(error) do
-    %{
-      "success" => false,
-      "errors" => [
-        %{
-          "type" => "error",
-          "message" => inspect(error),
-          "shortMessage" => "Error"
-        }
-      ]
-    }
-  end
-
   defp render_message(message, vars) when is_binary(message) and is_map(vars) do
     Enum.reduce(vars, message, fn {key, value}, acc ->
-      String.replace(acc, "%{#{key}}", to_string(value))
+      String.replace(acc, "%{#{key}}", render_value(value))
     end)
   end
+
+  defp render_message(message, _vars), do: message
+
+  defp render_value(value) when is_list(value), do: Enum.map_join(value, ", ", &render_value/1)
+  defp render_value(value) when is_binary(value), do: value
+  defp render_value(value) when is_atom(value) or is_number(value), do: to_string(value)
+  defp render_value(value), do: inspect(value)
 
   defp build_error_response_from_builder(reason) do
     errors =
@@ -911,35 +925,6 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
       ]
     }
   end
-
-  defp format_single_error(error) when is_exception(error) do
-    %{
-      "type" => error_type(error),
-      "message" => Exception.message(error),
-      "shortMessage" => short_message(error),
-      "field" => get_error_field(error)
-    }
-  end
-
-  defp format_single_error(error) do
-    %{
-      "type" => "error",
-      "message" => inspect(error),
-      "shortMessage" => "Error"
-    }
-  end
-
-  defp error_type(%Ash.Error.Changes.Required{}), do: "required"
-  defp error_type(%Ash.Error.Changes.InvalidAttribute{}), do: "invalid_attribute"
-  defp error_type(%Ash.Error.Query.NotFound{}), do: "not_found"
-  defp error_type(%Ash.Error.Forbidden{}), do: "forbidden"
-  defp error_type(_), do: "validation_error"
-
-  defp short_message(%Ash.Error.Changes.Required{}), do: "Required"
-  defp short_message(%Ash.Error.Changes.InvalidAttribute{}), do: "Invalid"
-  defp short_message(%Ash.Error.Query.NotFound{}), do: "Not found"
-  defp short_message(%Ash.Error.Forbidden{}), do: "Access denied"
-  defp short_message(_), do: "Validation failed"
 
   defp get_error_field(error) do
     formatter = AshKotlinMultiplatform.output_field_formatter()
