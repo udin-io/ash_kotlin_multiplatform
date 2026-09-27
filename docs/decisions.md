@@ -710,3 +710,28 @@ equal to the default is indistinguishable from never having been set.
 Same cost as #69: a project that set one of these on a write and never
 called the action now fails to compile. That build was already broken; it
 just had not been run yet.
+
+## 2026-09-27 — `fields` gets the `when` the 2026-09-10 decision rejected
+
+`config.fields: List<Any>` encoded a non-`String` element with
+`ashRpcJson.encodeToJsonElement(field)`, which resolves a serializer for
+`Any` and throws `SerializationException: Serializer for class 'Any' is not
+found` — the same failure the 2026-09-10 decision measured for untyped
+response data, and moved to `JsonElement` to avoid (#62).
+
+`fields` stays `List<Any>` here rather than following that fix, and instead
+gets `PayloadBuilder.field_to_json_element_source/1`: a closed `when` over
+String/Boolean/Number/Map/List that throws on anything else — the exact
+shape the 2026-09-10 decision called out as the rejected alternative's
+weakness ("no compile-time signal").
+
+The difference is direction. That decision was about decoding response
+data a consumer reads back through whichever `Json` it builds; losing
+precision on a large integer was a cost the consumer paid with no warning.
+`fields` only ever goes one way — the caller supplies literal strings and
+maps to select what a request returns — so there is no decode symmetry to
+keep, no consumer-facing type to mislead, and the "throws on anything else"
+branch only fires on a
+generator bug, never on a value the DSL can express. Changing `fields`'
+declared type would touch `ConfigBuilder` and every call site for no
+behaviour gain.
