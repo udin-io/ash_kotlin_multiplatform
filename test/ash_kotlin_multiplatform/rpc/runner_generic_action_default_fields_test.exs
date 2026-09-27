@@ -50,6 +50,27 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerGenericActionDefaultFieldsTest do
            }
   end
 
+  # #92. `Secret` is in no `kotlin_rpc` block. The action's author chose to
+  # return it, so the server sends it and the client reads it as JsonElement.
+  # Nested selection still refuses to walk a relationship into it.
+  test "an unpublished resource return sends that resource's attributes" do
+    assert %{"success" => true, "data" => data} = run(%{"action" => "reveal_secret"})
+
+    assert data == %{
+             "id" => "00000000-0000-0000-0000-000000000002",
+             "body" => "hidden",
+             "note" => nil,
+             "authorId" => nil
+           }
+  end
+
+  test "an unpublished resource return honours fields" do
+    assert %{"success" => true, "data" => data} =
+             run(%{"action" => "reveal_secret", "fields" => ["body"]})
+
+    assert data == %{"body" => "hidden"}
+  end
+
   test "a map with declared fields sends those fields" do
     assert %{"success" => true, "data" => data} = run(%{"action" => "tally_books"})
 

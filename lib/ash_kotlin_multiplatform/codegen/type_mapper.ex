@@ -264,11 +264,19 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
     "JsonElement"
   end
 
-  # Struct type
+  # A `:struct` names a class only when the generated file declares one:
+  # `Manifest.published_resources/1`, the list `Rpc.Codegen` emits classes for.
+  # A resource no `kotlin_rpc` block names, or a module that is no resource,
+  # has no class, and naming it is a Kotlin compile error (#91).
   defp map_type(Ash.Type.Struct, constraints) do
     case Keyword.get(constraints, :instance_of) do
-      nil -> AshKotlinMultiplatform.untyped_map_type()
-      module -> get_kotlin_class_name(module)
+      nil ->
+        AshKotlinMultiplatform.untyped_map_type()
+
+      module ->
+        if module in AshKotlinMultiplatform.Manifest.published_resources(),
+          do: get_kotlin_class_name(module),
+          else: "JsonElement"
     end
   end
 

@@ -62,6 +62,10 @@ defmodule AshKotlinMultiplatform.Test.Domain do
       rpc_action :summarize_all, :summarize_all
       rpc_action :sample_author, :sample_author
 
+      # A generic action taking and returning `Secret`, which no block here
+      # publishes. The client gets raw JSON (#91, #92).
+      rpc_action :reveal_secret, :reveal_secret
+
       # A generic action returning a typed map and one returning an untyped
       # map, so the no-`fields` default covers both (#88).
       rpc_action :tally_books, :tally

@@ -289,6 +289,28 @@ private fun typedStructActionDefaultFieldsDecode(): String {
     return "data=$data"
 }
 
+// #91, #92: `Secret` is in no `kotlin_rpc` block, so the file declares no
+// `Secret` class. `revealSecret` returns `RpcResult<JsonElement>` and Book's
+// `secretRef` is `JsonElement?`; both decode a populated Secret.
+private fun unpublishedResourceActionDecodes(): String {
+    val data = typed<JsonElement>("unpublished_resource_action_default_fields").data!!.jsonObject
+
+    expect("keys", data.keys.sorted(), listOf("authorId", "body", "id", "note"))
+    expect("body", data["body"]?.jsonPrimitive?.content, "hidden")
+
+    return "data=$data"
+}
+
+private fun unpublishedResourceAttributeDecodes(): String {
+    val book = typed<Book>("unpublished_resource_attribute").data!!
+    val secretRef = book.secretRef ?: throw AssertionError("secretRef decoded as null")
+
+    expect("title", book.title, "Kindred")
+    expect("secretRef", secretRef.toString(), """{"body":"hidden"}""")
+
+    return "book=$book"
+}
+
 // #96: a generic action returning a union, sent with no `fields`, answered
 // `"data": null`. A union outside a resource attribute is a `JsonElement`, so
 // the check reads the JSON: one key, the active member's name, and under it
@@ -595,6 +617,8 @@ fun main() {
     check("#95 no fields: a typed :struct result carries its own keys, not Book's", ::typedStructActionDefaultFieldsDecode)
     check("#96 no fields: a union result carries the active member's own fields", ::unionActionDefaultFieldsDecode)
     check("#96 no fields: a list of unions keeps every item, each by its member", ::unionListActionDefaultFieldsDecode)
+    check("#92 an unpublished resource return decodes into RpcResult<JsonElement>", ::unpublishedResourceActionDecodes)
+    check("#91 an unpublished resource field decodes into JsonElement", ::unpublishedResourceAttributeDecodes)
     check("#24 validation results decode", ::validationDecodes)
     check("#24 sparse fieldset decodes", ::sparseFieldsetDecodes)
     check("#24 action metadata lands inside data", ::actionMetadataLandsInsideData)

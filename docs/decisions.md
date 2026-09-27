@@ -710,3 +710,28 @@ equal to the default is indistinguishable from never having been set.
 Same cost as #69: a project that set one of these on a write and never
 called the action now fails to compile. That build was already broken; it
 just had not been run yet.
+
+## 2026-09-27 — An unpublished resource reaches the client as raw JSON
+
+A field, argument or union member typed as a `:struct` of a resource no
+`kotlin_rpc` block publishes named that resource's class, and the file never
+declared it, so the Kotlin did not compile (#91). `TypeMapper` now names a
+class only for a resource in `Manifest.published_resources/1`, the
+`kotlin_rpc` resources plus the manifest's embedded resources. Anything else
+is `JsonElement`, as every untyped shape has been since #51.
+
+A generic action may return such a resource (#92). The server sends its public
+attributes and the generated function returns `RpcResult<JsonElement>`. The
+owner chose this over a compile-time or request-time refusal: the action's
+author wrote code that returns the resource, so returning it is their choice,
+and no app that works today breaks. Both answers were given in chat on
+2026-09-27.
+
+This leaves two paths that disagree on purpose. Nested selection still refuses
+to walk a relationship into an unpublished resource (the 2026-09-09 decision),
+because that walk is one the author never wrote. A `:struct` attribute of one
+is readable, with nested fields, like any struct.
+
+Cost: a client cannot tell an unpublished resource from any other untyped
+shape. Publishing the resource in a `kotlin_rpc` block turns the
+`JsonElement` into its class.

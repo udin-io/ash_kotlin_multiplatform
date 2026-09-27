@@ -302,12 +302,6 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
             field_specs -> generate_union_fields(field_specs)
           end
 
-        Ash.Type.Struct ->
-          case Keyword.get(member_constraints, :instance_of) do
-            nil -> "val value: #{untyped_map_type()}"
-            module -> "val value: #{TypeMapper.get_kotlin_class_name(module)}"
-          end
-
         _ ->
           kotlin_type =
             member_type

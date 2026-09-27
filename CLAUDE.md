@@ -170,6 +170,12 @@ nowhere to live. That is the shape (see `docs/decisions.md`), and it is where
 `ResourceSchemas.generate_data_class/2` the set of resources the same pass
 emits a class for. Follow that pattern.
 
+The one exception is the list of resource classes itself:
+`Manifest.published_resources/1` is read from the compiled manifest, so
+`TypeMapper` asks it directly rather than having it threaded through six
+generators (#91). A `:struct` whose `instance_of` is not in
+that list is `JsonElement`.
+
 ### A new type needs the server half checked too
 
 `Rpc.Runner.execute_action/7` formats a response with
