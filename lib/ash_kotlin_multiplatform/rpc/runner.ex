@@ -736,11 +736,44 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # stacktrace: a failed result like any other, never a 500 (decision 3 on
   # #123).
   defp error_response(error, target, stacktrace \\ []) do
-    errors = error |> error_maps(target) |> Enum.map(&to_client/1)
+    errors = client_errors(error, target)
 
     log_hidden_detail(errors, error, target, stacktrace)
 
     %{"success" => false, "errors" => errors}
+  end
+
+  # The last resort. An error handler is consumer code: one that returns a
+  # string or a struct makes the core or `to_client/1` raise, and a raise here
+  # would escape as a 500, since the caller's `rescue` lands back in this
+  # function. So a failure while shaping errors answers a static
+  # `internal_error` that runs no handler.
+  defp client_errors(error, target) do
+    error |> error_maps(target) |> Enum.map(&to_client/1)
+  rescue
+    failure -> [shaping_failure(Exception.format(:error, failure, __STACKTRACE__))]
+  catch
+    kind, reason -> [shaping_failure(Exception.format(kind, reason, __STACKTRACE__))]
+  end
+
+  defp shaping_failure(failure) do
+    uuid = Ash.UUID.generate()
+
+    Logger.error("""
+    Shaping an RPC error failed; the client got internal_error (error id #{uuid}).
+    #{failure}
+    """)
+
+    %{
+      "type" => "internal_error",
+      "message" => "Something went wrong. Unique error id: #{uuid}",
+      "shortMessage" => "Internal error",
+      "vars" => %{},
+      "fields" => [],
+      "field" => nil,
+      "path" => [],
+      "errorId" => uuid
+    }
   end
 
   # The core has no reason for a read-surface switch or for validating an

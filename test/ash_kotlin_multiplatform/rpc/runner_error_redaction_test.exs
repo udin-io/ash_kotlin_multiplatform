@@ -179,6 +179,35 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerErrorRedactionTest do
     end
   end
 
+  describe "a domain whose error_handler returns neither a map nor nil" do
+    setup do
+      serve_under(Test.JunkHandlerDomain, "fault_return_string")
+    end
+
+    for {label, context} <- [
+          {"returns a string", quote(do: %{handler_returns: "db password=hunter2"})},
+          {"returns a struct",
+           quote(do: %{handler_returns: %RuntimeError{message: "db password=hunter2"}})},
+          {"throws", quote(do: %{handler_throws: "db password=hunter2"})}
+        ] do
+      test "fails closed when it #{label}" do
+        {response, log} =
+          with_log(fn ->
+            run(%{"action" => "fault_return_string"}, context: unquote(context))
+          end)
+
+        json = Jason.encode!(response)
+        refute json =~ "hunter2"
+        refute json =~ "10.0.0.5"
+
+        assert %{"success" => false, "errors" => [error]} = response
+        assert error["type"] == "internal_error"
+        assert error["message"] == "Something went wrong. Unique error id: #{error["errorId"]}"
+        assert log =~ error["errorId"]
+      end
+    end
+  end
+
   describe "an attribute that fails a constraint" do
     test "names the field, in fields and in field, with no bread crumbs" do
       response = run(%{"action" => "create_fault", "input" => %{"title" => "ab"}})
