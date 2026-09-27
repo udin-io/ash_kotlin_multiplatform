@@ -2,9 +2,9 @@
 #
 # SPDX-License-Identifier: MIT
 
-defmodule AshKotlinMultiplatform.Codegen.UnpublishedRelationshipTest do
+defmodule AshKotlinMultiplatform.Codegen.UnpublishedResourceTest do
   @moduledoc """
-  A relationship field may only name a type the same file declares.
+  Generated Kotlin may only name a type the same file declares.
 
   `Author.secrets` is a public `has_many` to `AshKotlinMultiplatform.Test.Secret`,
   a resource the Kotlin DSL never publishes. The generator used to emit
@@ -20,7 +20,15 @@ defmodule AshKotlinMultiplatform.Codegen.UnpublishedRelationshipTest do
 
   alias AshKotlinMultiplatform.Codegen.ResourceSchemas
   alias AshKotlinMultiplatform.Manifest
+  alias AshKotlinMultiplatform.Rpc.Codegen
   alias AshKotlinMultiplatform.Test.{Author, Book}
+
+  # One full generation pass, shared: the tests below read what a consumer's
+  # file holds, and the pass takes most of a second.
+  setup_all do
+    {:ok, kotlin} = Codegen.generate_kotlin_code(:ash_kotlin_multiplatform)
+    %{kotlin: kotlin}
+  end
 
   defp author_class(emitted) do
     ResourceSchemas.generate_data_class(Author, emitted)
@@ -65,6 +73,31 @@ defmodule AshKotlinMultiplatform.Codegen.UnpublishedRelationshipTest do
       refute kotlin =~ ~r/\bSecret\b/
       assert kotlin =~ "data class Author("
       assert kotlin =~ "data class Book("
+    end
+  end
+
+  describe "a value typed as an unpublished resource" do
+    test "is a JsonElement attribute on the data class", %{kotlin: kotlin} do
+      assert kotlin =~ "val secretRef: JsonElement? = null"
+    end
+
+    test "is a JsonElement union member", %{kotlin: kotlin} do
+      assert kotlin =~ ~r/data class Hidden\(\s*val value: JsonElement\s*\) : ExtraUnion\(\)/
+    end
+
+    test "is a JsonElement action argument", %{kotlin: kotlin} do
+      assert kotlin =~ ~r/data class RevealSecretInput\(\s*val secret: JsonElement\? = null/
+    end
+
+    test "is a JsonElement generic action return", %{kotlin: kotlin} do
+      assert kotlin =~
+               ~r/suspend fun revealSecret\([^)]*\): RpcResult<JsonElement>/
+    end
+
+    # A word boundary, because `SecretNote`, `RevealSecretInput` and
+    # `revealSecret` are all declared.
+    test "is never named as a class anywhere in the file", %{kotlin: kotlin} do
+      refute kotlin =~ ~r/\bSecret\b/
     end
   end
 end

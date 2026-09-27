@@ -44,9 +44,30 @@ defmodule AshKotlinMultiplatform.Test.Book do
     attribute :meta, AshKotlinMultiplatform.Test.BookMeta, public?: true
     attribute :private_meta, AshKotlinMultiplatform.Test.PrivateMeta, public?: false
 
+    # An embedded resource declared under its `type_name`, `BookStamp`. The
+    # field named its module, `Stamp`, before.
+    attribute :stamp, AshKotlinMultiplatform.Test.Stamp, public?: true
+
+    # `:struct` of `Secret`, a resource no `kotlin_rpc` block publishes. The
+    # generated file declares no `Secret` class, so this field and the
+    # `extra` union's `hidden` member reach Kotlin as `JsonElement` (#91). The
+    # member is not named `secret`: its nested class would be `Secret`, and
+    # `val value: Secret` would then resolve to that class and compile.
+    attribute :secret_ref, :struct do
+      public? true
+      constraints instance_of: AshKotlinMultiplatform.Test.Secret
+    end
+
     attribute :extra, :union do
       public? true
-      constraints types: [note: [type: AshKotlinMultiplatform.Test.UnionNote]]
+
+      constraints types: [
+                    note: [type: AshKotlinMultiplatform.Test.UnionNote],
+                    hidden: [
+                      type: :struct,
+                      constraints: [instance_of: AshKotlinMultiplatform.Test.Secret]
+                    ]
+                  ]
     end
   end
 
@@ -121,6 +142,29 @@ defmodule AshKotlinMultiplatform.Test.Book do
            id: "00000000-0000-0000-0000-000000000001",
            name: "Sample",
            email: "sample@example.com"
+         }}
+      end
+    end
+
+    # A generic action taking and returning `Secret`, which no `kotlin_rpc`
+    # block publishes. The server sends Secret's public attributes and the
+    # client reads them as `JsonElement`: returning the resource is the action
+    # author's choice (#92).
+    action :reveal_secret, :struct do
+      constraints instance_of: AshKotlinMultiplatform.Test.Secret
+
+      argument :secret, :struct do
+        public? true
+        constraints instance_of: AshKotlinMultiplatform.Test.Secret
+      end
+
+      run fn _input, _context ->
+        {:ok,
+         %AshKotlinMultiplatform.Test.Secret{
+           id: "00000000-0000-0000-0000-000000000002",
+           body: "hidden",
+           note: nil,
+           author_id: nil
          }}
       end
     end
@@ -244,7 +288,10 @@ defmodule AshKotlinMultiplatform.Test.Book do
       primary? true
       # `extra` is accepted so a test can store a union and read it back
       # through `list_books`, which is the read half of ash_introspection #84.
-      accept [:title, :author_id, :extra]
+      #
+      # `secret_ref` is accepted so the round-trip gate can send a `Secret` and
+      # decode it back through the `JsonElement` field (#91).
+      accept [:title, :author_id, :extra, :secret_ref]
     end
   end
 

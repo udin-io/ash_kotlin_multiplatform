@@ -65,6 +65,12 @@ defmodule AshKotlinMultiplatform.Test.Author do
     end
   end
 
+  # A named identity, so a destroy addressed by it goes through the core's
+  # scalar check on a non-primary key (#29).
+  identities do
+    identity :unique_email, [:email], pre_check_with: AshKotlinMultiplatform.Test.Domain
+  end
+
   calculations do
     calculate :display_name, :string, expr(name <> " <" <> email <> ">") do
       public? true

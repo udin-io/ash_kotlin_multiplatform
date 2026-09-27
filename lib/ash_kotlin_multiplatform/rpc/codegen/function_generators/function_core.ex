@@ -34,7 +34,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.FunctionGenerators.FunctionCore do
     emitted = Keyword.fetch!(opts, :emitted)
 
     rpc_action_name_pascal = Helpers.snake_to_pascal_case(rpc_action_name)
-    resource_name = build_resource_type_name(resource)
+    resource_name = AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name!(resource)
     context = ConfigBuilder.get_action_context(resource, action, rpc_action)
 
     # Check metadata configuration
@@ -87,26 +87,6 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.FunctionGenerators.FunctionCore do
       rpc_action_name_pascal: rpc_action_name_pascal,
       context: context
     }
-  end
-
-  @doc """
-  Builds the Kotlin resource type name for a resource.
-  """
-  def build_resource_type_name(resource) do
-    case AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name(resource) do
-      nil ->
-        resource
-        |> Module.split()
-        |> List.last()
-
-      name ->
-        name
-    end
-  rescue
-    _ ->
-      resource
-      |> Module.split()
-      |> List.last()
   end
 
   @doc """
@@ -188,7 +168,8 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.FunctionGenerators.FunctionCore do
   defp returned_class(action, emitted) do
     resource = ResourceInfo.returned_resource(action)
 
-    if resource && resource in emitted, do: build_resource_type_name(resource)
+    if resource && resource in emitted,
+      do: AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name!(resource)
   end
 
   defp wrap_in_metadata_envelope(data_type, %{has_metadata: true, action: %{type: type}} = shape)
