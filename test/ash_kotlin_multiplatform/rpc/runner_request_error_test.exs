@@ -59,6 +59,16 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerRequestErrorTest do
       assert error["vars"]["resource"] == "Author"
     end
 
+    test "fields sent as a string are refused without echoing an Elixir term" do
+      response = run(%{"action" => "list_authors", "fields" => "id"})
+
+      refute Jason.encode!(response) =~ "fields_must_be_a_list"
+      assert %{"success" => false, "errors" => [error]} = response
+      assert error["type"] == "invalid_fields_type"
+      assert error["message"] == "Fields parameter must be an array"
+      refute Map.has_key?(error["details"] || %{}, "error")
+    end
+
     test "fields on a primitive return name the type without its module" do
       response = run(%{"action" => "fault_return_string", "fields" => ["length"]})
 

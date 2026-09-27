@@ -798,6 +798,39 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     ]
   end
 
+  # Two field-selection reasons `ErrorBuilder` has no clause for. Its fallbacks
+  # would send `inspect/1` of the tuple in `details.error`.
+  defp error_maps({:invalid_fields, {:fields_must_be_a_list, _fields}}, _target) do
+    [
+      %{
+        type: "invalid_fields_type",
+        message: "Fields parameter must be an array",
+        short_message: "Invalid fields type",
+        vars: %{},
+        fields: [],
+        path: [],
+        details: %{suggestion: "Wrap field names in an array, e.g., [\"field1\", \"field2\"]"}
+      }
+    ]
+  end
+
+  # No test resource can reach this one: `FieldSelector` throws it for a map
+  # entry naming several fields, or a calculation with arguments, inside a
+  # typed struct field.
+  defp error_maps({:invalid_fields, {:invalid_field_format, _field, path}}, _target) do
+    [
+      %{
+        type: "invalid_field_format",
+        message: "Name one nested field per map in fields",
+        short_message: "Invalid field format",
+        vars: %{},
+        fields: [],
+        path: path,
+        details: %{}
+      }
+    ]
+  end
+
   defp error_maps(reason, _target)
        when is_tuple(reason) and tuple_size(reason) > 1 and elem(reason, 0) in @request_reasons do
     reason
@@ -905,7 +938,15 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     |> Map.put("fields", fields)
     |> Map.put("field", List.first(fields))
     |> Map.put("path", Enum.map(Map.get(client, "path") || [], &path_segment/1))
+    |> without_inspected_term()
   end
+
+  # `ErrorBuilder`'s fallbacks put `inspect/1` of the reason in
+  # `details.error`: an Elixir term, never meant for a client.
+  defp without_inspected_term(%{"details" => %{} = details} = client),
+    do: %{client | "details" => Map.delete(details, "error")}
+
+  defp without_inspected_term(client), do: client
 
   # `ErrorBuilder` leaves path segments as atoms; `Errors.to_errors/6` has
   # already turned them into strings. A list index stays a number.
