@@ -130,7 +130,10 @@ defmodule AshKotlinMultiplatform.MixProject do
       # #2949). Below it, `manifest.types` drops that type and the generated
       # Kotlin declares no class for it, so `Manifest.embedded_resources/1`
       # returns a short list and both generators emit a short file (#100).
-      {:ash, ">= 3.33.6 and < 4.0.0-0"},
+      #
+      # ash 3.33.11 fixes EEF-CVE-2026-93477 (private action arguments settable
+      # by user input on the bulk destroy and bulk update paths).
+      {:ash, ">= 3.33.11 and < 4.0.0-0"},
       # ash_phoenix 2.3.25 fixes CVE-2026-82724 through CVE-2026-82727.
       {:ash_phoenix, ">= 2.3.25 and < 3.0.0-0"},
       # Both are used directly by AshKotlinMultiplatform.Phoenix.Controller and
