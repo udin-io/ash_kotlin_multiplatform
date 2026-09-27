@@ -78,10 +78,10 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
 
     embedded = Manifest.embedded_resources()
 
-    # Every resource this pass declares a class for. A section generator cannot
-    # see what another emitted, so the set is built once here and handed to the
-    # functions, whose return types may name nothing outside it (#87).
-    emitted = rpc_resources ++ embedded
+    # Every resource this pass declares a class for. `TypeMapper` reads the same
+    # list, so a field and a function signature cannot disagree about which
+    # classes exist (#87, #91).
+    emitted = Manifest.published_resources()
 
     # Generate comprehensive schema types
     {data_classes, embedded_classes, enum_classes, sealed_classes} =
