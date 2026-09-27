@@ -259,7 +259,8 @@ defmodule AshKotlinMultiplatform.Rpc do
     verifiers: [
       AshKotlinMultiplatform.Rpc.Verifiers.VerifyPublicActions,
       AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities,
-      AshKotlinMultiplatform.Rpc.Verifiers.VerifyActionTypes
+      AshKotlinMultiplatform.Rpc.Verifiers.VerifyActionTypes,
+      AshKotlinMultiplatform.Rpc.Verifiers.VerifyTypedQueryFields
     ]
 
   @doc """
