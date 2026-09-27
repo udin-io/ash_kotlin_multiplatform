@@ -6,7 +6,9 @@ defmodule AshKotlinMultiplatform.Manifest.Transformers.BuildManifest do
   @moduledoc """
   Builds one app-wide `%Ash.Info.Manifest{}` from every domain's `kotlin_rpc`
   block and persists it, undecorated, as `:undecorated_manifest` and
-  `:manifest`.
+  `:manifest`. It also persists the `kotlin_rpc` resources as
+  `:rpc_resources`, which `AshKotlinMultiplatform.Manifest.published_resources/1`
+  reads.
 
   `AshKotlinMultiplatform.Manifest.Transformers.DecorateManifest` runs next and
   overwrites `:manifest` with the decorated result. The undecorated copy stays,
@@ -74,7 +76,8 @@ defmodule AshKotlinMultiplatform.Manifest.Transformers.BuildManifest do
     {:ok,
      dsl_state
      |> Transformer.persist(:undecorated_manifest, manifest)
-     |> Transformer.persist(:manifest, manifest)}
+     |> Transformer.persist(:manifest, manifest)
+     |> Transformer.persist(:rpc_resources, rpc_resources)}
   end
 
   @doc false
