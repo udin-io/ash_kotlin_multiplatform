@@ -248,7 +248,32 @@ defmodule AshKotlinMultiplatform.Rpc do
     - Object-oriented API wrappers (e.g., TodoRpc.create())
     - Phoenix Channel client (if enabled)
     """,
-    schema: [],
+    schema: [
+      error_handler: [
+        type: {:or, [:mfa, :module]},
+        doc: """
+        Transforms each error before it reaches the client. A module is called as
+        `module.handle_error(error, context)`; `{module, function, args}` as
+        `apply(module, function, [error, context | args])`. Returning `nil` drops
+        the error. A handler that raises fails closed: the client gets an
+        `internal_error` carrying an error id, and the server log carries the
+        original error under the same id.
+        """
+      ],
+      show_raised_errors?: [
+        type: :boolean,
+        default: false,
+        doc: """
+        Development only. `AshIntrospection.Rpc.Errors` then words EVERY error
+        from this domain by its own `Exception.message/1`, not only a raise:
+        a policy refusal sends Ash's full breakdown, with the actor, whenever
+        `config :ash, :policies, show_policy_breakdowns?: true` is also set,
+        and `type` and `shortMessage` become the exception's module name
+        (`unknown_error`, `request_error`). A client that matches on `type`
+        reads different values with it on.
+        """
+      ]
+    ],
     entities: [
       @resource
     ]

@@ -381,13 +381,38 @@ private fun validationDecodes(): String {
 
     expect("valid", valid is ValidationValid, true)
     expect("invalid", invalid is ValidationInvalid, true)
-    // Asserts `shortMessage` and not the offending field: the server sends
-    // `"field": "title"` and `AshRpcError` declares no property for it, so a
-    // validation error's field is dropped on decode. Out of scope here — it is
-    // the #24 shape again, and wants its own issue.
-    expect("invalid.errors", (invalid as ValidationInvalid).errors.single().shortMessage, "Validation failed")
+    // #28: the core's value for a missing required attribute. #61: the field
+    // it names survives the decode.
+    val error = (invalid as ValidationInvalid).errors.single()
+    expect("invalid.shortMessage", error.shortMessage, "Required field")
+    expect("invalid.field", error.field, "title")
 
     return "valid=${valid::class.simpleName} invalid=${invalid::class.simpleName}"
+}
+
+// #28, #61: an error names the failing field, and `vars` holds a number. Before
+// #28 `AshRpcError` had no `field` and typed `vars` as strings.
+private fun invalidAttributeDecodes(): String {
+    val error = result("invalid_attribute").errors!!.single()
+
+    expect("type", error.type, "invalid_attribute")
+    expect("message", error.message, "length must be greater than or equal to 3")
+    expect("field", error.field, "title")
+    expect("fields", error.fields, listOf("title"))
+    expect("vars.min", error.vars["min"]?.jsonPrimitive?.int, 3)
+
+    return "field=${error.field} vars=${error.vars}"
+}
+
+// #28: an error the client may not see carries the id the server log shares.
+private fun internalErrorDecodes(): String {
+    val error = result("internal_error").errors!!.single()
+
+    expect("type", error.type, "internal_error")
+    expect("message", error.message, "Something went wrong. Unique error id: ${error.errorId}")
+    expect("errorId present", error.errorId.isNullOrEmpty(), false)
+
+    return "errorId=${error.errorId}"
 }
 
 // #24: a field the client did not ask for is absent, not null, so every
@@ -625,6 +650,8 @@ fun main() {
     check("#54 input encoding through the shared Json", ::inputEncoding)
     check("#23 an argument_names override encodes and reaches the argument", ::argumentNamesOverride)
     check("#24 error response decodes", ::errorDecodes)
+    check("#28 #61 an invalid attribute error decodes field and vars", ::invalidAttributeDecodes)
+    check("#28 an internal error decodes its errorId", ::internalErrorDecodes)
     check("#84 #87 an embedded action argument encodes and RpcResult<Summary> decodes", ::embeddedActionResultDecodes)
     check("#87 a list of embedded resources decodes into RpcResult<List<Summary>>", ::embeddedListActionResultDecodes)
     check("#87 another resource decodes into RpcResult<Author>, not Book", ::otherResourceActionResultDecodes)

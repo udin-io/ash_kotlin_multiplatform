@@ -51,6 +51,8 @@ defmodule AshKotlinMultiplatform.Phoenix.Controller do
 
   - `get_actor/1` - Extract actor from conn (default: `conn.assigns[:current_user]`)
   - `get_tenant/1` - Extract tenant from conn (default: `conn.assigns[:tenant]`)
+  - `get_context/1` - The `:context` passed to the runner, which the error
+    handlers receive (default: `%{}`)
   - `handle_unauthorized/1` - Custom unauthorized response
   """
 
@@ -84,6 +86,7 @@ defmodule AshKotlinMultiplatform.Phoenix.Controller do
           @otp_app,
           &get_actor/1,
           &get_tenant/1,
+          &get_context/1,
           &handle_unauthorized/1,
           @require_auth
         )
@@ -101,6 +104,7 @@ defmodule AshKotlinMultiplatform.Phoenix.Controller do
           @otp_app,
           &get_actor/1,
           &get_tenant/1,
+          &get_context/1,
           &handle_unauthorized/1,
           @require_auth
         )
@@ -125,6 +129,15 @@ defmodule AshKotlinMultiplatform.Phoenix.Controller do
       end
 
       @doc """
+      The context handed to `Rpc.Runner` as `:context`: Ash's action context,
+      and the second argument of a resource's `handle_rpc_error/2` and the
+      domain's `error_handler`.
+
+      Override this function to pass request data to them. Default: `%{}`.
+      """
+      def get_context(_conn), do: %{}
+
+      @doc """
       Handle unauthorized requests.
 
       Override this function to customize the unauthorized response.
@@ -133,12 +146,21 @@ defmodule AshKotlinMultiplatform.Phoenix.Controller do
         AshKotlinMultiplatform.Phoenix.Controller.default_unauthorized_response(conn)
       end
 
-      defoverridable get_actor: 1, get_tenant: 1, handle_unauthorized: 1
+      defoverridable get_actor: 1, get_tenant: 1, get_context: 1, handle_unauthorized: 1
     end
   end
 
   @doc false
-  def handle_run(conn, params, otp_app, get_actor, get_tenant, handle_unauthorized, require_auth) do
+  def handle_run(
+        conn,
+        params,
+        otp_app,
+        get_actor,
+        get_tenant,
+        get_context,
+        handle_unauthorized,
+        require_auth
+      ) do
     actor = get_actor.(conn)
     tenant = get_tenant.(conn)
 
@@ -148,10 +170,11 @@ defmodule AshKotlinMultiplatform.Phoenix.Controller do
       result =
         AshKotlinMultiplatform.Rpc.Runner.run_action(otp_app, params,
           actor: actor,
-          tenant: tenant
+          tenant: tenant,
+          context: get_context.(conn)
         )
 
-      Phoenix.Controller.json(conn, result)
+      send_json(conn, result, params)
     end
   end
 
@@ -162,6 +185,7 @@ defmodule AshKotlinMultiplatform.Phoenix.Controller do
         otp_app,
         get_actor,
         get_tenant,
+        get_context,
         handle_unauthorized,
         require_auth
       ) do
@@ -174,11 +198,28 @@ defmodule AshKotlinMultiplatform.Phoenix.Controller do
       result =
         AshKotlinMultiplatform.Rpc.Runner.validate_action(otp_app, params,
           actor: actor,
-          tenant: tenant
+          tenant: tenant,
+          context: get_context.(conn)
         )
 
       Phoenix.Controller.json(conn, result)
     end
+  end
+
+  # `Phoenix.Controller.json/2` encodes before it sends, so an action whose
+  # result the encoder refuses (a PID, a tuple) raised here, after the action
+  # had run. The client gets `result_unavailable` instead of a 500.
+  defp send_json(conn, result, params) do
+    Phoenix.Controller.json(conn, result)
+  rescue
+    exception ->
+      unavailable =
+        AshKotlinMultiplatform.Rpc.Runner.result_unavailable(
+          %{action: params["action"]},
+          Exception.format(:error, exception, __STACKTRACE__)
+        )
+
+      Phoenix.Controller.json(conn, unavailable)
   end
 
   @doc false

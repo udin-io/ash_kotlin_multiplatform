@@ -52,6 +52,7 @@ afterwards.
 | 2026-09-23 | Upgraded to `ash_introspection` 0.6.0, whose four request entry points require a manifest and raise on a resource the manifest carries but the decorator skipped (ash_introspection#23 stage 5a PR 6); the floor is `~> 0.6` and no code here changed, which closes stage 5a (ash_introspection#23 stage 5a PR 8) |
 | 2026-09-26 | `argument_names` works in the generated Kotlin and the server; an unmapped `?` argument or a bad entry is a compile error, and an override beats the raw name in one request (#23) |
 | 2026-09-26 | `get?`, `not_found_error?`, `enable_filter?` and `enable_sort?` on a create, update, destroy or generic action are compile errors, not silently ignored; slice 2 of #113 (#79) |
+| 2026-09-27 | Errors go through the shared core's error protocol: no stack trace, actor, returned term or module name reaches the client, a raise is a failed result, `error_handler` and `show_raised_errors?` on `kotlin_rpc`, and `AshRpcError` decodes `field`, `errorId` and typed `vars`. Slice 1 of #121 (#28, #61) |
 | 2026-09-27 | A field, argument or union member typed as a resource no `kotlin_rpc` block publishes is `JsonElement`, not a class the file never declares; a generic action may return such a resource as raw JSON; a class is named by its `type_name` everywhere; a non-scalar identity value is pinned as refused. Slice 3 of #113 (#91, #92, #29) |
 
 ## In progress

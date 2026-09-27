@@ -61,7 +61,10 @@ defmodule AshKotlinMultiplatform.Rpc.Pipeline do
       field_names_callback: :interop_field_names,
       get_original_field_name: &get_original_field_name/2,
       format_field_for_client: &format_field_for_client/3,
-      not_found_error?: true
+      not_found_error?: true,
+      # Where `AshIntrospection.Rpc.Errors` reads `error_handler` and
+      # `show_raised_errors?` on the domain. Its default is `:typescript_rpc`.
+      rpc_dsl_section: :kotlin_rpc
     }
   end
 

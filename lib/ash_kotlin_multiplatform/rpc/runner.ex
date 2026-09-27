@@ -67,12 +67,17 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   - `"metadata"` - Optional metadata from the action
   """
 
+  require Logger
+
   alias AshKotlinMultiplatform.Manifest
   alias AshKotlinMultiplatform.Manifest.Entrypoints
   alias AshKotlinMultiplatform.Resource.Info, as: ResourceInfo
   alias AshKotlinMultiplatform.Rpc.KeyNames
   alias AshKotlinMultiplatform.Rpc.Pipeline
+  alias AshKotlinMultiplatform.Rpc.RequestError
+  alias AshIntrospection.ErrorFormatter
   alias AshIntrospection.Rpc.ErrorBuilder
+  alias AshIntrospection.Rpc.Errors
   alias AshIntrospection.Rpc.FieldProcessing.FieldSelector
   alias AshIntrospection.Rpc.Request
   alias AshIntrospection.FieldFormatter
@@ -110,26 +115,29 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
         execute_action(domain, resource, rpc_action, params, actor, tenant, context)
 
       {:error, reason} ->
-        build_error_response(reason)
+        error_response(reason, %{})
     end
   end
 
   @doc """
   Validate an RPC action without executing it.
 
-  Useful for real-time validation in client applications.
+  Useful for real-time validation in client applications. Takes `:actor`,
+  `:tenant` and `:context` as `run_action/3` does; `:context` reaches the
+  error handlers only.
   """
   def validate_action(otp_app, params, opts \\ []) do
     action_name = params["action"]
     actor = Keyword.get(opts, :actor)
     tenant = Keyword.get(opts, :tenant)
+    context = Keyword.get(opts, :context, %{})
 
     case discover_action(otp_app, action_name) do
       {:ok, {domain, resource, rpc_action}} ->
-        validate_changeset(domain, resource, rpc_action, params, actor, tenant)
+        validate_changeset(domain, resource, rpc_action, params, actor, tenant, context)
 
       {:error, reason} ->
-        build_error_response(reason)
+        error_response(reason, %{})
     end
   end
 
@@ -194,19 +202,77 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
              context,
              config
            ),
-         {:ok, ash_result} <- Pipeline.execute_ash_action(request),
-         {:ok, processed} <- Pipeline.process_result(ash_result, request) do
-      # `format_data/2` and not `format_output/1`: the latter renames field names
-      # and never looks at a value, so a vector left here as the packed binary
-      # `Jason` refuses (#71). `format_data/2` returns the payload alone, which
-      # is what lets this library keep its own envelope below.
-      processed
-      |> Pipeline.format_data(request)
-      |> build_success_response()
+         {:ok, ash_result} <- Pipeline.execute_ash_action(request) do
+      send_result(ash_result, request, target(domain, resource, rpc_action, context))
     else
       {:error, error} ->
-        build_error_response(error)
+        error_response(error, target(domain, resource, rpc_action, context))
     end
+  rescue
+    exception ->
+      error_response(exception, target(domain, resource, rpc_action, context), __STACKTRACE__)
+  catch
+    kind, reason when kind in [:throw, :exit] ->
+      error_response(
+        {kind, reason},
+        target(domain, resource, rpc_action, context),
+        __STACKTRACE__
+      )
+  end
+
+  # The action has run, so a failure from here on must not read as one that
+  # changed nothing: the client gets `result_unavailable` (decision 6 on
+  # #123), never `unknown_error`.
+  defp send_result(ash_result, request, target) do
+    case Pipeline.process_result(ash_result, request) do
+      # `format_data/2` and not `format_output/1`: the latter renames field
+      # names and never looks at a value, so a vector left here as the packed
+      # binary `Jason` refuses (#71). `format_data/2` returns the payload
+      # alone, which is what lets this library keep its own envelope below.
+      {:ok, processed} ->
+        processed
+        |> Pipeline.format_data(request)
+        |> build_success_response()
+
+      {:error, error} ->
+        error_response(error, target)
+    end
+  rescue
+    exception ->
+      result_unavailable(target, Exception.format(:error, exception, __STACKTRACE__))
+  catch
+    kind, reason ->
+      result_unavailable(target, Exception.format(kind, reason, __STACKTRACE__))
+  end
+
+  @doc false
+  # Also called by `AshKotlinMultiplatform.Phoenix.Controller` when the JSON
+  # encoder refuses a result. Static, and it runs no error handler: it answers
+  # a failure after the action ran, and must not fail itself.
+  def result_unavailable(target, failure) do
+    uuid = Ash.UUID.generate()
+
+    Logger.error("""
+    RPC action #{inspect(target[:action])} on #{inspect(target[:resource])} ran, but its \
+    result could not be sent; the client got result_unavailable (error id #{uuid}).
+    #{failure}
+    """)
+
+    %{
+      "success" => false,
+      "errors" => [
+        %{
+          "type" => "result_unavailable",
+          "message" => "The action ran, but its result could not be sent",
+          "shortMessage" => "Result unavailable",
+          "vars" => %{},
+          "fields" => [],
+          "field" => nil,
+          "path" => [],
+          "errorId" => uuid
+        }
+      ]
+    }
   end
 
   defp build_request(
@@ -259,7 +325,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     end
   end
 
-  defp validate_changeset(domain, resource, rpc_action, params, actor, tenant) do
+  defp validate_changeset(domain, resource, rpc_action, params, actor, tenant, context) do
     config = Pipeline.request_config(rpc_action)
     action_name = rpc_action.action
     action_info = SharedResourceInfo.action(resource, action_name, config)
@@ -294,23 +360,21 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
         build_validation_success_response()
 
       {:ok, %Ash.Changeset{valid?: false, errors: errors}} ->
-        build_validation_error_response(errors)
-
-      {:error, :validation_not_supported} ->
-        %{
-          "success" => false,
-          "errors" => [
-            %{
-              "type" => "unsupported",
-              "message" => "Validation is only supported for create and update actions",
-              "shortMessage" => "Unsupported"
-            }
-          ]
-        }
+        build_validation_error_response(errors, target(domain, resource, rpc_action, context))
 
       {:error, error} ->
-        build_error_response(error)
+        error_response(error, target(domain, resource, rpc_action, context))
     end
+  rescue
+    exception ->
+      error_response(exception, target(domain, resource, rpc_action, context), __STACKTRACE__)
+  catch
+    kind, reason when kind in [:throw, :exit] ->
+      error_response(
+        {kind, reason},
+        target(domain, resource, rpc_action, context),
+        __STACKTRACE__
+      )
   end
 
   defp get_record_for_validation(resource, identity, opts) when not is_nil(identity) do
@@ -682,270 +746,315 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     %{"success" => true, "valid" => true}
   end
 
-  defp build_validation_error_response(errors) do
-    formatted_errors = format_validation_errors(errors)
+  # `success` is true because the validation ran; `valid` carries the answer.
+  # The errors take the same path as a failed action's.
+  defp build_validation_error_response(errors, target) do
+    %{"errors" => client_errors} = error_response(errors, target)
+
+    %{"success" => true, "valid" => false, "errors" => client_errors}
+  end
+
+  # What an error is about: the domain, resource and action it came from, and
+  # the caller's context. Empty before an action is found.
+  defp target(domain, resource, rpc_action, context),
+    do: %{domain: domain, resource: resource, action: rpc_action.action, context: context}
+
+  # Reasons this library and the core pipeline return while reading the
+  # request. `ErrorBuilder` words each one, with a field path and a suggestion
+  # the client can act on. The list is closed on purpose: `ErrorBuilder`'s
+  # fallback for a tuple it does not know puts `inspect/1` of it in `details`,
+  # so any other tuple goes to `Errors.to_errors/6` instead.
+  @request_reasons [
+    :action_not_found,
+    :missing_required_parameter,
+    :invalid_fields,
+    :missing_get_by_fields,
+    :unexpected_get_by_fields,
+    :invalid_get_by,
+    :identity_not_supported,
+    :missing_identity,
+    :invalid_identity
+  ]
+
+  # Every failure reaches the client through here. A request reason is worded
+  # below. Anything else goes through `Errors.to_errors/6`, which words each
+  # error by the `AshIntrospection.Rpc.Error` protocol: an error with no
+  # implementation, a bare string or any other term becomes "Something went
+  # wrong", so internal detail stays on the server log.
+  # A raise, throw or exit inside an action comes here too, with its
+  # stacktrace: a failed result like any other, never a 500 (decision 3 on
+  # #123).
+  defp error_response(error, target, stacktrace \\ []) do
+    # Logged before any handler runs, so a handler that relabels or drops the
+    # error cannot keep it out of the log. An error with no protocol impl is
+    # logged by the core itself, so it is not logged here as well.
+    if hidden_by_protocol?(error),
+      do: log_hidden_detail("the error protocol answers unknown_error", error, target, stacktrace)
+
+    %{"success" => false, "errors" => client_errors(error, target)}
+  end
+
+  # True when the `AshIntrospection.Rpc.Error` protocol words some part of the
+  # error as `UnknownError`: "Something went wrong", with nothing logged by
+  # the core.
+  defp hidden_by_protocol?(error) do
+    not request_reason?(error) and
+      error
+      |> Ash.Error.to_error_class()
+      |> Errors.unwrap_errors()
+      |> Enum.any?(&match?(%Ash.Error.Unknown.UnknownError{}, &1))
+  rescue
+    _ -> true
+  end
+
+  defp request_reason?(:validation_not_supported), do: true
+
+  defp request_reason?({tag, _}) when tag in [:filter_not_supported, :sort_not_supported],
+    do: true
+
+  defp request_reason?(reason)
+       when is_tuple(reason) and tuple_size(reason) > 1 and elem(reason, 0) in @request_reasons,
+       do: true
+
+  defp request_reason?(_), do: false
+
+  # The last resort. An error handler is consumer code: one that returns a
+  # string or a struct makes the core or `to_client/1` raise, and a raise here
+  # would escape as a 500, since the caller's `rescue` lands back in this
+  # function. So a failure while shaping errors answers a static
+  # `internal_error` that runs no handler.
+  defp client_errors(error, target) do
+    error |> error_maps(target) |> Enum.map(&to_client/1)
+  rescue
+    failure -> [shaping_failure(error, Exception.format(:error, failure, __STACKTRACE__))]
+  catch
+    kind, reason -> [shaping_failure(error, Exception.format(kind, reason, __STACKTRACE__))]
+  end
+
+  defp shaping_failure(error, failure) do
+    uuid = Ash.UUID.generate()
+
+    Logger.error("""
+    Shaping an RPC error failed; the client got internal_error (error id #{uuid}).
+    Original error: #{format_for_log(error, [])}
+    #{failure}
+    """)
 
     %{
-      "success" => true,
-      "valid" => false,
-      "errors" => formatted_errors
+      "type" => "internal_error",
+      "message" => "Something went wrong. Unique error id: #{uuid}",
+      "shortMessage" => "Internal error",
+      "vars" => %{},
+      "fields" => [],
+      "field" => nil,
+      "path" => [],
+      "errorId" => uuid
     }
   end
 
-  defp format_validation_errors(errors) do
-    Enum.map(List.wrap(errors), fn error ->
+  # The core has no reason for a read-surface switch or for validating an
+  # action that is not a create or update, so these two are worded here, in
+  # the core's shape.
+  defp request_error_maps({:filter_not_supported, rpc_action_name}),
+    do: [unsupported_read_parameter("filter", rpc_action_name, "enable_filter?")]
+
+  defp request_error_maps({:sort_not_supported, rpc_action_name}),
+    do: [unsupported_read_parameter("sort", rpc_action_name, "enable_sort?")]
+
+  defp request_error_maps(:validation_not_supported) do
+    [
       %{
-        "type" => "validation_error",
-        "message" => Exception.message(error),
-        "shortMessage" => "Validation failed",
-        "field" => get_error_field(error)
+        type: "unsupported",
+        message: "Validation is only supported for create and update actions",
+        short_message: "Unsupported",
+        vars: %{},
+        fields: [],
+        path: []
       }
-    end)
+    ]
   end
 
-  # Field selection and getBy errors carry a field path and a suggestion the
-  # client can act on, so they are rendered from the shared `ErrorBuilder`
-  # rather than flattened into a generic "error". The message arrives as a
-  # template plus vars, which `render_message/2` fills in.
-  defp build_error_response({:invalid_fields, _reason} = error),
-    do: build_error_response_from_builder(error)
-
-  defp build_error_response({:missing_get_by_fields, _missing} = error),
-    do: build_error_response_from_builder(error)
-
-  defp build_error_response({:unexpected_get_by_fields, _extra, _allowed} = error),
-    do: build_error_response_from_builder(error)
-
-  defp build_error_response({:invalid_get_by, _details} = error),
-    do: build_error_response_from_builder(error)
-
-  # Raised by the core pipeline, not here: a read that is sent an `identity` is
-  # refused. The shared message names `get_by` as the replacement, which is the
-  # reason this clause is worth having over the generic `inspect/1` fallback.
-  defp build_error_response({:identity_not_supported, _details} = error),
-    do: build_error_response_from_builder(error)
-
-  defp build_error_response({:filter_not_supported, rpc_action_name}) do
-    unsupported_read_parameter_response("filter", rpc_action_name, "enable_filter?")
+  # Two field-selection reasons `ErrorBuilder` has no clause for. Its fallbacks
+  # would send `inspect/1` of the tuple in `details.error`.
+  defp request_error_maps({:invalid_fields, {:fields_must_be_a_list, _fields}}) do
+    [
+      %{
+        type: "invalid_fields_type",
+        message: "Fields parameter must be an array",
+        short_message: "Invalid fields type",
+        vars: %{},
+        fields: [],
+        path: [],
+        details: %{suggestion: "Wrap field names in an array, e.g., [\"field1\", \"field2\"]"}
+      }
+    ]
   end
 
-  defp build_error_response({:sort_not_supported, rpc_action_name}) do
-    unsupported_read_parameter_response("sort", rpc_action_name, "enable_sort?")
+  # No test resource can reach this one: `FieldSelector` throws it for a map
+  # entry naming several fields, or a calculation with arguments, inside a
+  # typed struct field.
+  defp request_error_maps({:invalid_fields, {:invalid_field_format, _field, path}}) do
+    [
+      %{
+        type: "invalid_field_format",
+        message: "Name one nested field per map in fields",
+        short_message: "Invalid field format",
+        vars: %{},
+        fields: [],
+        path: path,
+        details: %{}
+      }
+    ]
   end
 
-  defp build_error_response({:action_not_found, action_name}) do
-    %{
-      "success" => false,
-      "errors" => [
-        %{
-          "type" => "action_not_found",
-          "message" => "RPC action '#{action_name}' not found",
-          "shortMessage" => "Action not found"
-        }
-      ]
-    }
+  defp request_error_maps(reason)
+       when is_tuple(reason) and tuple_size(reason) > 1 and elem(reason, 0) in @request_reasons do
+    reason
+    |> ErrorBuilder.build_error_response(Pipeline.build_config())
+    |> List.wrap()
+    |> Enum.map(&without_module_names/1)
   end
 
-  defp build_error_response({:missing_required_parameter, param}) do
-    %{
-      "success" => false,
-      "errors" => [
-        %{
-          "type" => "missing_required_parameter",
-          "message" => "Required parameter '#{param}' is missing",
-          "shortMessage" => "Missing parameter"
-        }
-      ]
-    }
+  # A request error is worded here and then wrapped, so the same handlers see
+  # it as see an action's error (decision 5 on #123). Anything else reaches the
+  # core as it is, less its bread crumbs.
+  defp error_maps(error, target) do
+    if request_reason?(error) do
+      error
+      |> request_error_maps()
+      |> Enum.map(&%RequestError{error: &1})
+      |> core_errors(target)
+    else
+      error
+      |> without_bread_crumbs()
+      |> core_errors(target)
+    end
   end
 
-  defp build_error_response(%Ash.Error.Invalid{errors: errors}) do
-    formatted_errors =
-      Enum.map(errors, fn error ->
-        %{
-          "type" => "validation_error",
-          "message" => Exception.message(error),
-          "shortMessage" => "Validation failed",
-          "field" => get_error_field(error)
-        }
-      end)
-
-    %{"success" => false, "errors" => formatted_errors}
+  defp core_errors(errors, target) do
+    Errors.to_errors(
+      errors,
+      target[:domain],
+      target[:resource],
+      target[:action],
+      Map.get(target, :context, %{}),
+      Pipeline.build_config()
+    )
   end
 
-  defp build_error_response(%Ash.Error.Forbidden{} = error) do
-    %{
-      "success" => false,
-      "errors" => [
-        %{
-          "type" => "forbidden",
-          "message" => Exception.message(error),
-          "shortMessage" => "Access denied"
-        }
-      ]
-    }
+  # `ErrorBuilder` puts `inspect/1` of a resource or an Ash type into `vars`
+  # ("for resource MyApp.Blog.Post", "primitive type Ash.Type.String"). The
+  # client names a resource by its Kotlin type and has never seen the module,
+  # so each loaded module a value names becomes that type name, or the last
+  # segment of the module for anything that is not a resource. Messages are
+  # templates over `vars`, so the rendered message follows.
+  @module_name ~r/\b[A-Z][A-Za-z0-9_]*(?:\.[A-Z][A-Za-z0-9_]*)+\b/
+
+  defp without_module_names(%{vars: vars} = error) when is_map(vars),
+    do: %{error | vars: Map.new(vars, fn {key, value} -> {key, client_names(value)} end)}
+
+  defp without_module_names(error), do: error
+
+  defp client_names(value) when is_binary(value),
+    do: Regex.replace(@module_name, value, &client_name/1)
+
+  defp client_names(value), do: value
+
+  defp client_name(text) do
+    module = String.to_existing_atom("Elixir." <> text)
+
+    cond do
+      not Code.ensure_loaded?(module) -> text
+      Ash.Resource.Info.resource?(module) -> ResourceInfo.kotlin_multiplatform_type_name!(module)
+      true -> module |> Module.split() |> List.last()
+    end
+  rescue
+    ArgumentError -> text
   end
 
-  defp build_error_response(%Ash.Error.Query.NotFound{} = error) do
-    %{
-      "success" => false,
-      "errors" => [
-        %{
-          "type" => "not_found",
-          "message" => Exception.message(error),
-          "shortMessage" => "Not found"
-        }
-      ]
-    }
+  # Splode prefixes `Exception.message/1` with the bread crumbs Ash leaves on an
+  # error ("Error returned from: MyApp.Post.create"), and several core
+  # `Rpc.Error` impls send that message, so the module name would reach the
+  # client. The log keeps them: `log_hidden_detail/4` gets the original error.
+  defp without_bread_crumbs(error) when is_list(error),
+    do: Enum.map(error, &without_bread_crumbs/1)
+
+  defp without_bread_crumbs(%{errors: errors} = error) when is_list(errors),
+    do: %{drop_bread_crumbs(error) | errors: Enum.map(errors, &without_bread_crumbs/1)}
+
+  defp without_bread_crumbs(error), do: drop_bread_crumbs(error)
+
+  defp drop_bread_crumbs(%{bread_crumbs: _} = error), do: %{error | bread_crumbs: []}
+  defp drop_bread_crumbs(error), do: error
+
+  # The client got "Something went wrong" in place of this error, so the log is
+  # the only place its text survives. An `internal_error` carries the id the
+  # client was given, so the two ends can be joined.
+  defp log_hidden_detail(outcome, error, target, stacktrace) do
+    Logger.error("""
+    RPC action #{inspect(target[:action])} on #{inspect(target[:resource])} failed; #{outcome}.
+    #{format_for_log(error, stacktrace)}
+    """)
   end
 
-  defp build_error_response({:missing_identity, details}) do
-    expected = Map.get(details, :expected_keys, []) |> Enum.join(", ")
+  # A throw or an exit is caught as `{kind, reason}`, which the core treats as
+  # any other term: "Something went wrong".
+  defp format_for_log({kind, reason}, stacktrace) when kind in [:throw, :exit],
+    do: Exception.format(kind, reason, stacktrace)
 
-    %{
-      "success" => false,
-      "errors" => [
-        %{
-          "type" => "missing_identity",
-          "message" => "Identity required. Expected one of: #{expected}",
-          "shortMessage" => "Missing identity"
-        }
-      ]
-    }
+  defp format_for_log(error, stacktrace) when is_exception(error),
+    do: Exception.format(:error, error, stacktrace)
+
+  defp format_for_log(error, _stacktrace), do: inspect(error)
+
+  # `:camel_case` is pinned rather than read from `output_field_formatter`:
+  # the Kotlin and Swift clients read `shortMessage` whatever that setting is
+  # (#24). Issue 57 decides whether error keys follow it.
+  #
+  # `message` arrives as finished text, with `vars` beside it for an app that
+  # translates. `field` repeats the first of `fields` for the Swift client.
+  defp to_client(error) do
+    client = ErrorFormatter.format(error, :camel_case)
+    vars = Map.get(client, "vars") || %{}
+    fields = Enum.map(Map.get(client, "fields") || [], &to_string/1)
+
+    client
+    |> Map.put("message", render_message(client["message"], vars))
+    |> Map.put("fields", fields)
+    |> Map.put("field", List.first(fields))
+    |> without_inspected_term()
   end
 
-  defp build_error_response({:invalid_identity, details}) do
-    %{
-      "success" => false,
-      "errors" => [
-        %{
-          "type" => "invalid_identity",
-          "message" => Map.get(details, :message, "Invalid identity provided"),
-          "shortMessage" => "Invalid identity"
-        }
-      ]
-    }
-  end
+  # `ErrorBuilder`'s fallbacks put `inspect/1` of the reason in
+  # `details.error`: an Elixir term, never meant for a client.
+  defp without_inspected_term(%{"details" => %{} = details} = client),
+    do: %{client | "details" => Map.delete(details, "error")}
 
-  defp build_error_response(errors) when is_list(errors) do
-    formatted_errors =
-      Enum.flat_map(errors, fn
-        %Ash.Error.Invalid{errors: inner_errors} ->
-          Enum.map(inner_errors, &format_single_error/1)
-
-        error ->
-          [format_single_error(error)]
-      end)
-
-    %{"success" => false, "errors" => formatted_errors}
-  end
-
-  defp build_error_response(error) when is_exception(error) do
-    %{
-      "success" => false,
-      "errors" => [format_single_error(error)]
-    }
-  end
-
-  defp build_error_response(error) do
-    %{
-      "success" => false,
-      "errors" => [
-        %{
-          "type" => "error",
-          "message" => inspect(error),
-          "shortMessage" => "Error"
-        }
-      ]
-    }
-  end
+  defp without_inspected_term(client), do: client
 
   defp render_message(message, vars) when is_binary(message) and is_map(vars) do
     Enum.reduce(vars, message, fn {key, value}, acc ->
-      String.replace(acc, "%{#{key}}", to_string(value))
+      String.replace(acc, "%{#{key}}", render_value(value))
     end)
   end
 
-  defp build_error_response_from_builder(reason) do
-    errors =
-      reason
-      |> ErrorBuilder.build_error_response(Pipeline.build_config())
-      |> List.wrap()
-      |> Enum.map(fn error ->
-        %{
-          "type" => to_string(error.type),
-          "message" => render_message(error.message, Map.get(error, :vars, %{})),
-          "shortMessage" => error.short_message,
-          "field" => error |> Map.get(:fields, []) |> List.first() |> field_name_or_nil()
-        }
-      end)
+  defp render_message(message, _vars), do: message
 
-    %{"success" => false, "errors" => errors}
-  end
+  defp render_value(value) when is_list(value), do: Enum.map_join(value, ", ", &render_value/1)
+  defp render_value(value) when is_binary(value), do: value
+  defp render_value(value) when is_atom(value) or is_number(value), do: to_string(value)
+  defp render_value(value), do: inspect(value)
 
-  # `fields` reaches here as strings from field selection and as atoms from the
-  # getBy checks, and the client reads one shape.
-  defp field_name_or_nil(nil), do: nil
-  defp field_name_or_nil(field), do: to_string(field)
-
-  defp unsupported_read_parameter_response(parameter, rpc_action_name, dsl_option) do
+  defp unsupported_read_parameter(parameter, rpc_action_name, dsl_option) do
     %{
-      "success" => false,
-      "errors" => [
-        %{
-          "type" => "#{parameter}_not_supported",
-          "message" =>
-            "RPC action '#{rpc_action_name}' does not accept '#{parameter}'. " <>
-              "Set `#{dsl_option} true` on the rpc_action to enable it, or regenerate the client.",
-          "shortMessage" => "#{String.capitalize(parameter)} not supported"
-        }
-      ]
+      type: "#{parameter}_not_supported",
+      message:
+        "RPC action '#{rpc_action_name}' does not accept '#{parameter}'. " <>
+          "Set `#{dsl_option} true` on the rpc_action to enable it, or regenerate the client.",
+      short_message: "#{String.capitalize(parameter)} not supported",
+      vars: %{},
+      fields: [],
+      path: []
     }
-  end
-
-  defp format_single_error(error) when is_exception(error) do
-    %{
-      "type" => error_type(error),
-      "message" => Exception.message(error),
-      "shortMessage" => short_message(error),
-      "field" => get_error_field(error)
-    }
-  end
-
-  defp format_single_error(error) do
-    %{
-      "type" => "error",
-      "message" => inspect(error),
-      "shortMessage" => "Error"
-    }
-  end
-
-  defp error_type(%Ash.Error.Changes.Required{}), do: "required"
-  defp error_type(%Ash.Error.Changes.InvalidAttribute{}), do: "invalid_attribute"
-  defp error_type(%Ash.Error.Query.NotFound{}), do: "not_found"
-  defp error_type(%Ash.Error.Forbidden{}), do: "forbidden"
-  defp error_type(_), do: "validation_error"
-
-  defp short_message(%Ash.Error.Changes.Required{}), do: "Required"
-  defp short_message(%Ash.Error.Changes.InvalidAttribute{}), do: "Invalid"
-  defp short_message(%Ash.Error.Query.NotFound{}), do: "Not found"
-  defp short_message(%Ash.Error.Forbidden{}), do: "Access denied"
-  defp short_message(_), do: "Validation failed"
-
-  defp get_error_field(error) do
-    formatter = AshKotlinMultiplatform.output_field_formatter()
-
-    cond do
-      Map.has_key?(error, :field) && error.field ->
-        FieldFormatter.format_field_name(to_string(error.field), formatter)
-
-      Map.has_key?(error, :fields) && is_list(error.fields) && error.fields != [] ->
-        error.fields
-        |> Enum.map(&FieldFormatter.format_field_name(to_string(&1), formatter))
-        |> Enum.join(", ")
-
-      true ->
-        nil
-    end
   end
 end

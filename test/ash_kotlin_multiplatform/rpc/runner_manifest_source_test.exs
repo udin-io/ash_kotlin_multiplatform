@@ -47,7 +47,7 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerManifestSourceTest do
     test "an rpc_action it does not name is action_not_found" do
       assert [error] = errors(run(%{"action" => "list_todos"}))
       assert error["type"] == "action_not_found"
-      assert error["message"] == "RPC action 'list_todos' not found"
+      assert error["message"] == "RPC action list_todos not found"
     end
 
     # The other half of the claim above. Without it the first test passes on a

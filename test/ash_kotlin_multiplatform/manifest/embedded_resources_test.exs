@@ -42,7 +42,7 @@ defmodule AshKotlinMultiplatform.Manifest.EmbeddedResourcesTest do
     test "lists every kotlin_rpc resource and every embedded resource, sorted" do
       assert Manifest.published_resources(Test.Manifest) ==
                Enum.sort(
-                 [Test.Author, Test.Book, Test.Event, Test.Todo, Test.User] ++
+                 [Test.Author, Test.Book, Test.Event, Test.Fault, Test.Todo, Test.User] ++
                    Manifest.embedded_resources(Test.Manifest)
                )
     end
