@@ -212,7 +212,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     exception ->
       error_response(exception, target(domain, resource, rpc_action, context), __STACKTRACE__)
   catch
-    kind, reason ->
+    kind, reason when kind in [:throw, :exit] ->
       error_response(
         {kind, reason},
         target(domain, resource, rpc_action, context),
@@ -369,7 +369,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     exception ->
       error_response(exception, target(domain, resource, rpc_action, context), __STACKTRACE__)
   catch
-    kind, reason ->
+    kind, reason when kind in [:throw, :exit] ->
       error_response(
         {kind, reason},
         target(domain, resource, rpc_action, context),
@@ -785,57 +785,26 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # stacktrace: a failed result like any other, never a 500 (decision 3 on
   # #123).
   defp error_response(error, target, stacktrace \\ []) do
-    kinds = protocol_kinds(error)
-
     # Logged before any handler runs, so a handler that relabels or drops the
     # error cannot keep it out of the log. An error with no protocol impl is
     # logged by the core itself, so it is not logged here as well.
-    if :unknown in kinds,
+    if hidden_by_protocol?(error),
       do: log_hidden_detail("the error protocol answers unknown_error", error, target, stacktrace)
 
-    errors = client_errors(error, target)
-
-    # What remains is a handler or `client_errors/2` failing: the client got
-    # an error id, and only this line joins it to the original error.
-    if kinds == [:known] or kinds == [] do
-      errors
-      |> Enum.filter(&(&1["type"] in ["unknown_error", "internal_error"]))
-      |> Enum.each(fn hidden ->
-        log_hidden_detail(
-          "the client got #{hidden["type"]} (error id #{hidden["errorId"]})",
-          error,
-          target,
-          stacktrace
-        )
-      end)
-    end
-
-    %{"success" => false, "errors" => errors}
+    %{"success" => false, "errors" => client_errors(error, target)}
   end
 
-  # How the `AshIntrospection.Rpc.Error` protocol words each error, before any
-  # handler sees it: `:known`, `:unknown` for `UnknownError`, whose impl sends
-  # "Something went wrong" and logs nothing, or `:unimplemented`, which the
-  # core logs itself.
-  defp protocol_kinds(error) do
-    if request_reason?(error) do
-      []
-    else
+  # True when the `AshIntrospection.Rpc.Error` protocol words some part of the
+  # error as `UnknownError`: "Something went wrong", with nothing logged by
+  # the core.
+  defp hidden_by_protocol?(error) do
+    not request_reason?(error) and
       error
       |> Ash.Error.to_error_class()
       |> Errors.unwrap_errors()
-      |> Enum.map(&protocol_kind/1)
-      |> Enum.uniq()
-      |> Enum.sort()
-    end
+      |> Enum.any?(&match?(%Ash.Error.Unknown.UnknownError{}, &1))
   rescue
-    _ -> [:unknown]
-  end
-
-  defp protocol_kind(%Ash.Error.Unknown.UnknownError{}), do: :unknown
-
-  defp protocol_kind(error) do
-    if AshIntrospection.Rpc.Error.impl_for(error), do: :known, else: :unimplemented
+    _ -> true
   end
 
   defp request_reason?(:validation_not_supported), do: true
@@ -857,16 +826,17 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   defp client_errors(error, target) do
     error |> error_maps(target) |> Enum.map(&to_client/1)
   rescue
-    failure -> [shaping_failure(Exception.format(:error, failure, __STACKTRACE__))]
+    failure -> [shaping_failure(error, Exception.format(:error, failure, __STACKTRACE__))]
   catch
-    kind, reason -> [shaping_failure(Exception.format(kind, reason, __STACKTRACE__))]
+    kind, reason -> [shaping_failure(error, Exception.format(kind, reason, __STACKTRACE__))]
   end
 
-  defp shaping_failure(failure) do
+  defp shaping_failure(error, failure) do
     uuid = Ash.UUID.generate()
 
     Logger.error("""
     Shaping an RPC error failed; the client got internal_error (error id #{uuid}).
+    Original error: #{format_for_log(error, [])}
     #{failure}
     """)
 
@@ -1052,7 +1022,6 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     |> Map.put("message", render_message(client["message"], vars))
     |> Map.put("fields", fields)
     |> Map.put("field", List.first(fields))
-    |> Map.put("path", Enum.map(Map.get(client, "path") || [], &path_segment/1))
     |> without_inspected_term()
   end
 
@@ -1062,11 +1031,6 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     do: %{client | "details" => Map.delete(details, "error")}
 
   defp without_inspected_term(client), do: client
-
-  # `ErrorBuilder` leaves path segments as atoms; `Errors.to_errors/6` has
-  # already turned them into strings. A list index stays a number.
-  defp path_segment(segment) when is_atom(segment), do: Atom.to_string(segment)
-  defp path_segment(segment), do: segment
 
   defp render_message(message, vars) when is_binary(message) and is_map(vars) do
     Enum.reduce(vars, message, fn {key, value}, acc ->

@@ -222,6 +222,23 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerErrorRedactionTest do
       serve_under(Test.JunkHandlerDomain, "fault_return_string")
     end
 
+    test "the log keeps a known error the handler broke" do
+      serve_under(Test.JunkHandlerDomain, "create_fault")
+
+      {response, log} =
+        with_log(fn ->
+          run(%{"action" => "create_fault", "input" => %{"title" => "ab"}},
+            context: %{handler_returns: "junk"}
+          )
+        end)
+
+      assert %{"success" => false, "errors" => [%{"type" => "internal_error"} = error]} =
+               response
+
+      assert log =~ error["errorId"]
+      assert log =~ "length must be greater than or equal to"
+    end
+
     test "a handler that drops the error cannot keep it out of the log" do
       {response, log} =
         with_log(fn ->
