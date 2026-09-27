@@ -149,8 +149,8 @@ returns, not the resource that owns it. `Book.summarize` returns `Summary`,
 so `summarizeBook` returns `RpcResult<Summary>`, never `RpcResult<Book>`
 (#87). `Resource.Info.returned_resource/1` names that resource for codegen
 and for `Rpc.Runner`'s no-`fields` default alike (#88), and codegen names
-only a class in `emitted`, the list `Rpc.Codegen` threads into
-`FunctionCore`. Do not route it back through ash_introspection's
+only a class in `emitted`, the `Manifest.published_resources/1` list
+`Rpc.Codegen` threads into `FunctionCore`. Do not route it back through ash_introspection's
 `action_returns_field_selectable_type?/1`: that answers
 `:not_field_selectable_type` for every embedded return.
 
@@ -169,6 +169,13 @@ nowhere to live. That is the shape (see `docs/decisions.md`), and it is where
 `Rpc.Codegen`, not looked up inside a generator: #52 fixed #44 by passing
 `ResourceSchemas.generate_data_class/2` the set of resources the same pass
 emits a class for. Follow that pattern.
+
+The one exception is the list of resource classes itself:
+`Manifest.published_resources/1` is read from the compiled manifest, so
+`TypeMapper` asks it directly rather than having it threaded through six
+generators. `Rpc.Codegen` builds `emitted` from the same call, so a field and
+a signature cannot disagree (#91). A `:struct` whose `instance_of` is not in
+that list is `JsonElement`.
 
 ### A new type needs the server half checked too
 

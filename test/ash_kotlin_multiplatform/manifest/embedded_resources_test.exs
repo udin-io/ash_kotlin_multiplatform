@@ -24,6 +24,7 @@ defmodule AshKotlinMultiplatform.Manifest.EmbeddedResourcesTest do
              Test.Edition,
              Test.PrivateMeta,
              Test.SecretNote,
+             Test.Stamp,
              Test.Summary,
              Test.SummaryOpts,
              Test.UnionNote,
@@ -33,5 +34,26 @@ defmodule AshKotlinMultiplatform.Manifest.EmbeddedResourcesTest do
 
   test "defaults to the manifest named in config" do
     assert Manifest.embedded_resources() == Manifest.embedded_resources(Test.Manifest)
+  end
+
+  # #91. Every class the generated file declares a resource class for. A type
+  # may name a resource's class only when that resource is in this list.
+  describe "published_resources/1" do
+    test "lists every kotlin_rpc resource and every embedded resource, sorted" do
+      assert Manifest.published_resources(Test.Manifest) ==
+               Enum.sort(
+                 [Test.Author, Test.Book, Test.Event, Test.Todo, Test.User] ++
+                   Manifest.embedded_resources(Test.Manifest)
+               )
+    end
+
+    test "leaves out a resource no kotlin_rpc block names" do
+      refute Test.Secret in Manifest.published_resources(Test.Manifest)
+      refute Test.Vault in Manifest.published_resources(Test.Manifest)
+    end
+
+    test "defaults to the manifest named in config" do
+      assert Manifest.published_resources() == Manifest.published_resources(Test.Manifest)
+    end
   end
 end

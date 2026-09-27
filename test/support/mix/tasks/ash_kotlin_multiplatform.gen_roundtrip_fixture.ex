@@ -71,7 +71,10 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.GenRoundtripFixture do
       {"other_resource_action_default_fields", other_resource_action_default_fields()},
       {"typed_struct_action_default_fields", typed_struct_action_default_fields()},
       {"union_action_default_fields", union_action_default_fields()},
-      {"union_list_action_default_fields", union_list_action_default_fields()}
+      {"union_list_action_default_fields", union_list_action_default_fields()},
+      {"unpublished_resource_action_default_fields",
+       unpublished_resource_action_default_fields()},
+      {"unpublished_resource_attribute", unpublished_resource_attribute()}
     ]
 
     # Bound in three steps rather than piped, so the order these run in is the
@@ -191,6 +194,25 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.GenRoundtripFixture do
 
   defp other_resource_action_default_fields do
     call(%{"action" => "sample_author"})
+  end
+
+  # #91, #92: `Secret` is in no `kotlin_rpc` block, so the generated file
+  # declares no class for it. The action's return and Book's `secretRef` field
+  # are both `JsonElement`, and these two responses carry a populated `Secret`
+  # into each.
+  defp unpublished_resource_action_default_fields do
+    call(%{"action" => "reveal_secret"})
+  end
+
+  defp unpublished_resource_attribute do
+    call(%{
+      "action" => "create_book",
+      "input" => %{
+        "title" => "Kindred",
+        "secretRef" => %{"id" => "00000000-0000-0000-0000-000000000003", "body" => "hidden"}
+      },
+      "fields" => ["title", %{"secretRef" => ["body"]}]
+    })
   end
 
   # A generic action returning a `:struct` with declared fields, no `fields`.

@@ -96,6 +96,7 @@ flowchart TD
 
     cg --> coll["Rpc.Codegen.RpcConfigCollector<br/>reads Rpc.Info off each domain"]
     cg --> emb["Manifest.embedded_resources/1<br/>kind: :embedded_resource<br/>from the persisted manifest.types"]
+    cg --> pub["Manifest.published_resources/1<br/>persisted rpc_resources + embedded"]
     cg --> vc["VerifierChecker<br/>VerifyIdentities (identities and get_by),<br/>VerifyActionTypes,<br/>VerifyFieldNames, VerifyUniqueTypeNames"]
 
     coll --> tuples["{resource, action, rpc_action}"]
@@ -106,13 +107,13 @@ flowchart TD
     tuples --> types["TypeGenerators.*<br/>InputTypes, MetadataTypes (+ AshMetadata&lt;T, M&gt;),<br/>PaginationTypes (AshPage&lt;T&gt;)"]
     tuples --> filters["Codegen.FilterTypes<br/>Codegen.TypedQueries"]
     tuples --> fns["FunctionGenerators.HttpRenderer<br/>+ FunctionCore, ConfigBuilder,<br/>ActionIntrospection, PayloadBuilder"]
-    coll -->|"emitted: RPC resources"| fns
-    emb -->|"emitted: embedded resources"| fns
+    pub -->|"emitted"| fns
     tuples --> chan["Rpc.Codegen.PhoenixChannel<br/>PhoenixSerializer, PhoenixSocket,<br/>PhoenixChannel, AshRpcChannel"]
 
     schemas --> tm["Codegen.TypeMapper"]
     types --> tm
     filters --> tm
+    pub -->|"a :struct names a class<br/>only for these"| tm
 
     static --> out["AshRpc.kt"]
     schemas --> out
@@ -147,10 +148,17 @@ owns it (#87). `Resource.Info.returned_resource/1` classifies the return: it
 unwraps arrays and NewTypes and takes a bare resource module or a `:struct`
 whose `instance_of` is a resource. `FunctionCore` names that class only when
 it is in
-`emitted`, the RPC resources plus `Manifest.embedded_resources/1`.
-`Rpc.Codegen` builds that list once and passes it through
-`HttpRenderer.render_execution_function/5`, because `FunctionCore` cannot see
-what `ResourceSchemas` declares. Anything else is `JsonElement`.
+`emitted`, which `Rpc.Codegen` takes from `Manifest.published_resources/1`
+(the `kotlin_rpc` resources `BuildManifest` persists, plus
+`Manifest.embedded_resources/1`) and passes through
+`HttpRenderer.render_execution_function/5`. Anything else is `JsonElement`.
+
+`TypeMapper` reads the same function for a `:struct` whose `instance_of` is a
+module: it names the class only for a resource in that list, and
+`JsonElement` otherwise, so a field, an argument and a union member typed as an
+unpublished resource compile (#91). Every generator names a resource's class
+through `Resource.Info.kotlin_multiplatform_type_name!/1`, the `type_name` or
+else the module's last segment.
 
 `TypeMapper` and `KotlinStatic` are a pair wherever the mapper names a class
 rather than a built-in. `AshMoney.Types.Money` maps to `AshMoney`, and

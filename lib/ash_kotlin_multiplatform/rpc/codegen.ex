@@ -78,10 +78,10 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
 
     embedded = Manifest.embedded_resources()
 
-    # Every resource this pass declares a class for. A section generator cannot
-    # see what another emitted, so the set is built once here and handed to the
-    # functions, whose return types may name nothing outside it (#87).
-    emitted = rpc_resources ++ embedded
+    # Every resource this pass declares a class for. `TypeMapper` reads the same
+    # list, so a field and a function signature cannot disagree about which
+    # classes exist (#87, #91).
+    emitted = Manifest.published_resources()
 
     # Generate comprehensive schema types
     {data_classes, embedded_classes, enum_classes, sealed_classes} =
@@ -196,23 +196,6 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
     """
   end
 
-  defp get_resource_type_name(resource) do
-    case AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name(resource) do
-      nil ->
-        resource
-        |> Module.split()
-        |> List.last()
-
-      name ->
-        name
-    end
-  rescue
-    _ ->
-      resource
-      |> Module.split()
-      |> List.last()
-  end
-
   # Generate metadata types for all actions that expose metadata
   defp generate_metadata_types(resources_and_actions) do
     resources_and_actions
@@ -276,7 +259,8 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
     rpc_configs
     |> Enum.group_by(fn %{resource: resource} -> resource end)
     |> Enum.sort_by(fn {resource, _configs} ->
-      {to_string(get_resource_type_name(resource)), resource}
+      {to_string(AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name!(resource)),
+       resource}
     end)
     |> Enum.map_join("\n\n", fn {resource, configs} ->
       generate_object_wrapper(resource, List.first(configs), package_name)
@@ -284,7 +268,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
   end
 
   defp generate_object_wrapper(resource, %{rpc_actions: actions}, package_name) do
-    type_name = get_resource_type_name(resource)
+    type_name = AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name!(resource)
     object_name = "#{type_name}Rpc"
 
     functions =

@@ -190,6 +190,32 @@ defmodule AshKotlinMultiplatform.Manifest do
     |> Enum.sort()
   end
 
+  @doc """
+  Every resource named in a `kotlin_rpc` block of the manifest's domains,
+  sorted by module.
+  """
+  @spec rpc_resources(module()) :: [module()]
+  def rpc_resources(manifest_module \\ manifest_module()) do
+    manifest_module
+    |> Spark.Dsl.Extension.get_persisted(:rpc_resources, [])
+    |> Enum.sort()
+  end
+
+  @doc """
+  Every resource the generated file declares a class for: `rpc_resources/1`
+  plus `embedded_resources/1`, sorted by module.
+
+  Generated Kotlin may name a resource's class only when the resource is in
+  this list. Anything else typed as a resource reaches the client as
+  `JsonElement` (#91).
+  """
+  @spec published_resources(module()) :: [module()]
+  def published_resources(manifest_module \\ manifest_module()) do
+    (rpc_resources(manifest_module) ++ embedded_resources(manifest_module))
+    |> Enum.uniq()
+    |> Enum.sort()
+  end
+
   @doc "The manifest's entrypoints — one per `rpc_action` and one per `typed_query`."
   @spec entrypoints(module()) :: [Ash.Info.Manifest.Entrypoint.t()]
   def entrypoints(manifest_module \\ manifest_module()),

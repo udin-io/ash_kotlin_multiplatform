@@ -62,7 +62,7 @@ defmodule AshKotlinMultiplatform.Codegen.FilterTypes do
   Generates a filter type for a single resource.
   """
   def generate_filter_type(resource) do
-    resource_name = get_resource_name(resource)
+    resource_name = AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name!(resource)
     filter_type_name = "#{resource_name}FilterInput"
 
     logical_operators = generate_logical_operators(filter_type_name)
@@ -92,7 +92,7 @@ defmodule AshKotlinMultiplatform.Codegen.FilterTypes do
   Generates a filter type for a resource with relationship filtering limited to allowed resources.
   """
   def generate_filter_type(resource, allowed_resources) do
-    resource_name = get_resource_name(resource)
+    resource_name = AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name!(resource)
     filter_type_name = "#{resource_name}FilterInput"
 
     logical_operators = generate_logical_operators(filter_type_name)
@@ -333,7 +333,10 @@ defmodule AshKotlinMultiplatform.Codegen.FilterTypes do
 
   defp generate_relationship_filter(relationship) do
     related_resource = relationship.destination
-    related_resource_name = get_resource_name(related_resource)
+
+    related_resource_name =
+      AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name!(related_resource)
+
     filter_type_name = "#{related_resource_name}FilterInput"
 
     formatted_name = format_field(relationship.name)
@@ -383,23 +386,6 @@ defmodule AshKotlinMultiplatform.Codegen.FilterTypes do
         # Default to string filter for unknown types
         "StringFilter"
     end
-  end
-
-  defp get_resource_name(resource) do
-    case AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name(resource) do
-      nil ->
-        resource
-        |> Module.split()
-        |> List.last()
-
-      name ->
-        to_string(name)
-    end
-  rescue
-    _ ->
-      resource
-      |> Module.split()
-      |> List.last()
   end
 
   defp format_field(field_name) do

@@ -264,11 +264,19 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
     "JsonElement"
   end
 
-  # Struct type
+  # A `:struct` names a class only when the generated file declares one:
+  # `Manifest.published_resources/1`, the list `Rpc.Codegen` emits classes for.
+  # A resource no `kotlin_rpc` block names, or a module that is no resource,
+  # has no class, and naming it is a Kotlin compile error (#91).
   defp map_type(Ash.Type.Struct, constraints) do
     case Keyword.get(constraints, :instance_of) do
-      nil -> AshKotlinMultiplatform.untyped_map_type()
-      module -> get_kotlin_class_name(module)
+      nil ->
+        AshKotlinMultiplatform.untyped_map_type()
+
+      module ->
+        if module in AshKotlinMultiplatform.Manifest.published_resources(),
+          do: get_kotlin_class_name(module),
+          else: "JsonElement"
     end
   end
 
@@ -352,18 +360,19 @@ defmodule AshKotlinMultiplatform.Codegen.TypeMapper do
   def get_interop_field_names_map(_), do: %{}
 
   @doc """
-  Generates a Kotlin class name from an Elixir module.
+  The name of the class the generated file declares for a resource: its
+  `type_name`, else the last segment of its module.
+
+  `ResourceSchemas` declares the class under the same name, so a field and
+  its class cannot disagree.
 
   ## Examples
 
       iex> get_kotlin_class_name(MyApp.Accounts.User)
       "User"
   """
-  def get_kotlin_class_name(module) when is_atom(module) do
-    module
-    |> Module.split()
-    |> List.last()
-  end
+  def get_kotlin_class_name(module) when is_atom(module),
+    do: AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name!(module)
 
   @doc """
   Checks if an Ash type should be generated as a Kotlin enum class.

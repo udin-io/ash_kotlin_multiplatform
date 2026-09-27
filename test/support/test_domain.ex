@@ -31,6 +31,13 @@ defmodule AshKotlinMultiplatform.Test.Domain do
       # the round-trip gate needs in order to decode each typed return shape
       # `FunctionCore.determine_return_type/1` can produce (#22).
       rpc_action :destroy_author, :destroy
+
+      # A destroy addressed by a named identity rather than the primary key, so
+      # a non-scalar value reaches the core's scalar check (#29).
+      rpc_action :destroy_author_by_email, :destroy do
+        identities [:unique_email]
+      end
+
       rpc_action :get_author, :by_id
       rpc_action :keyset_authors, :keyset_paged
 
@@ -61,6 +68,10 @@ defmodule AshKotlinMultiplatform.Test.Domain do
       # the returned type, not the owner (#87).
       rpc_action :summarize_all, :summarize_all
       rpc_action :sample_author, :sample_author
+
+      # A generic action taking and returning `Secret`, which no block here
+      # publishes. The client gets raw JSON (#91, #92).
+      rpc_action :reveal_secret, :reveal_secret
 
       # A generic action returning a typed map and one returning an untyped
       # map, so the no-`fields` default covers both (#88).
