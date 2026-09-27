@@ -23,9 +23,34 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
   could not send the field, and failed every call with
   `{:missing_get_by_fields, ...}`. A compile error at the offending line beats a
   runtime error on every request.
+
+  `get?`, `not_found_error?`, `enable_filter?` and `enable_sort?` are all
+  documented "Read actions only" and get the same refusal (#79). `get?` on a
+  non-read was a silent decode mismatch: `ConfigBuilder`'s `is_get_action` and
+  `Runner.apply_get?/2` both match a read only, so the generated Kotlin was
+  shaped as a single-record call against a server that still returned the
+  list or the written record. `not_found_error?`, `enable_filter?` and
+  `enable_sort?` have no reader at all on a non-read — they only ever
+  mattered to a `get?` read or a list read — so a value set there did nothing,
+  the same gap under a different option.
+
+  Each of the four is checked against its own default (the value it would
+  hold if never set), because Spark applies defaults into the struct before
+  this verifier runs: a value equal to the default is indistinguishable from
+  absent, and is let through.
   """
   use Spark.Dsl.Verifier
   alias Spark.Dsl.Verifier
+
+  # {struct key, default value, DSL option name}. A non-read rpc_action may
+  # only carry the default for each — anything else has no reader on a
+  # non-read action, so it silently does nothing.
+  @read_only_options [
+    {:get?, false, "get?"},
+    {:not_found_error?, true, "not_found_error?"},
+    {:enable_filter?, true, "enable_filter?"},
+    {:enable_sort?, true, "enable_sort?"}
+  ]
 
   @impl true
   def verify(dsl) do
@@ -64,15 +89,21 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
       action.type in [:update, :destroy] ->
         identities = Map.get(rpc_action, :identities, [:_primary_key])
 
-        errors = validate_get_by_absent(rpc_action, action, errors)
+        errors =
+          errors
+          |> validate_get_by_absent(rpc_action, action)
+          |> validate_read_only_options_absent(rpc_action, action)
+
         validate_identities_exist(resource, rpc_action, identities, errors)
 
       true ->
-        validate_get_by_absent(rpc_action, action, errors)
+        errors
+        |> validate_get_by_absent(rpc_action, action)
+        |> validate_read_only_options_absent(rpc_action, action)
     end
   end
 
-  defp validate_get_by_absent(rpc_action, action, errors) do
+  defp validate_get_by_absent(errors, rpc_action, action) do
     case rpc_action |> Map.get(:get_by) |> List.wrap() do
       [] ->
         errors
@@ -80,6 +111,22 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
       fields ->
         [{:get_by_on_non_read, rpc_action.name, rpc_action.action, action.type, fields} | errors]
     end
+  end
+
+  defp validate_read_only_options_absent(errors, rpc_action, action) do
+    Enum.reduce(@read_only_options, errors, fn {key, default, label}, acc ->
+      case Map.get(rpc_action, key, default) do
+        ^default ->
+          acc
+
+        _value ->
+          [
+            {:read_only_option_on_non_read, label, rpc_action.name, rpc_action.action,
+             action.type}
+            | acc
+          ]
+      end
+    end)
   end
 
   defp validate_get_by_fields(resource, rpc_action, errors) do
@@ -151,8 +198,8 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
        #{message_parts}
 
        Each identity listed in the `identities` option must either be `:_primary_key` (for the resource's primary key)
-       or the name of an identity defined on the resource. Each field listed in `get_by` must be a public attribute,
-       and `get_by` may only be set on a read action.
+       or the name of an identity defined on the resource. Each field listed in `get_by` must be a public attribute.
+       `get?`, `get_by`, `not_found_error?`, `enable_filter?` and `enable_sort?` may only be set on a read action.
        """
      )}
   end
@@ -163,6 +210,16 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
       - RPC action: #{rpc_name} (action: #{action_name}, type: #{inspect(action_type)})
       - Fields: #{Enum.map_join(fields, ", ", &inspect/1)}
       - #{get_by_replacement(action_type)}
+    """
+  end
+
+  defp format_error_part(
+         {:read_only_option_on_non_read, option, rpc_name, action_name, action_type}
+       ) do
+    """
+    #{option} is set on an action that is not a read:
+      - RPC action: #{rpc_name} (action: #{action_name}, type: #{inspect(action_type)})
+      - Remove `#{option}` from this action; it only affects a read.
     """
   end
 
@@ -214,6 +271,9 @@ defmodule AshKotlinMultiplatform.Rpc.Verifiers.VerifyIdentities do
   defp get_by_replacement(type) when type in [:update, :destroy],
     do:
       "Use `identities` to name the lookup key for an update or destroy. `get_by` selects a record on a read only."
+
+  defp get_by_replacement(:action),
+    do: "A generic action returns what its `returns` declares. Remove `get_by` from this action."
 
   defp get_by_replacement(_type),
     do: "A create looks up no record. Remove `get_by` from this action."

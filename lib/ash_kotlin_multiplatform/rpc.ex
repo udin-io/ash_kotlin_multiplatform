@@ -188,28 +188,32 @@ defmodule AshKotlinMultiplatform.Rpc do
       ],
       get?: [
         type: :boolean,
-        doc: "Return a single record or nothing instead of a list. Read actions only",
+        doc:
+          "Return a single record or nothing instead of a list. Read actions only — on a create, update, destroy or generic action it is a compile error",
         default: false
       ],
       get_by: [
         type: {:wrap_list, :atom},
         doc:
-          "Fields the client sends to select one record. Implies `get?`. Read actions only — on a create, update or destroy it is a compile error",
+          "Fields the client sends to select one record. Implies `get?`. Read actions only — on a create, update, destroy or generic action it is a compile error",
         default: []
       ],
       not_found_error?: [
         type: :boolean,
-        doc: "Whether a `get?` read matching no record is an error rather than a null result",
+        doc:
+          "Whether a `get?` read matching no record is an error rather than a null result. Read actions only — on a create, update, destroy or generic action it is a compile error",
         default: true
       ],
       enable_filter?: [
         type: :boolean,
-        doc: "Whether the client may send `filter` on a list read",
+        doc:
+          "Whether the client may send `filter` on a list read. Read actions only — on a create, update, destroy or generic action it is a compile error",
         default: true
       ],
       enable_sort?: [
         type: :boolean,
-        doc: "Whether the client may send `sort` on a list read",
+        doc:
+          "Whether the client may send `sort` on a list read. Read actions only — on a create, update, destroy or generic action it is a compile error",
         default: true
       ]
     ],
