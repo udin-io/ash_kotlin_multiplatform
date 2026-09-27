@@ -171,7 +171,7 @@ defmodule AshKotlinMultiplatform.Codegen.TypedQueries do
   end
 
   defp get_fields_object_name(typed_query) do
-    case Map.get(typed_query, :kotlin_fields_object_name) do
+    case Map.get(typed_query, :kotlin_fields_const_name) do
       nil ->
         typed_query.name
         |> Atom.to_string()
