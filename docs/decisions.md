@@ -789,3 +789,39 @@ answers were given in chat on 2026-09-27, on `#63`.
 Cost: an array-of-union or `NewType`-wrapped union attribute keeps reaching
 the client as untyped `JsonElement` rather than a checked sealed class, same
 as before this ticket.
+
+## 2026-09-27 — Every error goes through the core's error protocol (#28)
+
+`Rpc.Runner.error_response/2` is the one place a failure becomes a response.
+The request reasons this library and the core pipeline return while reading
+the request go to `AshIntrospection.Rpc.ErrorBuilder`; everything else goes
+to `AshIntrospection.Rpc.Errors.to_errors/6` with the domain, resource,
+action and the caller's context. Twelve hand-rolled clauses, which sent
+`Exception.message/1` and `inspect/1` to the client, are gone.
+
+Why: the core already redacts. Its `Forbidden.Policy` impl ignores Ash's
+breakdown switch, its `UnknownError` impl sends a fixed message, and a
+crashing `error_handler` fails closed. Extending our own clauses meant
+re-deriving each of those, and they had drifted: a policy refusal sent ten
+stack frames.
+
+The request-reason list is closed on purpose. `ErrorBuilder`'s fallback puts
+`inspect/1` of an unknown tuple into `details.error`, so a tuple outside the
+list goes to `Errors.to_errors/6`, which says "Something went wrong". A probe
+that widens the list to every atom-tagged tuple stays green, because Ash wraps
+whatever an action returns before `Runner` sees it; the list guards the next
+tuple someone adds, not one a test can send today.
+
+Bread crumbs are cleared before the core sees an error. Splode prefixes
+`Exception.message/1` with them ("Error returned from: MyApp.Post.create"),
+and the core's `Required` and `NotFound` impls send that message. The server
+log keeps the original error.
+
+Error keys stay `:camel_case` whatever `output_field_formatter` says, until
+#57 decides otherwise. `message` arrives as finished text, with `vars` beside
+it (decision 2 on PR #123).
+
+Cost: the wire `type` and `shortMessage` values changed, and an unknown input
+key, filter field, filter operator or sort field answers `internal_error`
+until the core names it (see `risks.md`).
+

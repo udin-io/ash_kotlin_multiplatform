@@ -258,6 +258,20 @@ reaches the core as the *Ash* action's own `get?` field, because
 `Ash.read_one/1` over `Ash.read/1` and builds the query from `action.name`.
 Overriding that one field selects the single-record path and nothing else.
 
+Every failure, at any stage, becomes a response in
+`Rpc.Runner.error_response/2`. Request-shape reasons (`action_not_found`, the
+getBy and identity checks, field selection) are worded by
+`AshIntrospection.Rpc.ErrorBuilder`; `filter_not_supported`,
+`sort_not_supported` and `unsupported` are worded locally, because the core
+has no such reasons. Everything else, including a raise that
+`execute_action/7` and `validate_changeset/7` rescue, goes through
+`AshIntrospection.Rpc.Errors.to_errors/6`, which runs the resource's
+`handle_rpc_error/2`, then the domain's `kotlin_rpc` `error_handler`, and
+reads `show_raised_errors?` from the same section (`rpc_dsl_section:
+:kotlin_rpc` in `Rpc.Pipeline.build_config/0`). An error the client gets as
+`unknown_error` or `internal_error` is logged with its original text and, for
+a raise, its stacktrace.
+
 A request with no `fields` gets a default template from
 `Rpc.Runner.select_fields/4`: the public attributes of the resource the action
 produces. For a generic action that is `Resource.Info.returned_resource/1`,

@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking: error `type` and `shortMessage` values follow the shared core
+  (#28).** Every failure now goes through `ash_introspection`'s error protocol,
+  the same one the TypeScript client reads. An app matching on the old values
+  stops matching:
+
+  | Failure | Before | Now |
+  | ------- | ------ | --- |
+  | attribute fails a constraint | `validation_error` / "Validation failed" | `invalid_attribute` / "Invalid attribute" |
+  | required attribute missing | `validation_error` / "Validation failed" | `required` / "Required field" |
+  | policy refuses | `forbidden` / "Access denied" | `forbidden` / "Forbidden" |
+  | action returns an error term or string, or raises | `validation_error`, or HTTP 500 | `unknown_error` / "Unknown error", "Something went wrong" |
+  | unknown input key, filter field, filter operator or sort field | `validation_error` | `internal_error`, "Something went wrong. Unique error id: …" |
+  | unknown action, missing parameter, identity checks | this library's wording | the core's wording, plus `details.suggestion` |
+
+  `message` stays finished text. Each error also carries `vars`, `fields`,
+  `path`, `details` and, for `internal_error`, `errorId`. `field` repeats the
+  first of `fields`. The last-but-one row is interim: the core names the key
+  in a later release.
+
+- `Rpc.Runner.validate_action/3` takes `:context`, which reaches the error
+  handlers (#28).
+
 - `get?`, `not_found_error?`, `enable_filter?` and `enable_sort?` on a
   create, update, destroy or generic action are compile errors: each was
   documented "Read actions only" but silently ignored there (#79).
@@ -66,7 +88,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   manifest carries private relationships — which is every manifest this
   library builds.
 
+### Added
+
+- `error_handler` and `show_raised_errors?` on the `kotlin_rpc` section (#28).
+  `error_handler` transforms or drops each error before it reaches the client,
+  and a handler that raises fails closed to `internal_error` with an error id
+  the server log shares. `show_raised_errors? true` sends an exception's own
+  message, for development only.
+
 ### Fixed
+
+- `AshRpcError` declares `field` and `errorId`, and types `vars` as
+  `Map<String, JsonElement>` (#61). kotlinx-serialization dropped `field` on
+  decode, so an app could not tell which input failed; `vars` holds numbers
+  (`"min": 3`), which a `Map<String, String>` cannot decode.
 
 - `argument_names` works (#23). The option was read by nothing, so
   `argument :confirm?` generated `val confirm?: Boolean`, which does not
@@ -117,6 +152,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and then stops changing.
 
 ### Security
+
+- Errors no longer send internal detail to the client (#28). Before, a policy
+  refusal sent a stack trace with file paths and dependency versions, and the
+  actor in full when Ash policy breakdowns were on; an action's error term or
+  string went out verbatim (a database host, an API key); every message began
+  with bread crumbs naming the Elixir module. Now the core's error protocol
+  words each error, anything it does not recognise is "Something went wrong",
+  and the detail goes to the server log. A raise inside an action is a failed
+  result instead of an HTTP 500.
 
 - `mint` moves to 1.10.1, fixing EEF-CVE-2026-82672. `mint` is transitive
   through `finch` (`~> 1.8`); nothing in this library calls `mint` directly.

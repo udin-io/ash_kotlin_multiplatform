@@ -444,6 +444,40 @@ kotlin_rpc do
 end
 ```
 
+The section takes two options of its own:
+
+```elixir
+kotlin_rpc do
+  # Transform each error before it reaches the client; return nil to drop it.
+  # A module is called as handle_error(error, context). A handler that raises
+  # fails closed: the client gets internal_error with an error id, and the
+  # server log carries the original error under the same id.
+  error_handler {MyApp.RpcErrors, :handle_error, []}
+
+  # Send an exception's own message instead of "Something went wrong".
+  # Development only: the message carries whatever the failing code put in it.
+  show_raised_errors? false
+end
+```
+
+### Errors
+
+A failed request answers `success: false` and a list of errors, never an HTTP
+500. Each error is worded by `ash_introspection`'s error protocol, the one the
+TypeScript client reads:
+
+```json
+{"type": "invalid_attribute", "shortMessage": "Invalid attribute",
+ "message": "length must be greater than or equal to 3",
+ "vars": {"min": 3, "field": "title"}, "fields": ["title"], "field": "title",
+ "path": []}
+```
+
+An error the protocol does not recognise (a string or term an action returns,
+an exception, an unknown input key) reaches the client as "Something went
+wrong", and its detail goes to the server log. `errorId` joins the two when
+the client got `internal_error`.
+
 These options shape the **API surface** of an action — typically to keep a
 parameter off an endpoint that has no use for it. They are **not**
 authorization. Ash policies run on every request regardless of what the DSL

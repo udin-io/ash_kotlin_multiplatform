@@ -258,6 +258,28 @@ and the same words in the `rpc_action` moduledoc in
 *Do:* repeat that framing on every option added to this group, and answer an
 access question with a policy, never a DSL switch.
 
+### A client mistake reads as an internal error
+
+`ash_introspection` 0.6.0 has no `Rpc.Error` impl for `NoSuchInput`,
+`Query.NoSuchField` or `Query.NoSuchFilterPredicate`, so an unknown input key,
+filter field, filter operator or sort field answers `internal_error` with an
+error id and an error-level log line (#28, decision 4 on PR #123). A client
+cannot tell its own mistake from a server fault, and a buggy client fills the
+log.
+
+*Watch:* the core's error-render ticket, and the `internal_error` fixture in
+`gen_roundtrip_fixture`, which changes when the core names the key.
+*Do:* bump `ash_introspection` when it ships the impls, and move the test in
+`runner_error_redaction_test.exs` that pins `internal_error` to the new type.
+
+### `show_raised_errors? true` sends what the failing code wrote
+
+The option sends `Exception.message/1` of whatever raised, which can carry a
+connection string or a key. It defaults to `false`.
+
+*Watch:* a production config that sets it.
+*Do:* keep it to development configs; the option's doc says so.
+
 ### The request half of the client is still untyped
 
 `RpcResult<T>` types the response (#22) and `AshRpcError` types the failure
