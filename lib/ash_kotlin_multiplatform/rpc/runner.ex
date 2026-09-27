@@ -74,6 +74,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   alias AshKotlinMultiplatform.Resource.Info, as: ResourceInfo
   alias AshKotlinMultiplatform.Rpc.KeyNames
   alias AshKotlinMultiplatform.Rpc.Pipeline
+  alias AshKotlinMultiplatform.Rpc.RequestError
   alias AshIntrospection.ErrorFormatter
   alias AshIntrospection.Rpc.ErrorBuilder
   alias AshIntrospection.Rpc.Errors
@@ -836,13 +837,13 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # The core has no reason for a read-surface switch or for validating an
   # action that is not a create or update, so these two are worded here, in
   # the core's shape.
-  defp error_maps({:filter_not_supported, rpc_action_name}, _target),
+  defp request_error_maps({:filter_not_supported, rpc_action_name}),
     do: [unsupported_read_parameter("filter", rpc_action_name, "enable_filter?")]
 
-  defp error_maps({:sort_not_supported, rpc_action_name}, _target),
+  defp request_error_maps({:sort_not_supported, rpc_action_name}),
     do: [unsupported_read_parameter("sort", rpc_action_name, "enable_sort?")]
 
-  defp error_maps(:validation_not_supported, _target) do
+  defp request_error_maps(:validation_not_supported) do
     [
       %{
         type: "unsupported",
@@ -857,7 +858,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
 
   # Two field-selection reasons `ErrorBuilder` has no clause for. Its fallbacks
   # would send `inspect/1` of the tuple in `details.error`.
-  defp error_maps({:invalid_fields, {:fields_must_be_a_list, _fields}}, _target) do
+  defp request_error_maps({:invalid_fields, {:fields_must_be_a_list, _fields}}) do
     [
       %{
         type: "invalid_fields_type",
@@ -874,7 +875,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # No test resource can reach this one: `FieldSelector` throws it for a map
   # entry naming several fields, or a calculation with arguments, inside a
   # typed struct field.
-  defp error_maps({:invalid_fields, {:invalid_field_format, _field, path}}, _target) do
+  defp request_error_maps({:invalid_fields, {:invalid_field_format, _field, path}}) do
     [
       %{
         type: "invalid_field_format",
@@ -888,7 +889,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     ]
   end
 
-  defp error_maps(reason, _target)
+  defp request_error_maps(reason)
        when is_tuple(reason) and tuple_size(reason) > 1 and elem(reason, 0) in @request_reasons do
     reason
     |> ErrorBuilder.build_error_response(Pipeline.build_config())
@@ -896,9 +897,25 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     |> Enum.map(&without_module_names/1)
   end
 
+  # A request error is worded here and then wrapped, so the same handlers see
+  # it as see an action's error (decision 5 on #123). Anything else reaches the
+  # core as it is, less its bread crumbs.
   defp error_maps(error, target) do
+    if request_reason?(error) do
+      error
+      |> request_error_maps()
+      |> Enum.map(&%RequestError{error: &1})
+      |> core_errors(target)
+    else
+      error
+      |> without_bread_crumbs()
+      |> core_errors(target)
+    end
+  end
+
+  defp core_errors(errors, target) do
     Errors.to_errors(
-      without_bread_crumbs(error),
+      errors,
       target[:domain],
       target[:resource],
       target[:action],

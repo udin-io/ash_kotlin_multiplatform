@@ -146,6 +146,44 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerErrorRedactionTest do
     end
   end
 
+  # Decision 5 on #123: a request error passes through the same handlers.
+  describe "an error in the request itself" do
+    test "reaches the resource's handle_rpc_error/2" do
+      response =
+        run(%{"action" => "fault_return_string", "fields" => ["nope"]},
+          context: %{relabel_errors: "Relabelled"}
+        )
+
+      assert %{"success" => false, "errors" => [error]} = response
+      assert error["type"] == "invalid_field_selection"
+      assert error["shortMessage"] == "Relabelled"
+    end
+
+    test "reaches the handler from validate_action/3 too" do
+      response =
+        Runner.validate_action(
+          :ash_kotlin_multiplatform,
+          %{"action" => "fault_raise"},
+          context: %{relabel_errors: "Relabelled"}
+        )
+
+      assert %{"success" => false, "errors" => [error]} = response
+      assert error["type"] == "unsupported"
+      assert error["shortMessage"] == "Relabelled"
+    end
+
+    test "is dropped when the domain's error_handler returns nil" do
+      serve_under(Test.JunkHandlerDomain, "fault_return_string")
+
+      response =
+        run(%{"action" => "fault_return_string", "fields" => ["nope"]},
+          context: %{handler_returns: nil}
+        )
+
+      assert %{"success" => false, "errors" => []} = response
+    end
+  end
+
   describe "a domain with show_raised_errors? true" do
     setup do
       serve_under(Test.RaisedErrorsDomain, "fault_raise")
