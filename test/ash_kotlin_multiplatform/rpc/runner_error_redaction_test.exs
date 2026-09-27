@@ -100,6 +100,28 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerErrorRedactionTest do
     end
   end
 
+  describe "a resource's handle_rpc_error/2" do
+    test "gets the caller's context from run_action/3" do
+      {response, _log} =
+        with_log(fn ->
+          run(%{"action" => "fault_return_string"}, context: %{relabel_errors: "Relabelled"})
+        end)
+
+      assert %{"success" => false, "errors" => [%{"shortMessage" => "Relabelled"}]} = response
+    end
+
+    test "gets the caller's context from validate_action/3" do
+      response =
+        Runner.validate_action(
+          :ash_kotlin_multiplatform,
+          %{"action" => "create_fault", "input" => %{"title" => "ab"}},
+          context: %{relabel_errors: "Relabelled"}
+        )
+
+      assert %{"valid" => false, "errors" => [%{"shortMessage" => "Relabelled"}]} = response
+    end
+  end
+
   describe "a domain with show_raised_errors? true" do
     setup do
       serve_under(Test.RaisedErrorsDomain, "fault_raise")

@@ -44,6 +44,12 @@ defmodule AshKotlinMultiplatform.Test.Fault do
     type_name("Fault")
   end
 
+  # The resource-level hook `AshIntrospection.Rpc.Errors` calls on every error
+  # from this resource. It relabels only when the caller's context asks, so
+  # every other test here sees the core's own wording.
+  def handle_rpc_error(error, %{relabel_errors: label}), do: %{error | short_message: label}
+  def handle_rpc_error(error, _context), do: error
+
   attributes do
     uuid_primary_key :id
 

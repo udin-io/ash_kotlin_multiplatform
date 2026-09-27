@@ -121,16 +121,19 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   @doc """
   Validate an RPC action without executing it.
 
-  Useful for real-time validation in client applications.
+  Useful for real-time validation in client applications. Takes `:actor`,
+  `:tenant` and `:context` as `run_action/3` does; `:context` reaches the
+  error handlers only.
   """
   def validate_action(otp_app, params, opts \\ []) do
     action_name = params["action"]
     actor = Keyword.get(opts, :actor)
     tenant = Keyword.get(opts, :tenant)
+    context = Keyword.get(opts, :context, %{})
 
     case discover_action(otp_app, action_name) do
       {:ok, {domain, resource, rpc_action}} ->
-        validate_changeset(domain, resource, rpc_action, params, actor, tenant)
+        validate_changeset(domain, resource, rpc_action, params, actor, tenant, context)
 
       {:error, reason} ->
         error_response(reason, %{})
@@ -266,7 +269,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     end
   end
 
-  defp validate_changeset(domain, resource, rpc_action, params, actor, tenant) do
+  defp validate_changeset(domain, resource, rpc_action, params, actor, tenant, context) do
     config = Pipeline.request_config(rpc_action)
     action_name = rpc_action.action
     action_info = SharedResourceInfo.action(resource, action_name, config)
@@ -301,14 +304,14 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
         build_validation_success_response()
 
       {:ok, %Ash.Changeset{valid?: false, errors: errors}} ->
-        build_validation_error_response(errors, target(domain, resource, rpc_action, %{}))
+        build_validation_error_response(errors, target(domain, resource, rpc_action, context))
 
       {:error, error} ->
-        error_response(error, target(domain, resource, rpc_action, %{}))
+        error_response(error, target(domain, resource, rpc_action, context))
     end
   rescue
     exception ->
-      error_response(exception, target(domain, resource, rpc_action, %{}), __STACKTRACE__)
+      error_response(exception, target(domain, resource, rpc_action, context), __STACKTRACE__)
   end
 
   defp get_record_for_validation(resource, identity, opts) when not is_nil(identity) do
@@ -760,7 +763,7 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
       target[:domain],
       target[:resource],
       target[:action],
-      %{},
+      Map.get(target, :context, %{}),
       Pipeline.build_config()
     )
   end
