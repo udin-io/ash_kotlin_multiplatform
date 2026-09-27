@@ -171,7 +171,7 @@ defmodule AshKotlinMultiplatform.Codegen.TypedQueries do
   end
 
   defp get_fields_object_name(typed_query) do
-    case Map.get(typed_query, :kotlin_fields_object_name) do
+    case Map.get(typed_query, :kotlin_fields_const_name) do
       nil ->
         typed_query.name
         |> Atom.to_string()
@@ -202,56 +202,31 @@ defmodule AshKotlinMultiplatform.Codegen.TypedQueries do
     |> Enum.join(",\n")
   end
 
-  defp generate_field_definition(field, resource, parent_type_name) when is_atom(field) do
-    attr = get_attribute_or_calculation(resource, field)
+  defp generate_field_definition(field, resource, parent_type_name)
+       when is_atom(field) or is_binary(field) do
+    case AshKotlinMultiplatform.Resource.Info.resolve_typed_query_field(resource, field) do
+      {:ok, {:attribute, attr}} ->
+        build_scalar_field(attr, resource)
 
-    if attr do
-      kotlin_type = TypeMapper.annotate_contextual_types(TypeMapper.get_kotlin_type(attr))
-      formatted_name = format_field_for_client(field, resource)
+      {:ok, {:calculation, calc}} ->
+        build_scalar_field(calc, resource)
 
-      if formatted_name != to_string(field) do
-        "@SerialName(\"#{formatted_name}\") val #{atom_to_camel_case(field)}: #{kotlin_type}"
-      else
-        "val #{formatted_name}: #{kotlin_type}"
-      end
-    else
-      # Could be a relationship
-      rel = Ash.Resource.Info.relationship(resource, field)
+      {:ok, {:relationship, rel}} ->
+        build_relationship_field(rel, resource, parent_type_name)
 
-      if rel do
-        nested_type_name =
-          "#{parent_type_name}#{AshIntrospection.Helpers.snake_to_pascal_case(field)}Result"
-
-        formatted_name = format_field_for_client(field, resource)
-
-        if rel.cardinality == :many do
-          "val #{formatted_name}: List<#{nested_type_name}>"
-        else
-          "val #{formatted_name}: #{nested_type_name}?"
-        end
-      else
+      {:error, _reason} ->
         "val #{format_field_for_client(field, resource)}: Any?"
-      end
     end
   end
 
   defp generate_field_definition({field, nested_fields}, resource, parent_type_name)
        when is_atom(field) and is_list(nested_fields) do
-    rel = Ash.Resource.Info.relationship(resource, field)
+    case AshKotlinMultiplatform.Resource.Info.resolve_typed_query_field(resource, field) do
+      {:ok, {:relationship, rel}} ->
+        build_relationship_field(rel, resource, parent_type_name)
 
-    if rel do
-      nested_type_name =
-        "#{parent_type_name}#{AshIntrospection.Helpers.snake_to_pascal_case(field)}Result"
-
-      formatted_name = format_field_for_client(field, resource)
-
-      if rel.cardinality == :many do
-        "val #{formatted_name}: List<#{nested_type_name}>"
-      else
-        "val #{formatted_name}: #{nested_type_name}?"
-      end
-    else
-      "val #{format_field_for_client(field, resource)}: Any?"
+      _ ->
+        "val #{format_field_for_client(field, resource)}: Any?"
     end
   end
 
@@ -275,22 +250,23 @@ defmodule AshKotlinMultiplatform.Codegen.TypedQueries do
     |> Enum.join("\n\n")
   end
 
-  defp extract_nested_field_specs(field, _resource, _parent_type_name) when is_atom(field) do
+  defp extract_nested_field_specs(field, _resource, _parent_type_name)
+       when is_atom(field) or is_binary(field) do
     # Simple field - no nested specs
     []
   end
 
   defp extract_nested_field_specs({field, nested_fields}, resource, parent_type_name)
        when is_atom(field) and is_list(nested_fields) do
-    rel = Ash.Resource.Info.relationship(resource, field)
+    case AshKotlinMultiplatform.Resource.Info.resolve_typed_query_field(resource, field) do
+      {:ok, {:relationship, rel}} ->
+        nested_type_name =
+          "#{parent_type_name}#{AshIntrospection.Helpers.snake_to_pascal_case(field)}Result"
 
-    if rel do
-      nested_type_name =
-        "#{parent_type_name}#{AshIntrospection.Helpers.snake_to_pascal_case(field)}Result"
+        [{rel.destination, nested_fields, nested_type_name}]
 
-      [{rel.destination, nested_fields, nested_type_name}]
-    else
-      []
+      _ ->
+        []
     end
   end
 
@@ -322,14 +298,13 @@ defmodule AshKotlinMultiplatform.Codegen.TypedQueries do
     "listOf(#{items})"
   end
 
-  defp format_field_item(field, resource) when is_atom(field) do
-    "\"#{format_field_for_client(field, resource)}\""
+  defp format_field_item(field, resource) when is_atom(field) or is_binary(field) do
+    "\"#{format_field_for_client(resolved_field_name(field, resource), resource)}\""
   end
 
   defp format_field_item({field, nested_fields}, resource)
        when is_atom(field) and is_list(nested_fields) do
-    rel = Ash.Resource.Info.relationship(resource, field)
-    nested_resource = if rel, do: rel.destination, else: nil
+    nested_resource = relationship_destination(resource, field)
     nested = format_fields_for_kotlin(nested_fields, nested_resource)
     "mapOf(\"#{format_field_for_client(field, resource)}\" to #{nested})"
   end
@@ -338,8 +313,7 @@ defmodule AshKotlinMultiplatform.Codegen.TypedQueries do
     nested_fields = Map.get(config, :fields, [])
     args = Map.get(config, :args, %{})
 
-    rel = Ash.Resource.Info.relationship(resource, field)
-    nested_resource = if rel, do: rel.destination, else: nil
+    nested_resource = relationship_destination(resource, field)
     nested = format_fields_for_kotlin(nested_fields, nested_resource)
 
     if Enum.empty?(args) do
@@ -408,9 +382,51 @@ defmodule AshKotlinMultiplatform.Codegen.TypedQueries do
     |> Enum.uniq()
   end
 
-  defp get_attribute_or_calculation(resource, field) do
-    Ash.Resource.Info.attribute(resource, field) ||
-      Ash.Resource.Info.calculation(resource, field)
+  # Both an attribute and a `field?: true` calculation generate the same
+  # shape: a plain `val`, `@SerialName`-annotated when the wire name the
+  # client sees differs from the Ash name.
+  defp build_scalar_field(entity, resource) do
+    kotlin_type = TypeMapper.annotate_contextual_types(TypeMapper.get_kotlin_type(entity))
+    formatted_name = format_field_for_client(entity.name, resource)
+
+    if formatted_name != to_string(entity.name) do
+      "@SerialName(\"#{formatted_name}\") val #{atom_to_camel_case(entity.name)}: #{kotlin_type}"
+    else
+      "val #{formatted_name}: #{kotlin_type}"
+    end
+  end
+
+  defp build_relationship_field(rel, resource, parent_type_name) do
+    nested_type_name =
+      "#{parent_type_name}#{AshIntrospection.Helpers.snake_to_pascal_case(rel.name)}Result"
+
+    formatted_name = format_field_for_client(rel.name, resource)
+
+    if rel.cardinality == :many do
+      "val #{formatted_name}: List<#{nested_type_name}>"
+    else
+      "val #{formatted_name}: #{nested_type_name}?"
+    end
+  end
+
+  # The field's real, atom Ash name — so a `field_names` override and the
+  # `@SerialName` decision it drives are read from the same name whether the
+  # `typed_query` gave an atom or a string (#63, finding #4). Falls back to
+  # the field as given when it does not resolve, so an unknown name still
+  # formats the way it always has rather than crashing codegen — the
+  # compile-time verifier is what refuses it.
+  defp resolved_field_name(field, resource) do
+    case AshKotlinMultiplatform.Resource.Info.resolve_typed_query_field(resource, field) do
+      {:ok, {_kind, entity}} -> entity.name
+      {:error, _reason} -> field
+    end
+  end
+
+  defp relationship_destination(resource, field) do
+    case AshKotlinMultiplatform.Resource.Info.resolve_typed_query_field(resource, field) do
+      {:ok, {:relationship, rel}} -> rel.destination
+      _ -> nil
+    end
   end
 
   defp format_field_for_client(field_name, resource) do

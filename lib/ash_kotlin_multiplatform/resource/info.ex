@@ -273,4 +273,58 @@ defmodule AshKotlinMultiplatform.Resource.Info do
   defp resource_or_nil(module) do
     if Ash.Resource.Info.resource?(module), do: module
   end
+
+  @doc """
+  Classifies a `typed_query` field name against the resource's real, public
+  shape.
+
+  Accepts an atom or a string — `rpc.ex`'s own DSL doc example and
+  `test/support/scoped_manifest.ex`'s `book_titles` typed query both give
+  string names, and `Ash.Resource.Info.public_attribute/2`,
+  `public_relationship/2` and `public_calculation/2` all match either form
+  themselves, so no separate string branch is needed here.
+
+  Returns:
+
+    * `{:ok, {:attribute, attr}}` — a public attribute
+    * `{:ok, {:relationship, rel}}` — a public relationship. The caller
+      recurses into any nested `fields` against `rel.destination`.
+    * `{:ok, {:calculation, calc}}` — a public calculation that is a field on
+      the struct (`field?: true`, the default — see `field_calculation?/1`)
+    * `{:error, {:excluded_calculation, name}}` — a public calculation
+      declared `field?: false`. Ash never puts its value on the struct, so a
+      typed query naming it would generate a field that always decodes to
+      `null`, no matter what the calculation computes.
+    * `{:error, :unknown_field}` — anything else: private, or not on the
+      resource at all.
+
+  `VerifyTypedQueryFields` and `TypedQueries` codegen both call this, so the
+  two can never resolve a field differently — the pattern
+  `public_field_calculations/1` already set for exactly this reason.
+  """
+  @spec resolve_typed_query_field(Ash.Resource.t(), atom() | String.t()) ::
+          {:ok, {:attribute, Ash.Resource.Attribute.t()}}
+          | {:ok, {:relationship, Ash.Resource.Relationships.relationship()}}
+          | {:ok, {:calculation, Ash.Resource.Calculation.t()}}
+          | {:error, {:excluded_calculation, atom()}}
+          | {:error, :unknown_field}
+  def resolve_typed_query_field(resource, field) do
+    cond do
+      attr = Ash.Resource.Info.public_attribute(resource, field) ->
+        {:ok, {:attribute, attr}}
+
+      rel = Ash.Resource.Info.public_relationship(resource, field) ->
+        {:ok, {:relationship, rel}}
+
+      calc = Ash.Resource.Info.public_calculation(resource, field) ->
+        if field_calculation?(calc) do
+          {:ok, {:calculation, calc}}
+        else
+          {:error, {:excluded_calculation, calc.name}}
+        end
+
+      true ->
+        {:error, :unknown_field}
+    end
+  end
 end

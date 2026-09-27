@@ -760,3 +760,32 @@ branch only fires on a
 generator bug, never on a value the DSL can express. Changing `fields`'
 declared type would touch `ConfigBuilder` and every call site for no
 behaviour gain.
+
+## 2026-09-27 — `444fc60`'s name-validation walk does not apply here (#63)
+
+Upstream (`ash_typescript`, `444fc60`) walks a map's field names through
+`NewType` wrappers and array `:items` constraints before validating them,
+because upstream generates a **typed object** from those names. Measured
+against this repo's own generator: `TypeMapper.map_type/2` erases every
+`Ash.Type.Map` to `AshKotlinMultiplatform.untyped_map_type()` regardless of
+`NewType` or array wrapping, and `is_union_type?/1` (`type ==
+Ash.Type.Union` exactly) means an array-of-union or `NewType`-wrapped union
+attribute never gets a sealed class either — both fall to the same untyped
+`JsonElement` / `List<JsonElement>` path. An `{:array, :union}` attribute, a
+`NewType` wrapping `:union`, and a union member typed `{:array, :map}` or a
+`NewType`-wrapped map all compiled clean on `main` (`d70ce8b6`), and no
+constraint field name — including a deliberately invalid one, `is_valid?` —
+ever reached the generated Kotlin.
+
+Porting the walk as written would validate identifiers that can never
+appear in generated code — the exact over-eager rejection `6200290` already
+warns against. **Closed unported.** The real question underneath — should
+an array-of-union or `NewType`-wrapped union attribute get a typed sealed
+class instead of falling back to `JsonElement`? — is a new generator
+feature, not this bug fix, and stays an unfiled idea rather than a ticket:
+nothing is broken today, and no resource in this repo needs it yet. Both
+answers were given in chat on 2026-09-27, on `#63`.
+
+Cost: an array-of-union or `NewType`-wrapped union attribute keeps reaching
+the client as untyped `JsonElement` rather than a checked sealed class, same
+as before this ticket.
