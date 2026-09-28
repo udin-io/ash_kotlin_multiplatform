@@ -98,6 +98,8 @@ defmodule AshKotlinMultiplatform.MixProject do
 
   defp deps do
     [
+      # 1.11.0 is the security floor for EEF-CVE-2026-91043/92103/94194.
+      {:mint, ">= 1.11.0"},
       {:igniter, "~> 0.7", optional: true},
       # 0.6.0 is the floor because it is the first release whose four request
       # entry points REQUIRE a manifest: `Pipeline.execute_ash_action/2`,
