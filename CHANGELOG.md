@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+This release breaks the RPC error payload (below). After moving to it, run
+`mix ash_kotlin_multiplatform.upgrade <old> <new>` to see what changed —
+`mix igniter.upgrade` alone will not always show it.
+
 ### Changed
 
 - **Breaking: error `type` and `shortMessage` values follow the shared core
@@ -177,6 +181,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `mint` moves to 1.10.1, fixing EEF-CVE-2026-82672. `mint` is transitive
   through `finch` (`~> 1.8`); nothing in this library calls `mint` directly.
+
+### Added
+
+- `mix ash_kotlin_multiplatform.upgrade <from> <to>` (#124), the first
+  upgrade task this library ships. It prints each breaking release's notice
+  to the shell as it runs, rather than through Igniter's notice queue, which
+  ash_introspection #99 measured gets silently dropped under the usual
+  `igniter_new` archive setup. Its first entry, `0.3.0`, is the error-format
+  break above.
 
 ## [0.2.0] - 2026-09-18
 
