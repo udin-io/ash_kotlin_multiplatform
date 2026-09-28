@@ -248,26 +248,41 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
   @doc """
   Generates the RPC error types.
   """
-  # `shortMessage` carries no `@SerialName`. Every error map `Rpc.Runner` builds
-  # writes the key `"shortMessage"` literally, under every
-  # `output_field_formatter` setting: see `build_error_response/1`,
-  # `format_validation_errors/1` and `format_single_error/1`. Annotating the
-  # field `short_message` therefore made it decode as `null` on every error the
-  # server has ever sent (#24).
+  # `Rpc.Runner.to_client/1` now spells every error key with
+  # `output_field_formatter` (#57), the same as a success response's `data`
+  # keys. `shortMessage` and `errorId` are the only two properties whose
+  # wire name changes under `:snake_case` (`short_message`, `error_id`), so
+  # `@SerialName` is emitted exactly there, mirroring
+  # `ResourceSchemas.property_name/2`. Under the default `:camel_case` every
+  # wire name already equals the property name, so no `@SerialName` is
+  # emitted and this generates the same source as before (#24).
   def generate_error_types do
+    formatter = AshKotlinMultiplatform.Rpc.output_field_formatter()
+
+    properties = [
+      {"type", "type", "String? = null"},
+      {"message", "message", "String? = null"},
+      {"short_message", "shortMessage", "String? = null"},
+      {"vars", "vars", "Map<String, JsonElement> = emptyMap()"},
+      {"field", "field", "String? = null"},
+      {"fields", "fields", "List<String> = emptyList()"},
+      {"path", "path", "List<String> = emptyList()"},
+      {"details", "details", "Map<String, JsonElement>? = null"},
+      {"error_id", "errorId", "String? = null"}
+    ]
+
+    lines =
+      Enum.map(properties, fn {canonical, property, type} ->
+        wire_name = AshIntrospection.FieldFormatter.format_field_name(canonical, formatter)
+        prefix = if wire_name == property, do: "", else: "@SerialName(\"#{wire_name}\")\n    "
+        "    #{prefix}val #{property}: #{type}"
+      end)
+
     """
     // RPC Error types
     @Serializable
     data class AshRpcError(
-        val type: String? = null,
-        val message: String? = null,
-        val shortMessage: String? = null,
-        val vars: Map<String, JsonElement> = emptyMap(),
-        val field: String? = null,
-        val fields: List<String> = emptyList(),
-        val path: List<String> = emptyList(),
-        val details: Map<String, JsonElement>? = null,
-        val errorId: String? = null
+    #{Enum.join(lines, ",\n")}
     )
     """
   end

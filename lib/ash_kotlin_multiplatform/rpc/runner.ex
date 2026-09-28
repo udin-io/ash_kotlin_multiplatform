@@ -261,16 +261,16 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     %{
       "success" => false,
       "errors" => [
-        %{
-          "type" => "result_unavailable",
-          "message" => "The action ran, but its result could not be sent",
-          "shortMessage" => "Result unavailable",
-          "vars" => %{},
-          "fields" => [],
-          "field" => nil,
-          "path" => [],
-          "errorId" => uuid
-        }
+        static_error(%{
+          type: "result_unavailable",
+          message: "The action ran, but its result could not be sent",
+          short_message: "Result unavailable",
+          vars: %{},
+          fields: [],
+          field: nil,
+          path: [],
+          error_id: uuid
+        })
       ]
     }
   end
@@ -840,16 +840,31 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     #{failure}
     """)
 
-    %{
-      "type" => "internal_error",
-      "message" => "Something went wrong. Unique error id: #{uuid}",
-      "shortMessage" => "Internal error",
-      "vars" => %{},
-      "fields" => [],
-      "field" => nil,
-      "path" => [],
-      "errorId" => uuid
-    }
+    static_error(%{
+      type: "internal_error",
+      message: "Something went wrong. Unique error id: #{uuid}",
+      short_message: "Internal error",
+      vars: %{},
+      fields: [],
+      field: nil,
+      path: [],
+      error_id: uuid
+    })
+  end
+
+  # `result_unavailable/2` and `shaping_failure/2` are the "must not fail"
+  # paths (decisions 3 and 6 on #123): neither can safely call
+  # `ErrorFormatter.format/2` and risk a broken custom formatter turning a
+  # "the action already ran" response into an unhandled exception. Formats
+  # with the real formatter and falls back to the fixed camelCase shape if
+  # formatting itself raises — which the three built-in formatters cannot do,
+  # only a project's own `{module, function}` formatter can.
+  defp static_error(canonical) do
+    formatter = AshKotlinMultiplatform.output_field_formatter()
+    Map.new(canonical, fn {k, v} -> {FieldFormatter.format_field_name(k, formatter), v} end)
+  rescue
+    _ ->
+      Map.new(canonical, fn {k, v} -> {FieldFormatter.format_field_name(k, :camel_case), v} end)
   end
 
   # The core has no reason for a read-surface switch or for validating an
@@ -1007,30 +1022,45 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
 
   defp format_for_log(error, _stacktrace), do: inspect(error)
 
-  # `:camel_case` is pinned rather than read from `output_field_formatter`:
-  # the Kotlin and Swift clients read `shortMessage` whatever that setting is
-  # (#24). Issue 57 decides whether error keys follow it.
+  # Keys follow `output_field_formatter`, the same as a success response's
+  # (#57). Looked up by name rather than assumed as the literal strings
+  # `"message"`, `"vars"`, `"fields"` and `"field"`: those are only safe
+  # under `:camel_case`/`:snake_case` because every one of those words is a
+  # single word in English, and the lookup keeps this correct if the project
+  # ever configures `:pascal_case` or a custom formatter function too.
   #
   # `message` arrives as finished text, with `vars` beside it for an app that
   # translates. `field` repeats the first of `fields` for the Swift client.
   defp to_client(error) do
-    client = ErrorFormatter.format(error, :camel_case)
-    vars = Map.get(client, "vars") || %{}
-    fields = Enum.map(Map.get(client, "fields") || [], &to_string/1)
+    formatter = AshKotlinMultiplatform.output_field_formatter()
+    client = ErrorFormatter.format(error, formatter)
+
+    message_key = FieldFormatter.format_field_name("message", formatter)
+    vars_key = FieldFormatter.format_field_name("vars", formatter)
+    fields_key = FieldFormatter.format_field_name("fields", formatter)
+    field_key = FieldFormatter.format_field_name("field", formatter)
+
+    vars = Map.get(client, vars_key) || %{}
+    fields = Enum.map(Map.get(client, fields_key) || [], &to_string/1)
 
     client
-    |> Map.put("message", render_message(client["message"], vars))
-    |> Map.put("fields", fields)
-    |> Map.put("field", List.first(fields))
-    |> without_inspected_term()
+    |> Map.put(message_key, render_message(Map.get(client, message_key), vars))
+    |> Map.put(fields_key, fields)
+    |> Map.put(field_key, List.first(fields))
+    |> without_inspected_term(formatter)
   end
 
   # `ErrorBuilder`'s fallbacks put `inspect/1` of the reason in
   # `details.error`: an Elixir term, never meant for a client.
-  defp without_inspected_term(%{"details" => %{} = details} = client),
-    do: %{client | "details" => Map.delete(details, "error")}
+  defp without_inspected_term(client, formatter) do
+    details_key = FieldFormatter.format_field_name("details", formatter)
+    error_key = FieldFormatter.format_field_name("error", formatter)
 
-  defp without_inspected_term(client), do: client
+    case Map.get(client, details_key) do
+      %{} = details -> Map.put(client, details_key, Map.delete(details, error_key))
+      _ -> client
+    end
+  end
 
   defp render_message(message, vars) when is_binary(message) and is_map(vars) do
     Enum.reduce(vars, message, fn {key, value}, acc ->
