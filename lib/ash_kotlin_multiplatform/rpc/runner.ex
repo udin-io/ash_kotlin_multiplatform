@@ -286,7 +286,6 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
          context,
          config
        ) do
-    input = parse_input(params, resource, action.name, config)
     fields = params["fields"] || []
     identity = parse_identity(params, resource, config)
     filter = parse_filter(params, resource, config)
@@ -297,7 +296,8 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
       |> dsl_metadata_fields(rpc_action)
       |> narrow_metadata_fields(parse_metadata_fields(params))
 
-    with {:ok, page} <- parse_pagination(params, config),
+    with {:ok, input} <- parse_input(params, resource, action.name, config),
+         {:ok, page} <- parse_pagination(params, config),
          :ok <- check_read_surface(rpc_action, filter, sort),
          {:ok, get_by} <- parse_get_by(params, rpc_action, resource, config),
          {:ok, {select, load, extraction_template}} <-
@@ -329,7 +329,6 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     config = Pipeline.request_config(rpc_action)
     action_name = rpc_action.action
     action_info = SharedResourceInfo.action(resource, action_name, config)
-    input = parse_input(params, resource, action_name, config)
 
     opts = [
       actor: actor,
@@ -338,21 +337,23 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     ]
 
     result =
-      case action_info.type do
-        :create ->
-          changeset = Ash.Changeset.for_create(resource, action_name, input, opts)
-          {:ok, changeset}
-
-        :update ->
-          identity = parse_identity(params, resource, config)
-
-          with {:ok, record} <- get_record_for_validation(resource, identity, opts) do
-            changeset = Ash.Changeset.for_update(record, action_name, input, opts)
+      with {:ok, input} <- parse_input(params, resource, action_name, config) do
+        case action_info.type do
+          :create ->
+            changeset = Ash.Changeset.for_create(resource, action_name, input, opts)
             {:ok, changeset}
-          end
 
-        _ ->
-          {:error, :validation_not_supported}
+          :update ->
+            identity = parse_identity(params, resource, config)
+
+            with {:ok, record} <- get_record_for_validation(resource, identity, opts) do
+              changeset = Ash.Changeset.for_update(record, action_name, input, opts)
+              {:ok, changeset}
+            end
+
+          _ ->
+            {:error, :validation_not_supported}
+        end
       end
 
     case result do
@@ -519,9 +520,20 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # Input Parsing
   # ---------------------------------------------------------------------------
 
+  # A map or an absent `input` parses as before. Anything else used to reach
+  # `Ash.Changeset.for_create/4` (or the equivalent for another action type)
+  # as a bare term, which raised trying to enumerate it as params (#122).
   defp parse_input(params, resource, action_name, config) do
-    input = params["input"] || %{}
-    KeyNames.parse_input(input, resource, action_name, config)
+    case params["input"] do
+      nil ->
+        {:ok, KeyNames.parse_input(%{}, resource, action_name, config)}
+
+      input when is_map(input) ->
+        {:ok, KeyNames.parse_input(input, resource, action_name, config)}
+
+      invalid ->
+        {:error, {:invalid_input_format, invalid}}
+    end
   end
 
   # `AshIntrospection.Rpc.Pipeline` matches an identity map against the
@@ -781,7 +793,8 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     :identity_not_supported,
     :missing_identity,
     :invalid_identity,
-    :invalid_pagination
+    :invalid_pagination,
+    :invalid_input_format
   ]
 
   # Every failure reaches the client through here. A request reason is worded

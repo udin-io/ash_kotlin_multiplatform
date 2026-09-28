@@ -113,5 +113,46 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerRequestErrorTest do
     end
   end
 
+  describe "a non-map input" do
+    test "a string names the parameter instead of crashing, via run_action" do
+      response = run(%{"action" => "create_author", "input" => "a string"})
+
+      assert %{"success" => false, "errors" => [error]} = response
+      assert error["type"] == "invalid_input_format"
+      assert error["message"] == "Input parameter must be a map"
+      refute Map.has_key?(error, "errorId")
+      refute Jason.encode!(response) =~ ".ex:"
+    end
+
+    test "a string names the parameter instead of crashing, via validate_action" do
+      response =
+        Runner.validate_action(:ash_kotlin_multiplatform, %{
+          "action" => "create_author",
+          "input" => "a string"
+        })
+
+      assert %{"success" => false, "errors" => [error]} = response
+      assert error["type"] == "invalid_input_format"
+      assert error["message"] == "Input parameter must be a map"
+      refute Map.has_key?(error, "errorId")
+    end
+
+    test "no input key at all still resolves to an empty map and runs the action" do
+      assert %{"success" => false, "errors" => [error]} = run(%{"action" => "create_author"})
+
+      assert error["type"] == "required"
+      assert error["field"] == "name"
+    end
+
+    test "logs nothing: a client mistake is stated once, not a server secret" do
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          run(%{"action" => "create_author", "input" => "a string"})
+        end)
+
+      assert log == ""
+    end
+  end
+
   defp run(params), do: Runner.run_action(:ash_kotlin_multiplatform, params)
 end
