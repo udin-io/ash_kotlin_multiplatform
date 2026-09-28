@@ -177,6 +177,16 @@ This release breaks the RPC error payload (below). After moving to it, run
   with their bodies byte-identical. A regenerated client moves those blocks once
   and then stops changing.
 
+- A non-map `page` or `input` names the bad parameter instead of crashing
+  (#122). A string, number, list or boolean `page` raised `FunctionClauseError`
+  in `KeyNames.resolve/2`; a non-map `input` raised inside
+  `Ash.Changeset.for_create/4` and the other action-type builders trying to
+  enumerate it as params. Both used to be caught by #123's `rescue` and
+  answered `unknown_error`, "Something went wrong", with a stack trace logged
+  for a client mistake. Now `run_action/2` and `validate_action/2` alike
+  answer `invalid_pagination` or `invalid_input_format`, naming the
+  parameter, and nothing is logged.
+
 ### Security
 
 - Errors no longer send internal detail to the client (#28). Before, a policy

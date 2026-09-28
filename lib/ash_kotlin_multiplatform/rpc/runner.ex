@@ -286,19 +286,19 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
          context,
          config
        ) do
-    input = parse_input(params, resource, action.name, config)
     fields = params["fields"] || []
     identity = parse_identity(params, resource, config)
     filter = parse_filter(params, resource, config)
     sort = parse_sort(params)
-    page = parse_pagination(params, config)
 
     show_metadata =
       action
       |> dsl_metadata_fields(rpc_action)
       |> narrow_metadata_fields(parse_metadata_fields(params))
 
-    with :ok <- check_read_surface(rpc_action, filter, sort),
+    with {:ok, input} <- parse_input(params, resource, action.name, config),
+         {:ok, page} <- parse_pagination(params, config),
+         :ok <- check_read_surface(rpc_action, filter, sort),
          {:ok, get_by} <- parse_get_by(params, rpc_action, resource, config),
          {:ok, {select, load, extraction_template}} <-
            select_fields(resource, action, fields, config) do
@@ -329,7 +329,6 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     config = Pipeline.request_config(rpc_action)
     action_name = rpc_action.action
     action_info = SharedResourceInfo.action(resource, action_name, config)
-    input = parse_input(params, resource, action_name, config)
 
     opts = [
       actor: actor,
@@ -338,21 +337,23 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     ]
 
     result =
-      case action_info.type do
-        :create ->
-          changeset = Ash.Changeset.for_create(resource, action_name, input, opts)
-          {:ok, changeset}
-
-        :update ->
-          identity = parse_identity(params, resource, config)
-
-          with {:ok, record} <- get_record_for_validation(resource, identity, opts) do
-            changeset = Ash.Changeset.for_update(record, action_name, input, opts)
+      with {:ok, input} <- parse_input(params, resource, action_name, config) do
+        case action_info.type do
+          :create ->
+            changeset = Ash.Changeset.for_create(resource, action_name, input, opts)
             {:ok, changeset}
-          end
 
-        _ ->
-          {:error, :validation_not_supported}
+          :update ->
+            identity = parse_identity(params, resource, config)
+
+            with {:ok, record} <- get_record_for_validation(resource, identity, opts) do
+              changeset = Ash.Changeset.for_update(record, action_name, input, opts)
+              {:ok, changeset}
+            end
+
+          _ ->
+            {:error, :validation_not_supported}
+        end
       end
 
     case result do
@@ -519,9 +520,20 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # Input Parsing
   # ---------------------------------------------------------------------------
 
+  # A map or an absent `input` parses as before. Anything else used to reach
+  # `Ash.Changeset.for_create/4` (or the equivalent for another action type)
+  # as a bare term, which raised trying to enumerate it as params (#122).
   defp parse_input(params, resource, action_name, config) do
-    input = params["input"] || %{}
-    KeyNames.parse_input(input, resource, action_name, config)
+    case params["input"] do
+      nil ->
+        {:ok, KeyNames.parse_input(%{}, resource, action_name, config)}
+
+      input when is_map(input) ->
+        {:ok, KeyNames.parse_input(input, resource, action_name, config)}
+
+      invalid ->
+        {:error, {:invalid_input_format, invalid}}
+    end
   end
 
   # `AshIntrospection.Rpc.Pipeline` matches an identity map against the
@@ -588,22 +600,29 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # `RunnerKeyTypeTest` pins that an unknown key's error message reads back
   # the client's own map shape, `"key" => value`, not a list of tuples
   # (issue #116).
+  #
+  # A map or an absent `page` parses as above. Anything else used to reach
+  # `KeyNames.resolve/2`, whose only clause requires a map, and raise
+  # `FunctionClauseError` with no field name for the client to act on (#122).
   defp parse_pagination(params, config) do
     case params["page"] do
       nil ->
-        nil
+        {:ok, nil}
 
-      page ->
+      page when is_map(page) ->
         resolved =
           page
           |> KeyNames.parse(nil, config)
           |> KeyNames.resolve(@page_option_names)
 
         if Enum.all?(Map.keys(resolved), &is_atom/1) do
-          Map.to_list(resolved)
+          {:ok, Map.to_list(resolved)}
         else
-          resolved
+          {:ok, resolved}
         end
+
+      invalid ->
+        {:error, {:invalid_pagination, invalid}}
     end
   end
 
@@ -773,7 +792,9 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     :invalid_get_by,
     :identity_not_supported,
     :missing_identity,
-    :invalid_identity
+    :invalid_identity,
+    :invalid_pagination,
+    :invalid_input_format
   ]
 
   # Every failure reaches the client through here. A request reason is worded
