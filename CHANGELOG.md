@@ -34,6 +34,17 @@ This release breaks the RPC error payload (below). After moving to it, run
   first of `fields`. The last-but-one row is interim: the core names the key
   in a later release.
 
+- **Breaking: error keys follow `output_field_formatter` (#57).** A success
+  response's `data` keys already did; an error's did not, so an app on
+  `:snake_case` got one casing in `data` and another in `errors`. An app
+  already running `:snake_case` regenerates its client and gets the
+  right-hand column below, on every error, in this release — the fix this
+  ticket exists for. An app on the default `:camel_case` sees no change.
+
+  | Failure | Before | Now |
+  | ------- | ------ | --- |
+  | error keys, under `output_field_formatter :snake_case` | always camelCase (`shortMessage`, `errorId`, and every nested `vars`/`details` key) | follow the formatter (`short_message`, `error_id`, `vars.allowed_fields`, …) |
+
 - `Rpc.Runner.validate_action/3` takes `:context`, which reaches the error
   handlers (#28).
 - A request error, such as an unknown field or a getBy check, passes through

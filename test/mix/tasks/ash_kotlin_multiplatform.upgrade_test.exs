@@ -39,6 +39,9 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.UpgradeTest do
     assert_received {:mix_shell, :info, [text]}
     assert text =~ "result_unavailable"
     assert text =~ "field` is unchanged"
+    assert text =~ "output_field_formatter :snake_case"
+    assert text =~ "short_message"
+    assert text =~ "error_id"
   end
 
   test "prints nothing when the range holds no key" do

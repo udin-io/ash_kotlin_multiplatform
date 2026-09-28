@@ -32,6 +32,10 @@ if Code.ensure_loaded?(Igniter) do
         `CHANGELOG.md`'s Unreleased section.
       * A new `result_unavailable` type covers a result that ran but could
         not be sent to the client.
+      * An app configured `output_field_formatter :snake_case` now gets
+        `short_message` and `error_id` in every error, in place of
+        `shortMessage`/`errorId`. An app on the default `:camel_case` sees
+        no change.
       * `field` is unchanged: a client reading only `field` today needs no
         change.
     """
