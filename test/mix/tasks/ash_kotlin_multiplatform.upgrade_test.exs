@@ -45,4 +45,26 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.UpgradeTest do
     upgrade("0.1.0", "0.2.0")
     refute_received {:mix_shell, :info, _}
   end
+
+  describe "the fallback for a copy that does not know the target release" do
+    test "prints when to is newer than the newest key this copy knows" do
+      upgrade("0.3.0", "0.4.0")
+
+      assert_received {:mix_shell, :info, [text]}
+      normalized = String.replace(text, "\n", " ")
+      assert normalized =~ "mix ash_kotlin_multiplatform.upgrade 0.3.0 0.4.0"
+    end
+
+    test "does not print when to equals the newest key" do
+      upgrade("0.2.0", "0.3.0")
+
+      assert_received {:mix_shell, :info, [_breaking_notice]}
+      refute_received {:mix_shell, :info, _}
+    end
+
+    test "does not print when to is older than the newest key" do
+      upgrade("0.1.0", "0.2.0")
+      refute_received {:mix_shell, :info, _}
+    end
+  end
 end

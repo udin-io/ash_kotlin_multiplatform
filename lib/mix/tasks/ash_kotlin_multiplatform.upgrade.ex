@@ -53,7 +53,9 @@ if Code.ensure_loaded?(Igniter) do
         "0.3.0" => [&notify_0_3_0_breaks/2]
       }
 
-      Igniter.Upgrades.run(igniter, positional.from, positional.to, upgrades, [])
+      igniter
+      |> Igniter.Upgrades.run(positional.from, positional.to, upgrades, [])
+      |> fallback_notice(positional.from, positional.to, upgrades)
     end
 
     @doc false
@@ -64,6 +66,25 @@ if Code.ensure_loaded?(Igniter) do
     defp notify(igniter, text) do
       Mix.shell().info(text)
       igniter
+    end
+
+    # A developer stuck on a copy of this task older than the release they
+    # are upgrading to (no `igniter_new` archive installed, so the old copy
+    # stays loaded — ash_introspection #99) sees nothing from `upgrades`: its
+    # keys stop at this copy's newest release. Naming the direct command is
+    # the only way to reach them.
+    defp fallback_notice(igniter, from, to, upgrades) do
+      newest = upgrades |> Map.keys() |> Enum.max(Version)
+
+      if Version.compare(to, newest) == :gt do
+        notify(igniter, """
+        This copy of the ash_kotlin_multiplatform upgrade task knows
+        releases up to #{newest}. Run `mix ash_kotlin_multiplatform.upgrade
+        #{from} #{to}` now to see what #{to} breaks.
+        """)
+      else
+        igniter
+      end
     end
   end
 else
