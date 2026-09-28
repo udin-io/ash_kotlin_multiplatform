@@ -78,5 +78,40 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerRequestErrorTest do
     end
   end
 
+  describe "a non-map page" do
+    test "a string names the parameter instead of crashing" do
+      response = run(%{"action" => "list_authors", "page" => "a string"})
+
+      assert %{"success" => false, "errors" => [error]} = response
+      assert error["type"] == "invalid_pagination"
+      assert error["message"] == "Invalid pagination parameter format"
+      refute Map.has_key?(error, "errorId")
+      refute Jason.encode!(response) =~ ".ex:"
+    end
+
+    test "a list names the parameter instead of crashing" do
+      response = run(%{"action" => "list_authors", "page" => [1, 2, 3]})
+
+      assert %{"success" => false, "errors" => [error]} = response
+      assert error["type"] == "invalid_pagination"
+      assert error["message"] == "Invalid pagination parameter format"
+      refute Map.has_key?(error, "errorId")
+      refute Jason.encode!(response) =~ ".ex:"
+    end
+
+    test "a valid page map still paginates" do
+      assert %{"success" => true} = run(%{"action" => "list_authors", "page" => %{"limit" => 1}})
+    end
+
+    test "logs nothing: a client mistake is stated once, not a server secret" do
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          run(%{"action" => "list_authors", "page" => "a string"})
+        end)
+
+      assert log == ""
+    end
+  end
+
   defp run(params), do: Runner.run_action(:ash_kotlin_multiplatform, params)
 end

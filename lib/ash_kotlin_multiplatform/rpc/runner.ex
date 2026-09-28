@@ -291,14 +291,14 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     identity = parse_identity(params, resource, config)
     filter = parse_filter(params, resource, config)
     sort = parse_sort(params)
-    page = parse_pagination(params, config)
 
     show_metadata =
       action
       |> dsl_metadata_fields(rpc_action)
       |> narrow_metadata_fields(parse_metadata_fields(params))
 
-    with :ok <- check_read_surface(rpc_action, filter, sort),
+    with {:ok, page} <- parse_pagination(params, config),
+         :ok <- check_read_surface(rpc_action, filter, sort),
          {:ok, get_by} <- parse_get_by(params, rpc_action, resource, config),
          {:ok, {select, load, extraction_template}} <-
            select_fields(resource, action, fields, config) do
@@ -588,22 +588,29 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
   # `RunnerKeyTypeTest` pins that an unknown key's error message reads back
   # the client's own map shape, `"key" => value`, not a list of tuples
   # (issue #116).
+  #
+  # A map or an absent `page` parses as above. Anything else used to reach
+  # `KeyNames.resolve/2`, whose only clause requires a map, and raise
+  # `FunctionClauseError` with no field name for the client to act on (#122).
   defp parse_pagination(params, config) do
     case params["page"] do
       nil ->
-        nil
+        {:ok, nil}
 
-      page ->
+      page when is_map(page) ->
         resolved =
           page
           |> KeyNames.parse(nil, config)
           |> KeyNames.resolve(@page_option_names)
 
         if Enum.all?(Map.keys(resolved), &is_atom/1) do
-          Map.to_list(resolved)
+          {:ok, Map.to_list(resolved)}
         else
-          resolved
+          {:ok, resolved}
         end
+
+      invalid ->
+        {:error, {:invalid_pagination, invalid}}
     end
   end
 
@@ -773,7 +780,8 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     :invalid_get_by,
     :identity_not_supported,
     :missing_identity,
-    :invalid_identity
+    :invalid_identity,
+    :invalid_pagination
   ]
 
   # Every failure reaches the client through here. A request reason is worded
