@@ -98,6 +98,7 @@ defmodule AshKotlinMultiplatform.MixProject do
 
   defp deps do
     [
+      {:mint, "== 1.11.0"},
       {:igniter, "~> 0.7", optional: true},
       # 0.6.0 is the floor because it is the first release whose four request
       # entry points REQUIRE a manifest: `Pipeline.execute_ash_action/2`,
