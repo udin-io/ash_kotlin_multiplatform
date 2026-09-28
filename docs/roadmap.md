@@ -55,6 +55,7 @@ afterwards.
 | 2026-09-27 | Errors go through the shared core's error protocol: no stack trace, actor, returned term or module name reaches the client, a raise is a failed result, `error_handler` and `show_raised_errors?` on `kotlin_rpc`, and `AshRpcError` decodes `field`, `errorId` and typed `vars`. Slice 1 of #121 (#28, #61) |
 | 2026-09-27 | A field, argument or union member typed as a resource no `kotlin_rpc` block publishes is `JsonElement`, not a class the file never declares; a generic action may return such a resource as raw JSON; a class is named by its `type_name` everywhere; a non-scalar identity value is pinned as refused. Slice 3 of #113 (#91, #92, #29) |
 | 2026-09-28 | `mix ash_kotlin_multiplatform.upgrade`, the library's first upgrade task; prints each breaking release's notice straight to the shell, starting with the #123 error-format break. Slice 2 of #121 (#124) |
+| 2026-09-28 | Error response keys follow `output_field_formatter`, matching `data`'s keys, at every depth in `vars` and `details`; `AshRpcError` gets `@SerialName` on `shortMessage`/`errorId` under `:snake_case`. Slice 2 of #121 (#57) |
 
 ## In progress
 
@@ -71,7 +72,6 @@ Ordered by what unblocks the most.
 | #17, #43 | Unstable output order across builds | Measured again on 2026-09-19: three builds put the five `object <Resource>Rpc` blocks in three orders with identical content, so no codegen diff can be read byte for byte |
 | #65, #53 | Typed `filter` and `page` in the request config | The response is typed now; the request still takes untyped maps, so `FilterTypes` is dead code |
 | #48, #53 | The runner mangles unconstrained map keys on the way IN; FilterTypes emits unpublished resources | #71 fixed the output half: an untyped map's keys now survive as written, but `Runner` parses `input` before it knows a field's type, so a key sent as `createdBy` is still stored as `created_by` |
-| #57 | Error keys ignore the output field formatter | The decode gate now reads those keys |
 | #35 | The channel client is static and cannot send most params | Blocks any per-action channel work |
 | #31 | Decide the fate of the half-built Swift generator | It is generated and never compiled |
 

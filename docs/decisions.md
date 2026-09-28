@@ -817,9 +817,9 @@ Bread crumbs are cleared before the core sees an error. Splode prefixes
 and the core's `Required` and `NotFound` impls send that message. The server
 log keeps the original error.
 
-Error keys stay `:camel_case` whatever `output_field_formatter` says, until
-#57 decides otherwise. `message` arrives as finished text, with `vars` beside
-it (decision 2 on PR #123).
+`message` arrives as finished text, with `vars` beside it (decision 2 on PR
+#123). Error keys were pinned to `:camel_case` here regardless of
+`output_field_formatter`; #57 (below) makes them follow it.
 
 A request error is wrapped in `Rpc.RequestError`, class `:invalid`, so it
 reaches both handlers through the core rather than through a second handler
@@ -855,4 +855,36 @@ that same upgrade — the old copy of the task stays loaded in the VM and
 runs instead of the new one, and prints nothing about a release it does not
 know. The task's fallback notice and the README's "Upgrading" section are
 what reach that consumer, on their next direct run of the task.
+
+## 2026-09-28 — Error response keys follow output_field_formatter (#57)
+
+`Rpc.Runner.to_client/1` reads the real `output_field_formatter` instead of
+pinning `:camel_case`, and looks up `message`, `vars`, `fields`, `field` and
+`details` by their formatted names instead of assuming the literal English
+strings. `ErrorFormatter.format/2` already walked every nested map, so the
+fix reaches `vars` and `details` entries at any depth, not only the nine
+top-level keys.
+
+`result_unavailable/2` and `shaping_failure/2` are the two "must not fail"
+paths (decisions 3 and 6 above): they cannot call `ErrorFormatter.format/2`
+directly and risk a broken custom formatter turning an already-failed
+response into an unhandled exception. Both go through a new `static_error/1`
+helper that formats with the real formatter and falls back to the fixed
+camelCase shape if formatting itself raises — which none of the three
+built-in formatters can do, only a project's own `{module, function}`
+formatter.
+
+`KotlinStatic.generate_error_types/0` emits `@SerialName` on `shortMessage`
+and `errorId` exactly when the formatted wire name differs from the fixed
+Kotlin property name, mirroring `ResourceSchemas.property_name/2`. Under the
+default `:camel_case` every wire name already equals the property name, so
+this generates the same source as before.
+
+Owner's answer, given in chat: ship it as a documented breaking change, with
+no compatibility flag. `CHANGELOG.md` and the `0.3.0` notice in
+`mix ash_kotlin_multiplatform.upgrade` both record it.
+
+Cost: an app already running `:snake_case` gets `short_message`/`error_id`
+in place of `shortMessage`/`errorId`, on every error, in this release. An
+app on the default `:camel_case` sees no change.
 
