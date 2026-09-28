@@ -13,6 +13,7 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerErrorFormatterTest do
   """
   use ExUnit.Case, async: false
 
+  alias AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic
   alias AshKotlinMultiplatform.Rpc.Runner
 
   setup do
@@ -74,5 +75,63 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerErrorFormatterTest do
 
     assert Map.has_key?(error, "error_id")
     refute Map.has_key?(error, "errorId")
+  end
+
+  # Row 4: the generated Kotlin class annotates exactly the two keys that
+  # change under :snake_case.
+  test "generate_error_types/0 annotates short_message and error_id under :snake_case" do
+    put_formatter(:snake_case)
+
+    kotlin = KotlinStatic.generate_error_types()
+
+    assert kotlin =~ ~r/@SerialName\("short_message"\)\s*\n\s*val shortMessage/
+    assert kotlin =~ ~r/@SerialName\("error_id"\)\s*\n\s*val errorId/
+
+    for canonical <- ["type", "message", "vars", "field", "fields", "path", "details"] do
+      refute kotlin =~ "@SerialName(\"#{canonical}\")"
+    end
+  end
+
+  # Row 5 (guard): every key the three probes above actually send is declared
+  # by generate_error_types/0, under :snake_case.
+  test "every key sent under :snake_case is covered by a declared property" do
+    put_formatter(:snake_case)
+
+    responses = [
+      run(%{"action" => "create_fault", "input" => %{"title" => "ab"}}),
+      run(%{"action" => "fetch_author", "getBy" => %{"id" => "x", "email" => "y"}}),
+      run(%{"action" => "fault_bad_vector"})
+    ]
+
+    sent =
+      for %{"errors" => errors} <- responses,
+          error <- errors,
+          key <- Map.keys(error),
+          into: MapSet.new(),
+          do: key
+
+    declared_wire_names =
+      KotlinStatic.generate_error_types()
+      |> then(fn kotlin ->
+        annotated =
+          ~r/@SerialName\("(\w+)"\)/
+          |> Regex.scan(kotlin, capture: :all_but_first)
+          |> List.flatten()
+
+        bare_properties =
+          ~r/val (\w+):/
+          |> Regex.scan(kotlin, capture: :all_but_first)
+          |> List.flatten()
+
+        annotated ++ bare_properties
+      end)
+      |> MapSet.new()
+
+    assert MapSet.subset?(sent, declared_wire_names)
+  end
+
+  # Row 7 (guard): no @SerialName at all under the default formatter.
+  test "generate_error_types/0 emits no @SerialName under the default :camel_case" do
+    refute KotlinStatic.generate_error_types() =~ "@SerialName"
   end
 end
