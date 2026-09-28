@@ -71,6 +71,21 @@ end
 config :ash_kotlin_multiplatform, manifest: MyApp.AshKotlinMultiplatformManifest
 ```
 
+## Upgrading
+
+Move the dependency, then run this library's own upgrade task to see what
+the new release breaks:
+
+```sh
+mix igniter.upgrade ash_kotlin_multiplatform
+mix ash_kotlin_multiplatform.upgrade <old> <new>
+```
+
+The second command is not automatic: `mix igniter.upgrade` sometimes runs a
+copy of the task from before the upgrade, which knows nothing about the
+release it just installed. Running it directly, with the versions you moved
+between, always reaches the current copy.
+
 ## Quick Start
 
 ### 1. Add the Resource Extension

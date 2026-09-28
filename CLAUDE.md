@@ -226,3 +226,22 @@ green locally and goes red on a loaded runner.
 Before adding a write, check the function under test actually reads the key.
 Two cases in `serial_name_test.exs` set `:output_field_formatter` around
 `generate_enum_class/1`, which never reads it.
+
+### An upgrade task's module name comes from the hex app name, not a guess
+
+`mix igniter.upgrade ash_kotlin_multiplatform` resolves the package's
+upgrade task with `Mix.Task.get("ash_kotlin_multiplatform.upgrade")`
+(`deps/igniter/lib/igniter/upgrades.ex`), which only ever resolves
+`Mix.Tasks.AshKotlinMultiplatform.Upgrade` — Mix's ordinary Task-name
+convention on the hex app name, `:ash_kotlin_multiplatform`. Any other
+module name compiles fine and Igniter still reports the package as missing
+an upgrade task, with no other error to point at the mismatch.
+
+Notices go through `Mix.shell().info/1` directly, never
+`Igniter.add_notice/2`: ash_introspection #99 measured that
+`Igniter.CopiedTasks.upgrade/1`, the path the usual `igniter_new` archive
+runs, never calls `Igniter.do_or_dry_run/2`, so a notice added the ordinary
+way is silently discarded there. Test it with `Mix.shell(Mix.Shell.Process)`
+and `assert_received {:mix_shell, :info, [text]}` around
+`Igniter.compose_task/3`, not `Igniter.Test.assert_has_notice/2`, which
+only sees the queue this bug drops from.
