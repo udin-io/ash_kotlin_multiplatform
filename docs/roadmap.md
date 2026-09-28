@@ -54,6 +54,7 @@ afterwards.
 | 2026-09-26 | `get?`, `not_found_error?`, `enable_filter?` and `enable_sort?` on a create, update, destroy or generic action are compile errors, not silently ignored; slice 2 of #113 (#79) |
 | 2026-09-27 | Errors go through the shared core's error protocol: no stack trace, actor, returned term or module name reaches the client, a raise is a failed result, `error_handler` and `show_raised_errors?` on `kotlin_rpc`, and `AshRpcError` decodes `field`, `errorId` and typed `vars`. Slice 1 of #121 (#28, #61) |
 | 2026-09-27 | A field, argument or union member typed as a resource no `kotlin_rpc` block publishes is `JsonElement`, not a class the file never declares; a generic action may return such a resource as raw JSON; a class is named by its `type_name` everywhere; a non-scalar identity value is pinned as refused. Slice 3 of #113 (#91, #92, #29) |
+| 2026-09-28 | `mix ash_kotlin_multiplatform.upgrade`, the library's first upgrade task; prints each breaking release's notice straight to the shell, starting with the #123 error-format break. Slice 2 of #121 (#124) |
 
 ## In progress
 

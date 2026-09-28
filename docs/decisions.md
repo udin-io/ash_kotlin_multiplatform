@@ -837,3 +837,22 @@ Cost: the wire `type` and `shortMessage` values changed, and an unknown input
 key, filter field, filter operator or sort field answers `internal_error`
 until the core names it (see `risks.md`).
 
+## 2026-09-28 — The upgrade task prints straight to the shell
+
+`Mix.Tasks.AshKotlinMultiplatform.Upgrade` (#124) calls `Mix.shell().info/1`
+from a private `notify/2`, never `Igniter.add_notice/2`. Copied from
+ash_introspection #99's own decision on the same shape.
+
+ash_introspection #99 measured why: under the usual `igniter_new` archive
+setup, `Igniter.CopiedTasks.upgrade/1` runs the new copy of a package's
+upgrade task but never calls `Igniter.do_or_dry_run/2`, so anything added to
+the notice queue is collected and dropped, never reaching the screen.
+Printing directly is the only path that reaches a developer running
+`mix igniter.upgrade ash_kotlin_multiplatform` under that setup.
+
+Cost: a consumer without the archive installed still gets nothing during
+that same upgrade — the old copy of the task stays loaded in the VM and
+runs instead of the new one, and prints nothing about a release it does not
+know. The task's fallback notice and the README's "Upgrading" section are
+what reach that consumer, on their next direct run of the task.
+
