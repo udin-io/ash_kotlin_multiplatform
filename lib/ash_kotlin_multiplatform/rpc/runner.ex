@@ -261,16 +261,16 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     %{
       "success" => false,
       "errors" => [
-        %{
-          "type" => "result_unavailable",
-          "message" => "The action ran, but its result could not be sent",
-          "shortMessage" => "Result unavailable",
-          "vars" => %{},
-          "fields" => [],
-          "field" => nil,
-          "path" => [],
-          "errorId" => uuid
-        }
+        static_error(%{
+          type: "result_unavailable",
+          message: "The action ran, but its result could not be sent",
+          short_message: "Result unavailable",
+          vars: %{},
+          fields: [],
+          field: nil,
+          path: [],
+          error_id: uuid
+        })
       ]
     }
   end
@@ -840,16 +840,31 @@ defmodule AshKotlinMultiplatform.Rpc.Runner do
     #{failure}
     """)
 
-    %{
-      "type" => "internal_error",
-      "message" => "Something went wrong. Unique error id: #{uuid}",
-      "shortMessage" => "Internal error",
-      "vars" => %{},
-      "fields" => [],
-      "field" => nil,
-      "path" => [],
-      "errorId" => uuid
-    }
+    static_error(%{
+      type: "internal_error",
+      message: "Something went wrong. Unique error id: #{uuid}",
+      short_message: "Internal error",
+      vars: %{},
+      fields: [],
+      field: nil,
+      path: [],
+      error_id: uuid
+    })
+  end
+
+  # `result_unavailable/2` and `shaping_failure/2` are the "must not fail"
+  # paths (decisions 3 and 6 on #123): neither can safely call
+  # `ErrorFormatter.format/2` and risk a broken custom formatter turning a
+  # "the action already ran" response into an unhandled exception. Formats
+  # with the real formatter and falls back to the fixed camelCase shape if
+  # formatting itself raises — which the three built-in formatters cannot do,
+  # only a project's own `{module, function}` formatter can.
+  defp static_error(canonical) do
+    formatter = AshKotlinMultiplatform.output_field_formatter()
+    Map.new(canonical, fn {k, v} -> {FieldFormatter.format_field_name(k, formatter), v} end)
+  rescue
+    _ ->
+      Map.new(canonical, fn {k, v} -> {FieldFormatter.format_field_name(k, :camel_case), v} end)
   end
 
   # The core has no reason for a read-surface switch or for validating an

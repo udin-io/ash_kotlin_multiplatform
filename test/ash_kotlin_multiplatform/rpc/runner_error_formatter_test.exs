@@ -64,4 +64,15 @@ defmodule AshKotlinMultiplatform.Rpc.RunnerErrorFormatterTest do
     assert error["shortMessage"] == "Invalid attribute"
     refute Map.has_key?(error, "short_message")
   end
+
+  # Row 3: result_unavailable/2, the "must not fail" path after an action ran.
+  test "a result the encoder cannot format sends error_id under :snake_case" do
+    put_formatter(:snake_case)
+
+    assert %{"success" => false, "errors" => [error]} =
+             run(%{"action" => "fault_bad_vector"})
+
+    assert Map.has_key?(error, "error_id")
+    refute Map.has_key?(error, "errorId")
+  end
 end
