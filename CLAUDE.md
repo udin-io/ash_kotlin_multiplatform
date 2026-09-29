@@ -245,3 +245,23 @@ way is silently discarded there. Test it with `Mix.shell(Mix.Shell.Process)`
 and `assert_received {:mix_shell, :info, [text]}` around
 `Igniter.compose_task/3`, not `Igniter.Test.assert_has_notice/2`, which
 only sees the queue this bug drops from.
+
+### `mix ash.codegen` finds an extension's `codegen/1` by scanning, not config
+
+`Ash.Mix.Tasks.Helpers.extensions!/2` walks every app in the dep tree that
+depends on `:ash` or `:spark`, calls `Ash.Info.defined_extensions/1` on
+each, and `Mix.Tasks.Ash.Codegen.run/1` then gates on
+`function_exported?(extension, :codegen, 1)`. An extension with no
+`codegen/1` is silently skipped — `mix ash.codegen --check` reports success
+having checked nothing for it, which is what made #17/#43's fix invisible
+to `--check` until #26 added `AshKotlinMultiplatform.Rpc.codegen/1`.
+
+That task also always appends `--name <value-or-nil>` to the argv it
+forwards, unless `--name` is already present. `--name` is not in this
+task's `OptionParser.parse/2` `strict:` list, and that is fine:
+`OptionParser.parse/2` never raises on an unrecognized switch regardless of
+`strict:` — only `parse!/2` does — so the extra switch (and a literal `nil`
+value, not the string `"nil"`) lands in the ignored third tuple element.
+Verified directly with `OptionParser.parse(["--check", "--name", nil],
+strict: [check: :boolean])` at the console: `{[check: true], [nil],
+[{"--name", nil}]}`, no raise.

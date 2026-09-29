@@ -289,6 +289,16 @@ defmodule AshKotlinMultiplatform.Rpc do
     ]
 
   @doc """
+  Forwards to `mix ash_kotlin_multiplatform.codegen`, so `mix ash.codegen`
+  (and its `--check`/`--dry-run`/`--dev`) reaches this extension the same
+  way it reaches `AshTypescript.Rpc.codegen/1`.
+  """
+  def codegen(args) do
+    Mix.Task.reenable("ash_kotlin_multiplatform.codegen")
+    Mix.Task.run("ash_kotlin_multiplatform.codegen", args)
+  end
+
+  @doc """
   Returns the input field formatter for RPC requests.
   """
   def input_field_formatter do
