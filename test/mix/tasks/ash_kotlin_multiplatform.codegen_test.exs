@@ -125,6 +125,16 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.CodegenTest do
     assert File.read!(output_file) == "stale content"
   end
 
+  test "9: mix ash.codegen --check forwards through Rpc.codegen/1 and raises the same way", %{
+    output_file: output_file
+  } do
+    File.write!(output_file, "stale content")
+
+    assert_raise Ash.Error.Framework.PendingCodegen, fn ->
+      AshKotlinMultiplatform.Rpc.codegen(["--output", output_file, "--check"])
+    end
+  end
+
   test "10: mix ash.codegen forwards --name <nil> and it is ignored, no crash", %{
     output_file: output_file
   } do
