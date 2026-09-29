@@ -8,6 +8,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
 
 env:
   MIX_ENV: test
@@ -15,6 +16,9 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # PR CI runs only once the PR carries `ready-for-review`; a push to main
+    # always runs.
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ready-for-review')
 
     steps:
       - uses: actions/checkout@v4
@@ -67,6 +71,9 @@ jobs:
   kotlin-compile-gate:
     name: Compile the generated Kotlin
     runs-on: ubuntu-latest
+    # PR CI runs only once the PR carries `ready-for-review`; a push to main
+    # always runs.
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ready-for-review')
 
     steps:
       - uses: actions/checkout@v4
