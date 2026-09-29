@@ -184,27 +184,6 @@ domain answers `action_not_found` for every `rpc_action` in it.
 `runner_manifest_source_test.exs` asserts exactly that, which is also what
 proves the request path reads the manifest at all.
 
-### The generated file's wrapper-object order is unstable across builds
-
-`Rpc.Codegen.generate_object_wrappers/2` groups the RPC resources with
-`Enum.group_by/2` and iterates the resulting map, whose keys are resource
-module atoms. A small map iterates in Erlang term order, and term order for
-atoms follows the atom table, which follows module load order — so a change
-anywhere can reorder the five `object <Resource>Rpc` blocks without changing a
-line of their content.
-
-Measured 2026-09-19 while diffing codegen for stage 5a's PR 4: three builds of
-the same test domain — `main`, `main` with only `mix.exs` and `mix.lock`
-changed, and the finished branch — put those five objects in three different
-orders, with an identical multiset of lines every time. That is #17/#43, filed
-before this and not caused by it.
-
-*Watch:* nothing automatic. Any codegen diff has to be read as a multiset of
-lines, not byte for byte.
-*Do:* close #17/#43 by sorting the group before emitting. It is a one-line
-change that reorders generated output once, so it belongs in its own PR with
-its own diff.
-
 ### `generate/1` scopes by entrypoints, not by domains
 
 `Ash.Info.Manifest.Generator.generate/1` takes `:otp_app` and calls
