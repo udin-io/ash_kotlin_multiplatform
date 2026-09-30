@@ -112,6 +112,14 @@ This release breaks the RPC error payload (below). After moving to it, run
   manifest carries private relationships — which is every manifest this
   library builds.
 
+- **Breaking: an enum or union class is named after its resource, not its
+  attribute alone (#33).** `TodoStatus`, not `Status`; `TodoContentUnion`,
+  not `ContentUnion`. Before this release, two resources with a same-named
+  attribute (two `:status` enums, two `:content` unions) silently shared
+  one class: `Enum.uniq_by/2` kept one resource's values and dropped the
+  other's. Regenerate the client; every reference to the old, unqualified
+  class name needs the resource prefix.
+
 ### Added
 
 - `get_context/1` on `AshKotlinMultiplatform.Phoenix.Controller`, overridable,
@@ -121,6 +129,15 @@ This release breaks the RPC error payload (below). After moving to it, run
   and a handler that raises fails closed to `internal_error` with an error id
   the server log shares. `show_raised_errors? true` sends an exception's own
   message, for development only.
+- Codegen now fails, instead of silently dropping or double-declaring, when
+  two Elixir sources would generate the same Kotlin identifier — an
+  attribute, a resource, an `rpc_action`, a typed query, a filter type or a
+  name this library's own generated code references unqualified from a
+  star import (`Json`, `Serializable`, `SerialName`, `Contextual`,
+  `HttpClient`, `ContentType`, `ContentNegotiation`) (#33). The error names
+  the Kotlin identifier and every Elixir source that declared it.
+  `codegen`, `--check`, `--dry-run` and `mix ash.codegen` all stop and
+  write nothing.
 
 ### Fixed
 

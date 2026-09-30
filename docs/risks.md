@@ -28,6 +28,33 @@ resources, so a shape no test resource has is still unchecked, and the decode
 half only checks the responses the fixture carries. A new response shape
 needs a new check in `roundtrip/Roundtrip.kt`, or it is unwatched.
 
+#33 closed the naming-collision slice of this risk:
+`Codegen.Declarations.check/1` catches a two-sources-one-identifier clash
+at codegen time, in Elixir, before the compile gate would have caught it
+late (or not at all, when `Enum.uniq_by/2` used to silently drop one of
+the two). Every other shape of "text that does not compile" this risk
+names is unchanged.
+
+### The reserved top-level name list can go stale
+
+`KotlinStatic.reserved_top_level_names/1` (#33) protects `Json`,
+`Serializable`, `SerialName`, `Contextual`, `HttpClient`, `ContentType` and
+`ContentNegotiation` — every name a grep of the real generated fixture
+confirmed this generator's own static code uses unqualified from a star
+import, as of 2026-09-30. It does not, and cannot, protect a name a
+*future* generator change starts using bare without also adding it to
+`@reserved_names_by_package`. A resource typed after that new name would
+shadow it exactly as `class Json` did before this ticket, and nothing
+would say so until a consumer's `gradle compileKotlin` failed.
+
+*Watch:* nothing automatic — the package list comes from
+`generate_imports/1`'s real output, but the *names* used bare from each
+package are a maintained table, not introspected from the JVM classpath.
+*Do:* any PR that adds a bare (unqualified) reference to a new type from
+an already-star-imported package, or a new star import, greps the
+generated fixture for other bare uses from that import and updates
+`@reserved_names_by_package` in the same PR.
+
 ### The shared core formats values by type, and this library never asks it to
 
 `Rpc.Runner.execute_action/7` formats a response with
