@@ -263,11 +263,15 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
        resource}
     end)
     |> Enum.map_join("\n\n", fn {resource, configs} ->
-      generate_object_wrapper(resource, List.first(configs), package_name)
+      # A resource exposed from two domains' kotlin_rpc blocks used to keep
+      # only the first domain's actions (`List.first(configs)`) — merge
+      # every domain's rpc_actions onto the one object instead (#33 row 16).
+      actions = Enum.flat_map(configs, fn %{rpc_actions: actions} -> actions end)
+      generate_object_wrapper(resource, actions, package_name)
     end)
   end
 
-  defp generate_object_wrapper(resource, %{rpc_actions: actions}, package_name) do
+  defp generate_object_wrapper(resource, actions, package_name) do
     type_name = AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name!(resource)
     object_name = "#{type_name}Rpc"
 
