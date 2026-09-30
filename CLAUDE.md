@@ -170,6 +170,19 @@ nowhere to live. That is the shape (see `docs/decisions.md`), and it is where
 `ResourceSchemas.generate_data_class/2` the set of resources the same pass
 emits a class for. Follow that pattern.
 
+`Rpc.Codegen.declaration_fragments/2` is that pattern applied to "did two
+sections pick the same identifier?" (#33): it calls the same per-item
+generator function every section's real output already calls, tags each
+fragment with a human-readable source, and hands the full list to
+`Codegen.Declarations.check/1` before anything joins. Adding a new
+per-item generator function (a new typed-query shape, a new filter kind)
+means adding it to `declaration_fragments/2` too, or its output is
+invisible to the check. `ResourceSchemas.generate_all_schemas_fragments/2`
+is the one place this threading also changes behaviour, not just
+structure: it keeps every enum and union `collect_types/1` finds,
+including a same-named duplicate, where `generate_all_schemas/2` used to
+silently drop one via `Enum.uniq_by/2`.
+
 The one exception is the list of resource classes itself:
 `Manifest.published_resources/1` is read from the compiled manifest, so
 `TypeMapper` asks it directly rather than having it threaded through six
@@ -265,3 +278,19 @@ value, not the string `"nil"`) lands in the ignored third tuple element.
 Verified directly with `OptionParser.parse(["--check", "--name", nil],
 strict: [check: :boolean])` at the console: `{[check: true], [nil],
 [{"--name", nil}]}`, no raise.
+
+### `put_unique/4` needs a manifest module, not just two domains
+
+Two domains each declaring `rpc_action :create_thing` compile
+individually with no error. `put_unique/4` runs inside `DecorateManifest`,
+a transformer on the *manifest* module
+(`Manifest.Transformers.BuildManifest` → `DecorateManifest`), not on
+`Ash.Domain` compilation. The raise only fires once something builds a
+manifest that reads both domains — `use AshKotlinMultiplatform.Manifest,
+domains: [...]` in a test, or the app's own manifest module (built from
+`Application.compile_env(:ash_domains)`) in production. Every real
+consuming app has exactly one manifest module — the library raises
+without `config :ash_kotlin_multiplatform, :manifest` — so this is a
+mechanism note, not a gap: the guard fires in practice. A test that wants
+to exercise `put_unique/4` for two domains needs a manifest module built
+over both, not just the two domains compiled (#33).

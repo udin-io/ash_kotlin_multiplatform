@@ -22,7 +22,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
   """
 
   alias AshKotlinMultiplatform.Manifest
-  alias AshKotlinMultiplatform.Codegen.{FilterTypes, ResourceSchemas, TypedQueries}
+  alias AshKotlinMultiplatform.Codegen.{Declarations, FilterTypes, ResourceSchemas, TypedQueries}
 
   alias AshKotlinMultiplatform.Rpc.Codegen.{
     KotlinStatic,
@@ -63,7 +63,13 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
 
       case AshKotlinMultiplatform.VerifierChecker.check_all_verifiers(rpc_resources ++ domains) do
         :ok ->
-          generate_full_kotlin_code(otp_app, package_name, rpc_resources, opts)
+          case Declarations.check(declaration_fragments(otp_app, opts)) do
+            :ok ->
+              generate_full_kotlin_code(otp_app, package_name, rpc_resources, opts)
+
+            {:error, error_message} ->
+              {:error, error_message}
+          end
 
         {:error, error_message} ->
           {:error, error_message}
@@ -168,6 +174,162 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
     {:ok, kotlin_code}
   end
 
+  @doc """
+  Every `{source, fragment}` pair a full generation pass would declare, for
+  `Codegen.Declarations.check/1`.
+
+  Calls the exact same per-item generator functions `generate_kotlin_code/2`
+  calls with the exact same inputs — every generator here is pure, so a
+  second call is never an approximation of the real output; it recomputes
+  the same bytes. `ResourceSchemas.generate_all_schemas_fragments/2` is the
+  one exception carrying real behaviour: it keeps a same-named duplicate
+  `generate_all_schemas/2` still drops.
+  """
+  def declaration_fragments(otp_app, opts \\ []) do
+    package_name = get_package_name(otp_app, opts)
+    rpc_resources = RpcConfigCollector.get_rpc_resources(otp_app)
+    resources_and_actions = RpcConfigCollector.get_rpc_resources_and_actions(otp_app)
+    rpc_configs = RpcConfigCollector.get_rpc_configs(otp_app)
+    embedded = Manifest.embedded_resources()
+    emitted = Manifest.published_resources()
+
+    schema_fragments =
+      ResourceSchemas.generate_all_schemas_fragments(rpc_resources, embedded)
+
+    rpc_action_fragments =
+      Enum.map(resources_and_actions, fn {resource, action, rpc_action} ->
+        {"rpc_action :#{rpc_action.name} on #{inspect(resource)}",
+         HttpRenderer.render_execution_function(
+           resource,
+           action,
+           rpc_action,
+           rpc_action.name,
+           emitted
+         )}
+      end)
+
+    validation_fragments =
+      if AshKotlinMultiplatform.generate_validation_functions?() do
+        resources_and_actions
+        |> Enum.filter(fn {_resource, action, _rpc_action} ->
+          action.type in [:create, :update]
+        end)
+        |> Enum.map(fn {resource, action, rpc_action} ->
+          {"validation for rpc_action :#{rpc_action.name} on #{inspect(resource)}",
+           HttpRenderer.render_validation_function(resource, action, rpc_action, rpc_action.name)}
+        end)
+      else
+        []
+      end
+
+    metadata_fragments =
+      Enum.flat_map(resources_and_actions, fn {resource, action, rpc_action} ->
+        case MetadataTypes.generate_action_metadata_type(action, rpc_action, rpc_action.name) do
+          "" ->
+            []
+
+          fragment ->
+            [{"metadata for rpc_action :#{rpc_action.name} on #{inspect(resource)}", fragment}]
+        end
+      end)
+
+    input_fragments =
+      Enum.flat_map(rpc_configs, fn %{resource: resource, rpc_actions: actions} ->
+        Enum.map(actions, fn rpc_action ->
+          {"rpc_action :#{rpc_action.name} on #{inspect(resource)} (input class)",
+           InputTypes.generate_input_type(resource, rpc_action)}
+        end)
+      end)
+
+    filter_fragments =
+      if Keyword.get(opts, :with_filters, AshKotlinMultiplatform.generate_filter_types?()) do
+        filter_resources =
+          otp_app
+          |> Ash.Info.domains()
+          |> Enum.flat_map(&Ash.Domain.Info.resources/1)
+          |> Enum.uniq()
+
+        [
+          {"built-in (FilterTypes.generate_base_filter_types/0)",
+           FilterTypes.generate_base_filter_types()}
+        ] ++
+          Enum.map(filter_resources, fn resource ->
+            {"resource #{inspect(resource)} (filter type)",
+             FilterTypes.generate_filter_type(resource)}
+          end)
+      else
+        []
+      end
+
+    typed_query_fragments =
+      Enum.map(RpcConfigCollector.get_typed_queries(otp_app), fn {resource, action, typed_query} ->
+        {"typed_query :#{typed_query.name} on #{inspect(resource)}",
+         TypedQueries.generate_typed_query_type_and_const(
+           resource,
+           action,
+           typed_query,
+           rpc_resources
+         )}
+      end)
+
+    object_wrapper_fragments =
+      rpc_configs
+      |> Enum.group_by(fn %{resource: resource} -> resource end)
+      |> Enum.map(fn {resource, configs} ->
+        actions = Enum.flat_map(configs, fn %{rpc_actions: actions} -> actions end)
+
+        {"object wrapper for #{inspect(resource)}",
+         generate_object_wrapper(resource, actions, package_name)}
+      end)
+
+    built_in_fragments =
+      KotlinStatic.reserved_top_level_names(opts) ++
+        [
+          {"built-in (KotlinStatic.generate_type_aliases/0)",
+           KotlinStatic.generate_type_aliases()},
+          {"built-in (KotlinStatic.generate_money_type/0)", KotlinStatic.generate_money_type()},
+          {"built-in (KotlinStatic.generate_shared_json/0)", KotlinStatic.generate_shared_json()},
+          {"built-in (KotlinStatic.generate_http_client_factory/0)",
+           KotlinStatic.generate_http_client_factory()},
+          {"built-in (KotlinStatic.generate_error_types/0)", KotlinStatic.generate_error_types()},
+          {"built-in (KotlinStatic.generate_generic_result_types/0)",
+           KotlinStatic.generate_generic_result_types()},
+          {"built-in (PaginationTypes.generate_page_type/0)",
+           PaginationTypes.generate_page_type()},
+          {"built-in (MetadataTypes.generate_metadata_envelope_type/0)",
+           MetadataTypes.generate_metadata_envelope_type()}
+        ]
+
+    validation_type_fragments =
+      if AshKotlinMultiplatform.generate_validation_functions?() do
+        [
+          {"built-in (KotlinStatic.generate_validation_types/0)",
+           KotlinStatic.generate_validation_types()}
+        ]
+      else
+        []
+      end
+
+    channel_fragments =
+      if AshKotlinMultiplatform.generate_phoenix_channel_client?() do
+        [{"built-in (PhoenixChannel.generate/0)", PhoenixChannel.generate()}]
+      else
+        []
+      end
+
+    built_in_fragments ++
+      validation_type_fragments ++
+      channel_fragments ++
+      schema_fragments ++
+      rpc_action_fragments ++
+      validation_fragments ++
+      metadata_fragments ++
+      input_fragments ++
+      filter_fragments ++
+      typed_query_fragments ++
+      object_wrapper_fragments
+  end
+
   defp non_empty_or_nil(content, _header) when content in [nil, ""], do: nil
   defp non_empty_or_nil(content, header), do: "#{header}\n#{content}"
 
@@ -263,11 +425,15 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
        resource}
     end)
     |> Enum.map_join("\n\n", fn {resource, configs} ->
-      generate_object_wrapper(resource, List.first(configs), package_name)
+      # A resource exposed from two domains' kotlin_rpc blocks used to keep
+      # only the first domain's actions (`List.first(configs)`) — merge
+      # every domain's rpc_actions onto the one object instead (#33 row 16).
+      actions = Enum.flat_map(configs, fn %{rpc_actions: actions} -> actions end)
+      generate_object_wrapper(resource, actions, package_name)
     end)
   end
 
-  defp generate_object_wrapper(resource, %{rpc_actions: actions}, package_name) do
+  defp generate_object_wrapper(resource, actions, package_name) do
     type_name = AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name!(resource)
     object_name = "#{type_name}Rpc"
 

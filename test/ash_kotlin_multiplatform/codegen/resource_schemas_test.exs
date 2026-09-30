@@ -16,13 +16,17 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemasTest do
   end
 
   describe "generate_data_class/2" do
+    # #33 (owner): named after the resource, not the attribute alone —
+    # `TodoContentUnion`/`TodoStatus`, not `ContentUnion`/`Status` — a
+    # breaking rename.
     test "a union attribute names the sealed class generated for it" do
       assert ResourceSchemas.generate_data_class(Todo, [Todo]) =~
-               "val content: ContentUnion? = null"
+               "val content: TodoContentUnion? = null"
     end
 
     test "a one_of atom attribute names the enum class generated for it" do
-      assert ResourceSchemas.generate_data_class(Todo, [Todo]) =~ "val status: Status? = null"
+      assert ResourceSchemas.generate_data_class(Todo, [Todo]) =~
+               "val status: TodoStatus? = null"
     end
   end
 
@@ -52,9 +56,10 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemasTest do
       end
     end
 
+    # #33 (owner): named after its resource, `BookMetaFormat`, not `Format`.
     test "declares the enum class an embedded resource's field names", %{kotlin: kotlin} do
-      assert kotlin =~ "val format: Format? = null"
-      assert kotlin =~ "enum class Format {"
+      assert kotlin =~ "val format: BookMetaFormat? = null"
+      assert kotlin =~ "enum class BookMetaFormat {"
     end
   end
 

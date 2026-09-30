@@ -9,6 +9,61 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic do
   This includes imports, utility types, error types, and helper functions.
   """
 
+  # #33 row 19 (owner, 2026-09-30): a generated top-level class shadowing
+  # one of these breaks the consumer's build — Kotlin resolves a local
+  # declaration over a star import with no ambiguity error, so every bare
+  # use of the shadowed name silently binds to the wrong class instead.
+  # Confirmed for real with `gradle compileKotlin`: a fixture-local
+  # `class Json`/`class Serializable`/`class ContentType` (etc.) each threw
+  # `INITIALIZER_TYPE_MISMATCH`, `NOT_AN_ANNOTATION_CLASS` or a cascade of
+  # `Unresolved reference` at every real use site.
+  #
+  # Each name here was found by grepping the real generated fixture for a
+  # BARE (unqualified) use of it — never guessed from the package's public
+  # API, and never added just because the package is star-imported. Confirmed
+  # empty for `kotlinx.datetime`/`java.time` and every websocket/coroutines
+  # import: this generator always qualifies those (`kotlinx.datetime.Instant`,
+  # never bare `Instant`), so a resource typed `Instant` shadows nothing real
+  # today — flagged as a question on the PR, since the owner's decision named
+  # it as an example before this was checked.
+  @reserved_names_by_package %{
+    "kotlinx.serialization" => ["Serializable", "SerialName", "Contextual"],
+    "kotlinx.serialization.json" => ["Json"],
+    "io.ktor.client" => ["HttpClient"],
+    "io.ktor.http" => ["ContentType"],
+    "io.ktor.client.plugins.contentnegotiation" => ["ContentNegotiation"]
+  }
+
+  @doc """
+  `{source, fragment}` pairs for every top-level name this generator itself
+  references unqualified from a star-imported package, for
+  `Codegen.Declarations.check/1`.
+
+  The package list comes from parsing `generate_imports/1`'s own output for
+  the run's options, not a fixed list disconnected from what is actually
+  imported — an import this run does not emit contributes no reserved name.
+  """
+  def reserved_top_level_names(opts \\ []) do
+    opts
+    |> generate_imports()
+    |> String.split("\n")
+    |> Enum.flat_map(&star_import_package/1)
+    |> Enum.flat_map(fn package ->
+      @reserved_names_by_package
+      |> Map.get(package, [])
+      |> Enum.map(fn name ->
+        {"built-in (star import #{package}.*, used unqualified as #{name})", "class #{name}"}
+      end)
+    end)
+  end
+
+  defp star_import_package(line) do
+    case Regex.run(~r/\Aimport\s+([\w.]+)\.\*\z/, String.trim(line)) do
+      [_, package] -> [package]
+      nil -> []
+    end
+  end
+
   @doc """
   Generates the standard imports for the generated Kotlin file.
   """

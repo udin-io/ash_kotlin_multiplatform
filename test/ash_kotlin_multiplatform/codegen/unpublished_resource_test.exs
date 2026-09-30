@@ -81,8 +81,11 @@ defmodule AshKotlinMultiplatform.Codegen.UnpublishedResourceTest do
       assert kotlin =~ "val secretRef: JsonElement? = null"
     end
 
+    # #33 (owner): named after its resource, `BookExtraUnion`, not
+    # `ExtraUnion`.
     test "is a JsonElement union member", %{kotlin: kotlin} do
-      assert kotlin =~ ~r/data class Hidden\(\s*val value: JsonElement\s*\) : ExtraUnion\(\)/
+      assert kotlin =~
+               ~r/data class Hidden\(\s*val value: JsonElement\s*\) : BookExtraUnion\(\)/
     end
 
     test "is a JsonElement action argument", %{kotlin: kotlin} do

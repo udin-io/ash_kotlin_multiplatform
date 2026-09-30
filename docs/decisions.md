@@ -888,3 +888,56 @@ Cost: an app already running `:snake_case` gets `short_message`/`error_id`
 in place of `shortMessage`/`errorId`, on every error, in this release. An
 app on the default `:camel_case` sees no change.
 
+## 2026-09-30 — Kotlin identifiers are checked at codegen time (#33)
+
+`Codegen.Declarations.check/1` scans the rendered Kotlin fragments every
+section generator emits and fails codegen when two sources declare the same
+top-level `class`, `interface`, `object` or `typealias`. A Spark verifier
+was considered and rejected: `VerifyUniqueTypeNames`, the one verifier that
+already reaches across resources, does so through `Mix.Project.config()`,
+which the ticket itself flags as unverified when a resource compiles as a
+dependency; the set of names a generation pass declares depends on codegen
+inputs (the manifest's embedded list, `generate_filter_types`,
+`generate_validation_functions`, typed queries) that only `Rpc.Codegen`
+holds, matching the standing decision below that a cross-section fact is
+threaded through `Rpc.Codegen`, not looked up inside a generator; and Spark
+2.7.3 turns a verifier error into a compile *warning*
+(`deps/spark/lib/spark/dsl.ex:557-574`), never a failed `mix compile`.
+Checking the rendered fragments, rather than a second list of naming rules,
+also cannot drift from what the generators emit — `declaration_fragments/2`
+calls the exact same per-item generator function the real output already
+calls.
+
+Owner's answer, given in chat, 2026-09-29: every enum and union class is
+named after its resource (`TodoStatus`, not `Status`; `TodoContentUnion`,
+not `ContentUnion`) — a one-time breaking rename for consumers, since it
+removes the most common cross-resource clash outright rather than only
+detecting it. A clash fails codegen, `--check` and `--dry-run`; no
+`mix compile` warning is added. Porting ash_typescript's
+`VerifyMappableTypes` is its own ticket, outside #129.
+
+Owner's answer, given in chat, 2026-09-30: row 19 (a generated class
+shadowing a star-imported name) moves in scope, through the same
+`Declarations.check/1` path as every other row, rather than staying
+deferred. `KotlinStatic.reserved_top_level_names/1` builds the reserved
+list from `generate_imports/1`'s own output — the packages actually
+star-imported for the run's options — not a fixed list typed by hand.
+Verified for real, not assumed: appending `class Json` to the generated
+fixture and running `gradle compileKotlin` gives
+`INITIALIZER_TYPE_MISMATCH`; `class Serializable` and `class SerialName`
+each give `NOT_AN_ANNOTATION_CLASS`, since every `@Serializable` and
+`@SerialName` in the file resolves to the shadowing class instead. The
+owner's decision named `Instant` alongside `Json` and `HttpClient` as an
+example; checked against the real generated fixture, every datetime
+reference this generator emits is fully qualified
+(`kotlinx.datetime.Instant`, `java.time.Instant`) under both
+`:datetime_library` settings, so nothing today references `Instant`
+unqualified and a resource typed `Instant` shadows nothing real — flagged
+on the PR rather than silently reserved anyway.
+
+Cost: every consumer regenerates and re-imports the renamed enum and union
+classes once. A resource typed `Json`, `HttpClient`, `Serializable`,
+`SerialName`, `Contextual`, `ContentType` or `ContentNegotiation` — already
+a de facto conflict before this ticket, just one that failed silently or
+late — now fails codegen instead of shipping broken Kotlin.
+

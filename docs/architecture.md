@@ -86,9 +86,11 @@ what a server actually sends, so the second half decodes responses
 ## 3. Component: the Kotlin generator
 
 `Rpc.Codegen.generate_kotlin_code/2` is the only entry point. It collects
-config, runs the verifiers, then concatenates section generators in a fixed
-order and joins them into one file. Every generator returns a string; none
-of them share state.
+config, runs the verifiers, checks every section's declarations for a name
+two sources agree on, then concatenates section generators in a fixed order
+and joins them into one file. Every generator returns a string; none of them
+share state, except the check itself, which is the one fact that has to see
+every section at once (#33).
 
 ```mermaid
 flowchart TD
@@ -98,11 +100,14 @@ flowchart TD
     cg --> emb["Manifest.embedded_resources/1<br/>kind: :embedded_resource<br/>from the persisted manifest.types"]
     cg --> pub["Manifest.published_resources/1<br/>persisted rpc_resources + embedded"]
     cg --> vc["VerifierChecker<br/>VerifyIdentities (identities and get_by),<br/>VerifyActionTypes,<br/>VerifyFieldNames, VerifyUniqueTypeNames"]
+    vc --> decl["Rpc.Codegen.declaration_fragments/2<br/>every section's {source, fragment} pairs,<br/>plus KotlinStatic.reserved_top_level_names/1"]
+    decl --> chk["Codegen.Declarations.check/1<br/>a name declared twice returns an error<br/>naming the identifier and both sources"]
+    chk -->|"error"| fail["task prints both sources,<br/>exits 1, writes nothing"]
 
     coll --> tuples["{resource, action, rpc_action}"]
 
     tuples --> static["KotlinStatic<br/>imports, type aliases, AshMoney,<br/>the shared ashRpcJson,<br/>HttpClient factory, AshRpcError, RpcResult&lt;T&gt;"]
-    tuples --> schemas["Codegen.ResourceSchemas.generate_all_schemas/2<br/>data classes, enums,<br/>sealed unions, embedded"]
+    tuples --> schemas["Codegen.ResourceSchemas.generate_all_schemas/2<br/>data classes, enums (TypeName+Attr),<br/>sealed unions (TypeName+Attr+Union), embedded"]
     emb --> schemas
     tuples --> types["TypeGenerators.*<br/>InputTypes, MetadataTypes (+ AshMetadata&lt;T, M&gt;),<br/>PaginationTypes (AshPage&lt;T&gt;)"]
     tuples --> filters["Codegen.FilterTypes<br/>Codegen.TypedQueries"]
@@ -113,6 +118,8 @@ flowchart TD
     schemas --> tm["Codegen.TypeMapper"]
     types --> tm
     filters --> tm
+
+    chk -->|":ok"| static
     pub -->|"a :struct names a class<br/>only for these"| tm
 
     static --> out["AshRpc.kt"]
@@ -121,7 +128,28 @@ flowchart TD
     filters --> out
     fns --> out
     chan --> out
+
+    classDef good fill:#edf6f0,stroke:#1f6b3a,stroke-width:2px,color:#1c1c1a
+    class decl,chk,fail good
 ```
+
+Legend: green = added by #33.
+
+`Declarations.check/1` scans the *rendered Kotlin*, not a second list of
+naming rules, so it cannot drift from what a generator actually emits.
+`declaration_fragments/2` calls the exact same per-item generator function
+each section already calls for the real output. `ResourceSchemas` is the one
+exception carrying real behaviour: since #33, `generate_all_schemas/2` keeps
+every enum and union `collect_types/1` finds, including a same-named
+duplicate — a genuine clash now reaches `check/1` instead of the
+`Enum.uniq_by/2` that used to silently drop it.
+`KotlinStatic.reserved_top_level_names/1` folds in one more source: a
+generated class shadowing a name this library's own static code
+references unqualified from a star import (`Json`, `Serializable`,
+`SerialName`, `Contextual`, `HttpClient`, `ContentType`,
+`ContentNegotiation`) — Kotlin resolves a local declaration over a star
+import with no ambiguity error, so every bare use of the shadowed name
+silently binds to the wrong class instead of failing to compile.
 
 `ResourceSchemas` finds no embedded resource itself. `Rpc.Codegen` passes it
 `Manifest.embedded_resources/1`, every `kind: :embedded_resource` entry in the

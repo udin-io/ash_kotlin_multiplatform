@@ -142,4 +142,37 @@ defmodule Mix.Tasks.AshKotlinMultiplatform.CodegenTest do
 
     assert File.exists?(output_file)
   end
+
+  # #33: a name clash (Declarations.check/1) reaches generate_kotlin_code/2
+  # as the same {:error, reason} a missing RPC resource or a failed
+  # verifier already returns, so the task's existing {:error, reason} ->
+  # Mix.shell().error(...); exit({:shutdown, 1}) branch already covers it
+  # — no new branch, and this guards that staying true.
+  test "11: --check on a clash exits non-zero, prints both sources, writes nothing", %{
+    output_file: output_file
+  } do
+    previous = Application.get_env(:ash_kotlin_multiplatform, :ash_domains)
+
+    Application.put_env(:ash_kotlin_multiplatform, :ash_domains, [
+      AshKotlinMultiplatform.Test.IdentifierCollisions.ClashDomain
+    ])
+
+    on_exit(fn ->
+      case previous do
+        nil -> Application.delete_env(:ash_kotlin_multiplatform, :ash_domains)
+        value -> Application.put_env(:ash_kotlin_multiplatform, :ash_domains, value)
+      end
+    end)
+
+    caught =
+      catch_exit(Codegen.run(["--output", output_file, "--check"]))
+
+    assert caught == {:shutdown, 1}
+    refute File.exists?(output_file)
+    assert_received {:mix_shell, :info, ["Generating Kotlin code for" <> _]}
+    assert_received {:mix_shell, :error, [text]}
+    assert text =~ "WidgetStatus"
+    assert text =~ "AshKotlinMultiplatform.Test.IdentifierCollisions.ClashOne"
+    assert text =~ "AshKotlinMultiplatform.Test.IdentifierCollisions.ClashTwo"
+  end
 end

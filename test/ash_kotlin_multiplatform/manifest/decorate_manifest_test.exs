@@ -162,6 +162,46 @@ defmodule AshKotlinMultiplatform.Manifest.DecorateManifestTest do
     end
   end
 
+  # #33 rows 7 and 10: `put_unique/4` (this module) already raises when two
+  # domains claim the same client-facing name — these are guards, not new
+  # behaviour. The raise only fires once a manifest module reads both
+  # domains (`Ash.Info.domains/1` inside `BuildManifest`), not from
+  # compiling the domains alone, so each manifest is built dynamically
+  # inside its test: a manifest module built at `test/support` compile time
+  # would raise before any test ran, failing the whole suite's compile
+  # instead of exercising the guard.
+  describe "put_unique/4 across two domains" do
+    test "row 7: two rpc_actions claiming the same name raise, naming both" do
+      assert_raise Spark.Error.DslError, ~r/create_thing/, fn ->
+        Code.compile_string("""
+        defmodule AshKotlinMultiplatform.Test.PutUniqueGuard.RpcActionManifest do
+          use AshKotlinMultiplatform.Manifest,
+            otp_app: :ash_kotlin_multiplatform,
+            domains: [
+              AshKotlinMultiplatform.Test.PutUniqueGuard.RpcActionDomainOne,
+              AshKotlinMultiplatform.Test.PutUniqueGuard.RpcActionDomainTwo
+            ]
+        end
+        """)
+      end
+    end
+
+    test "row 10: two typed_queries claiming the same name raise, naming both" do
+      assert_raise Spark.Error.DslError, ~r/thing_titles/, fn ->
+        Code.compile_string("""
+        defmodule AshKotlinMultiplatform.Test.PutUniqueGuard.TypedQueryManifest do
+          use AshKotlinMultiplatform.Manifest,
+            otp_app: :ash_kotlin_multiplatform,
+            domains: [
+              AshKotlinMultiplatform.Test.PutUniqueGuard.TypedQueryDomainOne,
+              AshKotlinMultiplatform.Test.PutUniqueGuard.TypedQueryDomainTwo
+            ]
+        end
+        """)
+      end
+    end
+  end
+
   defp resource(module) do
     Enum.find(manifest().resources, &(&1.module == module)) ||
       flunk("#{inspect(module)} is not in the manifest")
