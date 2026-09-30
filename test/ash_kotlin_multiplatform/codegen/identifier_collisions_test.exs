@@ -134,6 +134,40 @@ defmodule AshKotlinMultiplatform.Test.IdentifierCollisions.Payment do
   end
 end
 
+# Row 19: a resource typed after a name this generator's own static code
+# references unqualified from a star import.
+defmodule AshKotlinMultiplatform.Test.IdentifierCollisions.ReservedJson do
+  @moduledoc false
+  use Ash.Resource, domain: nil, extensions: [AshKotlinMultiplatform.Resource]
+
+  kotlin_multiplatform do
+    type_name("Json")
+  end
+
+  attributes do
+    uuid_primary_key :id
+  end
+
+  actions do
+    defaults [:read]
+  end
+end
+
+defmodule AshKotlinMultiplatform.Test.IdentifierCollisions.ReservedNameDomain do
+  @moduledoc false
+  use Ash.Domain, extensions: [AshKotlinMultiplatform.Rpc]
+
+  resources do
+    resource AshKotlinMultiplatform.Test.IdentifierCollisions.ReservedJson
+  end
+
+  kotlin_rpc do
+    resource AshKotlinMultiplatform.Test.IdentifierCollisions.ReservedJson do
+      rpc_action :list_reserved, :read
+    end
+  end
+end
+
 defmodule AshKotlinMultiplatform.Codegen.IdentifierCollisionsTest do
   @moduledoc """
   Every row of #33's "Every way two identifiers collide" table that reaches
@@ -261,6 +295,20 @@ defmodule AshKotlinMultiplatform.Codegen.IdentifierCollisionsTest do
     end
   end
 
+  describe "row 19 — a resource shadowing a star-imported name" do
+    test "a resource typed Json stops codegen, naming the star import it shadows" do
+      result =
+        with_ash_domains([Test.IdentifierCollisions.ReservedNameDomain], fn ->
+          Codegen.generate_kotlin_code(:ash_kotlin_multiplatform)
+        end)
+
+      assert {:error, message} = result
+      assert message =~ "Json"
+      assert message =~ "star import kotlinx.serialization.json"
+      assert message =~ "AshKotlinMultiplatform.Test.IdentifierCollisions.ReservedJson"
+    end
+  end
+
   describe "guard — the repo's own test domain" do
     test "still generates {:ok, _}" do
       assert {:ok, _kotlin} = Codegen.generate_kotlin_code(:ash_kotlin_multiplatform)
@@ -268,13 +316,17 @@ defmodule AshKotlinMultiplatform.Codegen.IdentifierCollisionsTest do
   end
 
   describe "declaration_fragments/2" do
-    test "every fragment's text is exactly what the real generated file carries" do
+    test "every real fragment's text is exactly what the real generated file carries" do
       {:ok, kotlin} = Codegen.generate_kotlin_code(:ash_kotlin_multiplatform)
       fragments = Codegen.declaration_fragments(:ash_kotlin_multiplatform)
 
       assert fragments != []
 
-      for {source, fragment} <- fragments do
+      # Reserved-name guards (row 19) are the one deliberate exception: a
+      # sentinel "class Json" fragment does not itself appear anywhere in
+      # the real file — the whole point is to catch a REAL declaration
+      # that would collide with it. Every other fragment IS real output.
+      for {source, fragment} <- fragments, not (source =~ "star import") do
         assert kotlin =~ String.trim(fragment),
                "#{source} produced a fragment the real generated file does not carry verbatim"
       end

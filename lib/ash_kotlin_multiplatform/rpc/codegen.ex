@@ -282,17 +282,21 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
          generate_object_wrapper(resource, actions, package_name)}
       end)
 
-    built_in_fragments = [
-      {"built-in (KotlinStatic.generate_type_aliases/0)", KotlinStatic.generate_type_aliases()},
-      {"built-in (KotlinStatic.generate_money_type/0)", KotlinStatic.generate_money_type()},
-      {"built-in (KotlinStatic.generate_shared_json/0)", KotlinStatic.generate_shared_json()},
-      {"built-in (KotlinStatic.generate_error_types/0)", KotlinStatic.generate_error_types()},
-      {"built-in (KotlinStatic.generate_generic_result_types/0)",
-       KotlinStatic.generate_generic_result_types()},
-      {"built-in (PaginationTypes.generate_page_type/0)", PaginationTypes.generate_page_type()},
-      {"built-in (MetadataTypes.generate_metadata_envelope_type/0)",
-       MetadataTypes.generate_metadata_envelope_type()}
-    ]
+    built_in_fragments =
+      KotlinStatic.reserved_top_level_names(opts) ++
+        [
+          {"built-in (KotlinStatic.generate_type_aliases/0)",
+           KotlinStatic.generate_type_aliases()},
+          {"built-in (KotlinStatic.generate_money_type/0)", KotlinStatic.generate_money_type()},
+          {"built-in (KotlinStatic.generate_shared_json/0)", KotlinStatic.generate_shared_json()},
+          {"built-in (KotlinStatic.generate_error_types/0)", KotlinStatic.generate_error_types()},
+          {"built-in (KotlinStatic.generate_generic_result_types/0)",
+           KotlinStatic.generate_generic_result_types()},
+          {"built-in (PaginationTypes.generate_page_type/0)",
+           PaginationTypes.generate_page_type()},
+          {"built-in (MetadataTypes.generate_metadata_envelope_type/0)",
+           MetadataTypes.generate_metadata_envelope_type()}
+        ]
 
     validation_type_fragments =
       if AshKotlinMultiplatform.generate_validation_functions?() do
