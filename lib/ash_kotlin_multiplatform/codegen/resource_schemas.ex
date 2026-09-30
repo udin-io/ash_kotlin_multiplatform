@@ -63,17 +63,67 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
     {data_classes, embedded_classes, enum_classes, sealed_classes}
   end
 
+  @doc """
+  Per-item `{source, fragment}` pairs for every data, embedded, enum and
+  sealed class `generate_all_schemas/2` declares, for
+  `Codegen.Declarations.check/1`.
+
+  Built by calling the same per-item generator functions
+  `generate_all_schemas/2` calls, so a fragment here is never an
+  approximation of the real output — it IS the real output, computed once
+  more from the same pure inputs. Unlike `generate_all_schemas/2`, this
+  keeps every enum and union `collect_types/1` finds, including a
+  same-named duplicate: a clash belongs to `check/1`, not to a silent
+  `uniq_by`.
+  """
+  def generate_all_schemas_fragments(resources, embedded) do
+    {enums, unions} = collect_types_with_sources(resources ++ embedded)
+    emitted = resources ++ embedded
+
+    data_fragments =
+      Enum.map(resources, fn r ->
+        {"resource #{inspect(r)} (data class)", generate_data_class(r, emitted)}
+      end)
+
+    embedded_fragments =
+      Enum.map(embedded, fn r ->
+        {"resource #{inspect(r)} (embedded data class)", generate_embedded_class(r, emitted)}
+      end)
+
+    enum_fragments =
+      Enum.map(enums, fn {name, values, source} ->
+        {source, generate_enum_class({name, values})}
+      end)
+
+    union_fragments =
+      Enum.map(unions, fn {name, types, source} ->
+        {source, generate_sealed_class({name, types})}
+      end)
+
+    data_fragments ++ embedded_fragments ++ enum_fragments ++ union_fragments
+  end
+
   defp collect_types(resources) do
+    {enums, unions} = collect_types_with_sources(resources)
+
+    {Enum.map(enums, fn {name, values, _source} -> {name, values} end),
+     Enum.map(unions, fn {name, types, _source} -> {name, types} end)}
+  end
+
+  defp collect_types_with_sources(resources) do
     resources
-    |> Enum.flat_map(&Ash.Resource.Info.public_attributes/1)
-    |> Enum.reduce({[], []}, fn attr, {enums, unions} ->
-      collect_types_from_attribute(attr, enums, unions)
+    |> Enum.flat_map(fn resource ->
+      resource |> Ash.Resource.Info.public_attributes() |> Enum.map(&{resource, &1})
+    end)
+    |> Enum.reduce({[], []}, fn {resource, attr}, {enums, unions} ->
+      collect_types_from_attribute(resource, attr, enums, unions)
     end)
   end
 
-  defp collect_types_from_attribute(attr, enums, unions) do
+  defp collect_types_from_attribute(resource, attr, enums, unions) do
     type = attr.type
     constraints = attr.constraints || []
+    source = "attribute :#{attr.name} on #{inspect(resource)}"
 
     # Shares its predicates with `field_kotlin_type/1`: whatever gets a class here
     # is exactly what a field is allowed to name, so the two cannot drift into
@@ -81,12 +131,15 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
     cond do
       TypeMapper.is_enum_type?(type, constraints) ->
         enum_name = generate_enum_name(attr.name)
-        {[{enum_name, TypeMapper.get_enum_values(constraints)} | enums], unions}
+
+        {[{enum_name, TypeMapper.get_enum_values(constraints), "#{source} (enum class)"} | enums],
+         unions}
 
       TypeMapper.is_union_type?(type) ->
         union_types = Introspection.get_union_types_from_constraints(type, constraints)
         union_name = generate_union_name(attr.name)
-        {enums, [{union_name, union_types} | unions]}
+
+        {enums, [{union_name, union_types, "#{source} (union class)"} | unions]}
 
       true ->
         {enums, unions}

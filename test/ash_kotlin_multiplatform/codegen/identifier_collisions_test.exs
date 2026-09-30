@@ -58,4 +58,28 @@ defmodule AshKotlinMultiplatform.Codegen.IdentifierCollisionsTest do
       assert {:ok, _kotlin} = Codegen.generate_kotlin_code(:ash_kotlin_multiplatform)
     end
   end
+
+  describe "declaration_fragments/2" do
+    test "every fragment's text is exactly what the real generated file carries" do
+      {:ok, kotlin} = Codegen.generate_kotlin_code(:ash_kotlin_multiplatform)
+      fragments = Codegen.declaration_fragments(:ash_kotlin_multiplatform)
+
+      assert fragments != []
+
+      for {source, fragment} <- fragments do
+        assert kotlin =~ String.trim(fragment),
+               "#{source} produced a fragment the real generated file does not carry verbatim"
+      end
+    end
+
+    test "carries a source for a known rpc_action, resource, filter type and object wrapper" do
+      fragments = Codegen.declaration_fragments(:ash_kotlin_multiplatform, with_filters: true)
+      sources = Enum.map(fragments, &elem(&1, 0))
+
+      assert "rpc_action :list_books on AshKotlinMultiplatform.Test.Book" in sources
+      assert "resource AshKotlinMultiplatform.Test.Book (data class)" in sources
+      assert "resource AshKotlinMultiplatform.Test.Book (filter type)" in sources
+      assert "object wrapper for AshKotlinMultiplatform.Test.Book" in sources
+    end
+  end
 end
