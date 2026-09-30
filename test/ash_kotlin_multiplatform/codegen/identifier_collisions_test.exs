@@ -17,6 +17,7 @@ defmodule AshKotlinMultiplatform.Codegen.IdentifierCollisionsTest do
 
   alias AshKotlinMultiplatform.Codegen.ResourceSchemas
   alias AshKotlinMultiplatform.Rpc.Codegen
+  alias AshKotlinMultiplatform.Rpc.Codegen.KotlinStatic
   alias AshKotlinMultiplatform.Test
 
   defp with_ash_domains(domains, fun) do
@@ -177,6 +178,30 @@ defmodule AshKotlinMultiplatform.Codegen.IdentifierCollisionsTest do
       assert "resource AshKotlinMultiplatform.Test.Book (data class)" in sources
       assert "resource AshKotlinMultiplatform.Test.Book (filter type)" in sources
       assert "object wrapper for AshKotlinMultiplatform.Test.Book" in sources
+    end
+
+    # Regression for a review finding: every fixed built-in
+    # generate_full_kotlin_code/4 always emits needs its own entry in
+    # declaration_fragments/2 too, or a future declaration inside it
+    # reaches the file unchecked. generate_http_client_factory/0 was
+    # missing — harmless today (it only emits a `fun`, no
+    # class/interface/object/typealias), but silent. This list mirrors
+    # generate_full_kotlin_code/4's own unconditional KotlinStatic calls.
+    test "every unconditional built-in KotlinStatic call has a fragment entry" do
+      fragments = Codegen.declaration_fragments(:ash_kotlin_multiplatform)
+      texts = Enum.map(fragments, &elem(&1, 1))
+
+      for {fun_name, text} <- [
+            {"generate_type_aliases/0", KotlinStatic.generate_type_aliases()},
+            {"generate_money_type/0", KotlinStatic.generate_money_type()},
+            {"generate_shared_json/0", KotlinStatic.generate_shared_json()},
+            {"generate_http_client_factory/0", KotlinStatic.generate_http_client_factory()},
+            {"generate_error_types/0", KotlinStatic.generate_error_types()},
+            {"generate_generic_result_types/0", KotlinStatic.generate_generic_result_types()}
+          ] do
+        assert Enum.any?(texts, &(&1 == text)),
+               "KotlinStatic.#{fun_name}'s output has no entry in declaration_fragments/2"
+      end
     end
   end
 end

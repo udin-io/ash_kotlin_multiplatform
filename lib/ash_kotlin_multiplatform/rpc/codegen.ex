@@ -289,6 +289,8 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
            KotlinStatic.generate_type_aliases()},
           {"built-in (KotlinStatic.generate_money_type/0)", KotlinStatic.generate_money_type()},
           {"built-in (KotlinStatic.generate_shared_json/0)", KotlinStatic.generate_shared_json()},
+          {"built-in (KotlinStatic.generate_http_client_factory/0)",
+           KotlinStatic.generate_http_client_factory()},
           {"built-in (KotlinStatic.generate_error_types/0)", KotlinStatic.generate_error_types()},
           {"built-in (KotlinStatic.generate_generic_result_types/0)",
            KotlinStatic.generate_generic_result_types()},
