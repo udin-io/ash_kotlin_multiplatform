@@ -2,6 +2,73 @@
 #
 # SPDX-License-Identifier: MIT
 
+# Row 3 (an enum class vs a resource class), the simplest shape nothing
+# else already catches: two resources typed the same (row 5) already fail
+# `mix compile` through `VerifyUniqueTypeNames`, so that pairing would
+# pass even with `Declarations.check/1` unwired and prove nothing. `Widget`
+# names an enum `Status` via its `:status` attribute (unrenamed naming —
+# the resource-qualified rename is a later commit); `ClashTwo` is typed
+# `Status` outright, a data class with no attribute-driven name to collide
+# with. Named by no domain of their own; `ClashDomain` below publishes both.
+defmodule AshKotlinMultiplatform.Test.IdentifierCollisions.ClashOne do
+  @moduledoc false
+  use Ash.Resource, domain: nil, extensions: [AshKotlinMultiplatform.Resource]
+
+  kotlin_multiplatform do
+    type_name("Widget")
+  end
+
+  attributes do
+    uuid_primary_key :id
+
+    attribute :status, :atom do
+      constraints one_of: [:on, :off]
+      public? true
+    end
+  end
+
+  actions do
+    defaults [:read]
+  end
+end
+
+defmodule AshKotlinMultiplatform.Test.IdentifierCollisions.ClashTwo do
+  @moduledoc false
+  use Ash.Resource, domain: nil, extensions: [AshKotlinMultiplatform.Resource]
+
+  kotlin_multiplatform do
+    type_name("Status")
+  end
+
+  attributes do
+    uuid_primary_key :id
+  end
+
+  actions do
+    defaults [:read]
+  end
+end
+
+defmodule AshKotlinMultiplatform.Test.IdentifierCollisions.ClashDomain do
+  @moduledoc false
+  use Ash.Domain, extensions: [AshKotlinMultiplatform.Rpc]
+
+  resources do
+    resource AshKotlinMultiplatform.Test.IdentifierCollisions.ClashOne
+    resource AshKotlinMultiplatform.Test.IdentifierCollisions.ClashTwo
+  end
+
+  kotlin_rpc do
+    resource AshKotlinMultiplatform.Test.IdentifierCollisions.ClashOne do
+      rpc_action :list_one, :read
+    end
+
+    resource AshKotlinMultiplatform.Test.IdentifierCollisions.ClashTwo do
+      rpc_action :list_two, :read
+    end
+  end
+end
+
 defmodule AshKotlinMultiplatform.Codegen.IdentifierCollisionsTest do
   @moduledoc """
   Every row of #33's "Every way two identifiers collide" table that reaches
@@ -50,6 +117,21 @@ defmodule AshKotlinMultiplatform.Codegen.IdentifierCollisionsTest do
       kotlin = generated_file([Test.Domain, Test.ScopedDomain])
 
       assert length(Regex.scan(~r/^object BookRpc /m, kotlin)) == 1
+    end
+  end
+
+  describe "Declarations.check/1 is wired into generate_kotlin_code/2" do
+    test "a real name clash stops codegen and names both sources" do
+      result =
+        with_ash_domains([Test.IdentifierCollisions.ClashDomain], fn ->
+          Codegen.generate_kotlin_code(:ash_kotlin_multiplatform)
+        end)
+
+      assert {:error, message} = result
+      assert message =~ "Status"
+      assert message =~ "attribute :status on"
+      assert message =~ "AshKotlinMultiplatform.Test.IdentifierCollisions.ClashOne"
+      assert message =~ "AshKotlinMultiplatform.Test.IdentifierCollisions.ClashTwo"
     end
   end
 

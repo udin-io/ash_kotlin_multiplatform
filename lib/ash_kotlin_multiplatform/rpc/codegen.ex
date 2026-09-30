@@ -22,7 +22,7 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
   """
 
   alias AshKotlinMultiplatform.Manifest
-  alias AshKotlinMultiplatform.Codegen.{FilterTypes, ResourceSchemas, TypedQueries}
+  alias AshKotlinMultiplatform.Codegen.{Declarations, FilterTypes, ResourceSchemas, TypedQueries}
 
   alias AshKotlinMultiplatform.Rpc.Codegen.{
     KotlinStatic,
@@ -63,7 +63,13 @@ defmodule AshKotlinMultiplatform.Rpc.Codegen do
 
       case AshKotlinMultiplatform.VerifierChecker.check_all_verifiers(rpc_resources ++ domains) do
         :ok ->
-          generate_full_kotlin_code(otp_app, package_name, rpc_resources, opts)
+          case Declarations.check(declaration_fragments(otp_app, opts)) do
+            :ok ->
+              generate_full_kotlin_code(otp_app, package_name, rpc_resources, opts)
+
+            {:error, error_message} ->
+              {:error, error_message}
+          end
 
         {:error, error_message} ->
           {:error, error_message}
