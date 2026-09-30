@@ -48,15 +48,18 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
       |> Enum.map(&generate_embedded_class(&1, emitted))
       |> Enum.join("\n\n")
 
+    # No `uniq_by` — two resources with a same-named attribute used to
+    # silently share one class, keeping one resource's values and dropping
+    # the other's (#33). The resource-qualified name below means a genuine
+    # duplicate now only comes from a real clash, which
+    # `Codegen.Declarations.check/1` catches instead.
     enum_classes =
       enums
-      |> Enum.uniq_by(fn {name, _} -> name end)
       |> Enum.map(&generate_enum_class/1)
       |> Enum.join("\n\n")
 
     sealed_classes =
       unions
-      |> Enum.uniq_by(fn {name, _} -> name end)
       |> Enum.map(&generate_sealed_class/1)
       |> Enum.join("\n\n")
 
@@ -130,14 +133,14 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
     # orphaned classes or dangling references.
     cond do
       TypeMapper.is_enum_type?(type, constraints) ->
-        enum_name = generate_enum_name(attr.name)
+        enum_name = generate_enum_name(resource, attr.name)
 
         {[{enum_name, TypeMapper.get_enum_values(constraints), "#{source} (enum class)"} | enums],
          unions}
 
       TypeMapper.is_union_type?(type) ->
         union_types = Introspection.get_union_types_from_constraints(type, constraints)
-        union_name = generate_union_name(attr.name)
+        union_name = generate_union_name(resource, attr.name)
 
         {enums, [{union_name, union_types, "#{source} (union class)"} | unions]}
 
@@ -210,7 +213,7 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
   end
 
   defp generate_field(attribute, resource) do
-    kotlin_type = field_kotlin_type(attribute)
+    kotlin_type = field_kotlin_type(attribute, resource)
     {serial_name, field_name} = property_name(resource, attribute.name)
 
     # Every field is nullable with a default, `id` included. RPC uses sparse
@@ -242,15 +245,15 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
   # declared, because `collect_types/1` saw the RPC resources only (#84). Nothing else may take these branches — a
   # union or `one_of` atom reached through an action argument or a union member has
   # no generated class, and naming one there would emit a dangling reference.
-  defp field_kotlin_type(attribute) do
+  defp field_kotlin_type(attribute, resource) do
     constraints = attribute.constraints || []
 
     cond do
       TypeMapper.is_union_type?(attribute.type) ->
-        nullable_class_name(generate_union_name(attribute.name), attribute)
+        nullable_class_name(generate_union_name(resource, attribute.name), attribute)
 
       TypeMapper.is_enum_type?(attribute.type, constraints) ->
-        nullable_class_name(generate_enum_name(attribute.name), attribute)
+        nullable_class_name(generate_enum_name(resource, attribute.name), attribute)
 
       true ->
         TypeMapper.get_kotlin_type(attribute)
@@ -405,19 +408,26 @@ defmodule AshKotlinMultiplatform.Codegen.ResourceSchemas do
     |> TypeMapper.annotate_contextual_types()
   end
 
-  defp generate_enum_name(attr_name) do
+  # (owner): named after the resource, not the attribute alone —
+  # `TodoStatus`, not `Status` — so the most common cross-resource clash
+  # (two resources with a same-named enum attribute) cannot happen. A
+  # one-time breaking rename for consumers (#33).
+  defp generate_enum_name(resource, attr_name) do
+    "#{type_name_segment(resource)}#{pascal_attr(attr_name)}"
+  end
+
+  defp generate_union_name(resource, attr_name) do
+    "#{type_name_segment(resource)}#{pascal_attr(attr_name)}Union"
+  end
+
+  defp pascal_attr(attr_name) do
     attr_name
     |> Atom.to_string()
     |> Helpers.snake_to_pascal_case()
   end
 
-  defp generate_union_name(attr_name) do
-    name =
-      attr_name
-      |> Atom.to_string()
-      |> Helpers.snake_to_pascal_case()
-
-    "#{name}Union"
+  defp type_name_segment(resource) do
+    to_string(AshKotlinMultiplatform.Resource.Info.kotlin_multiplatform_type_name!(resource))
   end
 
   defp format_field_name(name) do

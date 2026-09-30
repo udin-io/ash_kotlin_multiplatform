@@ -6,10 +6,10 @@
 # else already catches: two resources typed the same (row 5) already fail
 # `mix compile` through `VerifyUniqueTypeNames`, so that pairing would
 # pass even with `Declarations.check/1` unwired and prove nothing. `Widget`
-# names an enum `Status` via its `:status` attribute (unrenamed naming —
-# the resource-qualified rename is a later commit); `ClashTwo` is typed
-# `Status` outright, a data class with no attribute-driven name to collide
-# with. Named by no domain of their own; `ClashDomain` below publishes both.
+# names an enum `WidgetStatus` via its `:status` attribute; `ClashTwo` is
+# typed `WidgetStatus` outright, a data class with no attribute-driven
+# name to collide with. Named by no domain of their own; `ClashDomain`
+# below publishes both.
 defmodule AshKotlinMultiplatform.Test.IdentifierCollisions.ClashOne do
   @moduledoc false
   use Ash.Resource, domain: nil, extensions: [AshKotlinMultiplatform.Resource]
@@ -36,8 +36,11 @@ defmodule AshKotlinMultiplatform.Test.IdentifierCollisions.ClashTwo do
   @moduledoc false
   use Ash.Resource, domain: nil, extensions: [AshKotlinMultiplatform.Resource]
 
+  # Typed to match the resource-qualified name `Widget.status` now
+  # generates (`WidgetStatus`, not `Status`) — the rename fixed the
+  # original `Status`-vs-`Status` shape this fixture used to exercise.
   kotlin_multiplatform do
-    type_name("Status")
+    type_name("WidgetStatus")
   end
 
   attributes do
@@ -69,6 +72,68 @@ defmodule AshKotlinMultiplatform.Test.IdentifierCollisions.ClashDomain do
   end
 end
 
+# Rows 1 and 2: two resources each declaring a same-named attribute — an
+# enum with different values, a union with different members. Before the
+# resource-qualified rename, `Enum.uniq_by/2` silently kept one `Status`
+# class (with one resource's values) and one `ContentUnion` class (with one
+# resource's members); after it, each resource's own class survives under
+# its own name.
+defmodule AshKotlinMultiplatform.Test.IdentifierCollisions.Order do
+  @moduledoc false
+  use Ash.Resource, domain: nil, extensions: [AshKotlinMultiplatform.Resource]
+
+  kotlin_multiplatform do
+    type_name("Order")
+  end
+
+  attributes do
+    uuid_primary_key :id
+
+    attribute :status, :atom do
+      constraints one_of: [:pending, :shipped]
+      public? true
+    end
+
+    attribute :content, :union do
+      constraints types: [note: [type: :string]]
+
+      public? true
+    end
+  end
+
+  actions do
+    defaults [:read]
+  end
+end
+
+defmodule AshKotlinMultiplatform.Test.IdentifierCollisions.Payment do
+  @moduledoc false
+  use Ash.Resource, domain: nil, extensions: [AshKotlinMultiplatform.Resource]
+
+  kotlin_multiplatform do
+    type_name("Payment")
+  end
+
+  attributes do
+    uuid_primary_key :id
+
+    attribute :status, :atom do
+      constraints one_of: [:authorized, :captured, :refunded]
+      public? true
+    end
+
+    attribute :content, :union do
+      constraints types: [amount: [type: :integer]]
+
+      public? true
+    end
+  end
+
+  actions do
+    defaults [:read]
+  end
+end
+
 defmodule AshKotlinMultiplatform.Codegen.IdentifierCollisionsTest do
   @moduledoc """
   Every row of #33's "Every way two identifiers collide" table that reaches
@@ -79,6 +144,7 @@ defmodule AshKotlinMultiplatform.Codegen.IdentifierCollisionsTest do
   """
   use ExUnit.Case, async: false
 
+  alias AshKotlinMultiplatform.Codegen.ResourceSchemas
   alias AshKotlinMultiplatform.Rpc.Codegen
   alias AshKotlinMultiplatform.Test
 
@@ -120,6 +186,66 @@ defmodule AshKotlinMultiplatform.Codegen.IdentifierCollisionsTest do
     end
   end
 
+  describe "row 1 — two same-named enum attributes, different values, two resources" do
+    test "both classes are emitted with their own values, each field names its own" do
+      {data_classes, _embedded, enum_classes, _sealed} =
+        ResourceSchemas.generate_all_schemas(
+          [Test.IdentifierCollisions.Order, Test.IdentifierCollisions.Payment],
+          []
+        )
+
+      assert data_classes =~ "val status: OrderStatus? = null"
+      assert data_classes =~ "val status: PaymentStatus? = null"
+
+      assert enum_classes =~ "enum class OrderStatus {"
+      assert enum_classes =~ "@SerialName(\"pending\") PENDING"
+      assert enum_classes =~ "@SerialName(\"shipped\") SHIPPED"
+
+      assert enum_classes =~ "enum class PaymentStatus {"
+      assert enum_classes =~ "@SerialName(\"authorized\") AUTHORIZED"
+      assert enum_classes =~ "@SerialName(\"captured\") CAPTURED"
+      assert enum_classes =~ "@SerialName(\"refunded\") REFUNDED"
+
+      refute enum_classes =~ "enum class Status {"
+    end
+  end
+
+  describe "row 2 — two same-named union attributes, two resources" do
+    test "each union class is named after its own resource" do
+      {data_classes, _embedded, _enum, sealed_classes} =
+        ResourceSchemas.generate_all_schemas(
+          [Test.IdentifierCollisions.Order, Test.IdentifierCollisions.Payment],
+          []
+        )
+
+      assert data_classes =~ "val content: OrderContentUnion? = null"
+      assert data_classes =~ "val content: PaymentContentUnion? = null"
+
+      assert sealed_classes =~ "sealed class OrderContentUnion {"
+      assert sealed_classes =~ "sealed class PaymentContentUnion {"
+      refute sealed_classes =~ "sealed class ContentUnion {"
+    end
+  end
+
+  describe "guard — two resources with identical enum values still generate {:ok, _}" do
+    test "identical value sets on differently-named classes do not clash" do
+      {_data, _embedded, enum_classes, _sealed} =
+        ResourceSchemas.generate_all_schemas(
+          [Test.IdentifierCollisions.Order, Test.IdentifierCollisions.Payment],
+          []
+        )
+
+      fragments = [
+        {"attribute :status on Order", "enum class OrderStatus { PENDING }"},
+        {"attribute :status on Payment", "enum class PaymentStatus { PENDING }"}
+      ]
+
+      assert AshKotlinMultiplatform.Codegen.Declarations.check(fragments) == :ok
+      assert enum_classes =~ "OrderStatus"
+      assert enum_classes =~ "PaymentStatus"
+    end
+  end
+
   describe "Declarations.check/1 is wired into generate_kotlin_code/2" do
     test "a real name clash stops codegen and names both sources" do
       result =
@@ -128,7 +254,7 @@ defmodule AshKotlinMultiplatform.Codegen.IdentifierCollisionsTest do
         end)
 
       assert {:error, message} = result
-      assert message =~ "Status"
+      assert message =~ "WidgetStatus"
       assert message =~ "attribute :status on"
       assert message =~ "AshKotlinMultiplatform.Test.IdentifierCollisions.ClashOne"
       assert message =~ "AshKotlinMultiplatform.Test.IdentifierCollisions.ClashTwo"
